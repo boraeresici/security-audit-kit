@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# security-audit-kit pre-commit — fast CVE audit when a dependency manifest changes.
+# security-audit-kit pre-commit:
+#   - ALWAYS: sub-second secret scan of the staged changes (gitleaks protect --staged).
+#   - WHEN a dependency manifest is staged: also a fast CVE audit (scan.sh deps).
 # Bypass (emergency): SKIP_SECURITY=1 git commit ...
 set -euo pipefail
 [ "${SKIP_SECURITY:-0}" = "1" ] && { echo "[pre-commit] SKIP_SECURITY=1"; exit 0; }
@@ -8,10 +10,18 @@ ROOT="$(git rev-parse --show-toplevel)"
 KIT="$ROOT/tools/security-audit-kit"
 manifests='pyproject\.toml|uv\.lock|requirements.*\.txt|Pipfile|package\.json|pnpm-lock\.yaml|yarn\.lock|package-lock\.json'
 
+# 1) Staged-secret gate (every commit). Catches a secret in ANY staged file before it
+#    is ever committed — not just at push time.
+if ! bash "$KIT/scan.sh" staged; then
+  echo "[pre-commit] BLOCKED: secret in staged changes. Remove it or bypass with SKIP_SECURITY=1."
+  exit 1
+fi
+
+# 2) Dependency CVE gate (only when a manifest changed).
 if git diff --cached --name-only | grep -qE "$manifests"; then
-  echo "[pre-commit] Dependency manifest changed -> scan.sh fast"
-  if ! bash "$KIT/scan.sh" fast; then
-    echo "[pre-commit] BLOCKED: dep/secret finding. Fix it or bypass with SKIP_SECURITY=1."
+  echo "[pre-commit] Dependency manifest changed -> scan.sh deps"
+  if ! bash "$KIT/scan.sh" deps; then
+    echo "[pre-commit] BLOCKED: dependency finding. Fix it or bypass with SKIP_SECURITY=1."
     exit 1
   fi
 fi

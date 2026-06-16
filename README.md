@@ -17,25 +17,10 @@ authz/IDOR, vertical authz/missing-role, business logic — by following the cal
 path). The latter does not run inside `scan.sh` (it's judgment, not a script); run
 it in Claude periodically / before a cutover / after a new endpoint.
 
-## Installing into another project (like a package)
+## Install (recommended): bootstrap from this repo, pinned
 
-```bash
-# 1) Copy this folder into the target repo
-cp -R tools/security-audit-kit /new/project/tools/
-
-# 2) From the target repo root, one command
-cd /new/project && bash tools/security-audit-kit/install.sh
-```
-
-`install.sh`: reports prerequisites -> points `core.hooksPath` at the kit's hooks
-folder -> copies the `sec-triage` + `sec-sast-deep` skills into `.claude/skills/`.
-Idempotent, safe to re-run.
-
-## One-command install from the kit's repo (pinned)
-
-If the kit lives in its own git repo, `bootstrap.sh` fetches it at a **pinned ref**
-and vendors it into your project's `tools/security-audit-kit/`, then runs
-`install.sh`. Run it from your target repo root:
+`bootstrap.sh` fetches the kit at a **pinned tag**, vendors it into your project's
+`tools/security-audit-kit/`, then runs `install.sh`. Run it from your target repo root:
 
 ```bash
 # 1) Download the bootstrap script and READ it first (no piping to a shell):
@@ -48,6 +33,30 @@ bash bootstrap.sh v1.0.0 --scan        # also run a full scan after install
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
 > `KIT_REPO=https://… bash bootstrap.sh v1.0.0`.
+
+`install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
+at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
+`.claude/skills/`. Idempotent, safe to re-run.
+
+## Other ways to install
+
+Both land the kit at `tools/security-audit-kit/` in the target repo, then run
+`install.sh` from the repo root (the hooks hard-code that path).
+
+**Clone, then copy it in** — air-gapped, or you want to inspect the full repo first:
+```bash
+git clone https://github.com/boraeresici/security-audit-kit.git
+mkdir -p /target/project/tools
+cp -R security-audit-kit /target/project/tools/security-audit-kit
+cd /target/project && bash tools/security-audit-kit/install.sh
+```
+
+**Copy from a project that already has it** — offline, no network; propagate the same
+vendored copy laterally to another local repo:
+```bash
+cp -R /project-a/tools/security-audit-kit /project-b/tools/
+cd /project-b && bash tools/security-audit-kit/install.sh
+```
 
 Why this shape (consistent with the kit's own ethos):
 - **No `curl | bash`.** This is a *security* tool — download, review, then run. Piping
@@ -98,25 +107,33 @@ version is in use, and what `--check` compares against next time.
 - **uvx or pipx** — semgrep / checkov / pip-audit (no install, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (whichever the project uses)
 
-You don't need to permanently install any tool; versions are pinned (no drift vs. CI).
+You don't need to permanently install any tool. Every version is pinned — Python tools
+(semgrep/checkov/pip-audit) by version, docker tools (gitleaks/trivy/syft) by **immutable
+digest** — so there is no drift vs. CI. Run `scan.sh doctor` to print the resolved pins.
 
 ## Usage
 
 ```
 bash tools/security-audit-kit/scan.sh all        # full (before a PR)
-bash tools/security-audit-kit/scan.sh fast       # secret + deps (after adding a package)
+bash tools/security-audit-kit/scan.sh fast       # staged-secret + deps (after adding a package)
+bash tools/security-audit-kit/scan.sh staged     # sub-second secret scan of staged changes
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
+bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 ```
 
+Every run writes a machine-readable `docs/security/scan-findings/summary.json`. Set
+`SARIF=1` to also emit per-tool SARIF (for GitHub code scanning / IDE) into `.../sarif/`.
+
 Automatic triggers (after install):
-- **pre-commit** — if a dependency manifest is staged, runs `scan.sh fast` (HARD).
+- **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus
+  `scan.sh deps` when a dependency manifest is staged (both HARD).
 - **pre-push** — runs `scan.sh all` (HARD). Right before a PR.
 - Bypass (emergency): `SKIP_SECURITY=1 git commit` / `git push --no-verify`.
 
 ## Finding loop (end to end)
 
 ```
-new package  --(pre-commit)-->  scan.sh fast
+every commit --(pre-commit)-->  scan.sh staged  (+ deps if a manifest changed)
 before a PR  --(pre-push)----->  scan.sh all
 finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-YYYY-MM-DD.md
                                            |- FP   -> allowlist (.gitleaks.toml / nosemgrep / .pip-audit-ignore)
@@ -136,7 +153,7 @@ authz/missing-role, business logic. It **complements semgrep, does not replace i
 - **When:** before a cutover (phase exit / version bump), after a new authz
   surface (new endpoint/resolver/admin-viewer/4-eyes flow), or on request.
   NOT on every push.
-- Output feeds the same `sec-triage` flow (findings file + SFU promotion).
+- Output feeds the same `sec-triage` flow (findings file + follow-up registry promotion).
 - Source/inspiration: `github.com/utkusen/sast-skills` (three-phase
   recon->verify->merge); adapted to the kit's triage flow.
 

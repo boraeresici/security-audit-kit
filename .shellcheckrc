@@ -1,0 +1,9 @@
+# Intentional in this kit: word-splitting is used deliberately to pass multiple
+# flags/paths (e.g. $SEMGREP_CONFIGS, $SAST_PATHS, $flags) to the underlying tools.
+disable=SC2086,SC2046
+# SC2015: `have x && ok || miss` — the middle branch (printf) never fails here, so the
+#         A && B || C caveat does not apply.
+disable=SC2015
+# SC2329: helper functions are invoked indirectly (command substitution / dispatch);
+#         shellcheck's reachability analysis flags them as unused. They are used.
+disable=SC2329

@@ -16,25 +16,10 @@ pattern'le goremedigi *semantik* aciklar: yatay authz/IDOR, dikey authz/eksik-ro
 business-logic — cagri-yolu izleyerek). Ikincisi `scan.sh`'a girmez (yargi, script
 degil); periyodik/cutover-oncesi/yeni-endpoint sonrasi Claude'da kosulur.
 
-## Baska projeye kurmak (paket gibi)
+## Kurulum (onerilen): bu repo'dan pinli bootstrap
 
-```bash
-# 1) Bu klasoru hedef repoya kopyala
-cp -R tools/security-audit-kit /yeni/proje/tools/
-
-# 2) Hedef repo kokunden tek komut
-cd /yeni/proje && bash tools/security-audit-kit/install.sh
-```
-
-`install.sh`: prerequisite'leri raporlar -> `core.hooksPath`'i kitin hooks
-klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
-`.claude/skills/`'e kopyalar. Idempotent, tekrar kosulabilir.
-
-## Kitin kendi repo'sundan tek-komut kurulum (pinli)
-
-Kit kendi git repo'sundaysa, `bootstrap.sh` onu **pinli bir ref**'te ceker ve
-projenin `tools/security-audit-kit/`'ine vendor'lar, sonra `install.sh`'i kosar.
-Hedef repo kokunden calistir:
+`bootstrap.sh` kiti **pinli bir tag**'te ceker, projenin `tools/security-audit-kit/`'ine
+vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 
 ```bash
 # 1) Bootstrap scriptini indir ve ONCE OKU (shell'e pipe etme):
@@ -47,6 +32,30 @@ bash bootstrap.sh v1.0.0 --scan        # kurulumdan sonra tam tarama da kos
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
 > vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.0.0`.
+
+`install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
+kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
+`.claude/skills/`'e kopyalar. Idempotent, tekrar kosulabilir.
+
+## Diger kurulum yollari
+
+Ikisi de kiti hedef repoda `tools/security-audit-kit/` altina koyar, sonra repo
+kokunden `install.sh` kosulur (hook'lar bu path'i hardcode eder).
+
+**Klonla, sonra kopyala** — air-gapped, ya da once tum repo'yu incelemek istersen:
+```bash
+git clone https://github.com/boraeresici/security-audit-kit.git
+mkdir -p /hedef/proje/tools
+cp -R security-audit-kit /hedef/proje/tools/security-audit-kit
+cd /hedef/proje && bash tools/security-audit-kit/install.sh
+```
+
+**Zaten kuran bir projeden kopyala** — offline, ag yok; ayni vendor kopyayi baska bir
+yerel repoya yatay tasi:
+```bash
+cp -R /proje-a/tools/security-audit-kit /proje-b/tools/
+cd /proje-b && bash tools/security-audit-kit/install.sh
+```
 
 Neden bu bicim (kitin kendi felsefesiyle tutarli):
 - **`curl | bash` YOK.** Bu bir *guvenlik* aracidir — indir, gozden gecir, sonra
@@ -99,25 +108,33 @@ ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir.
 - **uvx veya pipx** — semgrep / checkov / pip-audit (kurulum yok, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (projede hangisi varsa)
 
-Hicbir tool'u kalici kurmana gerek yok; surumler pinli (CI ile drift yok).
+Hicbir tool'u kalici kurmana gerek yok. Her surum pinli — Python araclari
+(semgrep/checkov/pip-audit) surumle, docker araclari (gitleaks/trivy/syft) **immutable
+digest**'le — yani CI ile drift yok. Pinleri gormek icin: `scan.sh doctor`.
 
 ## Kullanim
 
 ```
 bash tools/security-audit-kit/scan.sh all        # tam (PR oncesi)
-bash tools/security-audit-kit/scan.sh fast       # secret + deps (paket-yukleme)
+bash tools/security-audit-kit/scan.sh fast       # staged-secret + deps (paket-yukleme)
+bash tools/security-audit-kit/scan.sh staged     # staged degisikliklerde saniye-alti sir taramasi
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
+bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 ```
 
+Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar. `SARIF=1`
+ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin) -> `.../sarif/`.
+
 Otomatik tetik (install sonrasi):
-- **pre-commit** — bagimlilik manifesti stage edilirse `scan.sh fast` (HARD).
+- **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica
+  bagimlilik manifesti stage edilirse `scan.sh deps` (ikisi de HARD).
 - **pre-push** — `scan.sh all` (HARD). PR'dan hemen once.
 - Bypass (acil): `SKIP_SECURITY=1 git commit` / `git push --no-verify`.
 
 ## Bulgu dongusu (uctan uca)
 
 ```
-yeni paket  --(pre-commit)-->  scan.sh fast
+her commit  --(pre-commit)-->  scan.sh staged  (+ manifest degistiyse deps)
 PR oncesi   --(pre-push)----->  scan.sh all
 bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-YYYY-MM-DD.md
                                           |- FP    -> allowlist (.gitleaks.toml / nosemgrep / .pip-audit-ignore)

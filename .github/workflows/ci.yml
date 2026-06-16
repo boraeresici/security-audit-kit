@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (uses repo .shellcheckrc)
+        run: shellcheck scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push
+
+  dogfood:
+    # The kit must pass its own secret scan — proves scan.sh runs end-to-end and that
+    # this repo ships no secrets. GitHub-hosted runners include docker (for gitleaks).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks detect scans full history
+      - name: doctor
+        run: bash scan.sh doctor
+      - name: secret scan (gitleaks, pinned by digest)
+        run: bash scan.sh secret

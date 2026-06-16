@@ -25,7 +25,17 @@
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.
 # : "${TF_DIR:=infra/terraform}"
 
-# --- Tool version pins (keep aligned with CI) ---
+# --- Tool version pins (keep ALL of these aligned with CI to avoid drift) ---
+# Python tools (uvx/pipx) — pinned by version:
+# : "${SEMGREP_VER:=1.166.0}"
+# : "${CHECKOV_VER:=3.3.1}"
+# : "${PIP_AUDIT_VER:=2.10.1}"
+#
+# Docker tools — pinned by IMMUTABLE digest (preferred) + a readable tag. To bump,
+# set BOTH the *_VER and *_DIGEST together (or clear the digest to use the tag).
 # : "${GITLEAKS_VER:=v8.21.2}"
+# : "${GITLEAKS_DIGEST:=sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46}"
 # : "${TRIVY_VER:=0.58.0}"
+# : "${TRIVY_DIGEST:=sha256:b88012e2a0a309d6a8a00463d4e63e5e513377fb74eccbc8f9b0f8f81940ebeb}"
 # : "${SYFT_VER:=v1.18.0}"
+# : "${SYFT_DIGEST:=sha256:a2066c7d582669db5c9191ed8b8055766a63a3c231b4134a5c75e65a70f30b23}"
