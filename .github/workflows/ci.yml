@@ -14,16 +14,3 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 \
             scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push
-
-  dogfood:
-    # The kit must pass its own secret scan — proves scan.sh runs end-to-end and that
-    # this repo ships no secrets. GitHub-hosted runners include docker (for gitleaks).
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # gitleaks detect scans full history
-      - name: doctor
-        run: bash scan.sh doctor
-      - name: secret scan (gitleaks, pinned by digest)
-        run: bash scan.sh secret

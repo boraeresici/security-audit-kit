@@ -1,6 +1,14 @@
 # security-audit-kit — portable local security scanning
 
+[![ci](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml)
+[![self-audit](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![release](https://img.shields.io/github/v/release/boraeresici/security-audit-kit?sort=semver)](https://github.com/boraeresici/security-audit-kit/releases)
+
 > 🌐 **English:** this file · **Türkçe:** [README-tr.md](README-tr.md)
+>
+> The **self-audit** badge above is dogfooding: the kit runs its own `secret` + `sast`
+> scans on this repo via [`.github/workflows/self-audit.yml`](.github/workflows/self-audit.yml).
 
 A self-contained kit that runs local security scans in **any git repo** without
 depending on CI (or its billing), triggers automatically via git hooks, and wires

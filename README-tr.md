@@ -1,6 +1,14 @@
 # security-audit-kit — tasinabilir yerel guvenlik tarama
 
+[![ci](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml)
+[![self-audit](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![release](https://img.shields.io/github/v/release/boraeresici/security-audit-kit?sort=semver)](https://github.com/boraeresici/security-audit-kit/releases)
+
 > 🌐 **English:** [README.md](README.md) · **Türkçe:** bu dosya
+>
+> Yukaridaki **self-audit** badge'i dogfooding: kit kendi `secret` + `sast` taramasini bu
+> repo uzerinde [`.github/workflows/self-audit.yml`](.github/workflows/self-audit.yml) ile kosar.
 
 CI'a (ve faturasina) bagimli olmadan, **herhangi bir git repo'sunda** yerel
 guvenlik taramasi koşturan, hook'larla otomatik tetikleyen ve bulgu triyajini
