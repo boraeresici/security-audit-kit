@@ -7,5 +7,8 @@ sbom.cyclonedx.json
 sbom.spdx.json
 .kit-version
 
+# Local-only notes / roadmap (tracked on this machine, never published)
+*.local.md
+
 # OS / editor noise
 .DS_Store

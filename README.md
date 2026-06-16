@@ -230,5 +230,14 @@ These tools produce **internal evidence**. They **do not replace** PCI DSS Req
 kit does not cover those; it only catches problems that have leaked into the code
 early.
 
+## Security & trust
+Public and [MIT](LICENSE)-licensed, so **anyone can fork and modify it** (including the
+skills — they're AI instructions). The **only official repo** is
+`github.com/boraeresici/security-audit-kit`; `bootstrap.sh` defaults there, and you must
+deliberately override `KIT_REPO` to install from a fork. The kit produces **internal evidence
+with no warranty**. Pin a tag/SHA, **review skills before running**, and review diffs on
+update. Full trust model, supply-chain guidance, and vulnerability reporting:
+[SECURITY.md](SECURITY.md).
+
 ## License
 [MIT](LICENSE) — developed by [studiobinary.io](https://studiobinary.io).

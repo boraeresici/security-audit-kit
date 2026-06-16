@@ -227,5 +227,13 @@ Bu araclar **ic kanit** uretir. PCI DSS Req 11.3.2 ASV scan ve Req 11.4 pentest
 **yerine gecmez** — onlar dis-makam/gated. Kit onlari kapatmaz; sadece kod-icine
 sizmis sorunlari erken yakalar.
 
+## Guvenlik & guven
+Public ve [MIT](LICENSE) lisansli, yani **herkes forklayip degistirebilir** (skill'ler dahil —
+onlar AI talimatidir). **Tek resmi repo** `github.com/boraeresici/security-audit-kit`;
+`bootstrap.sh` varsayilan olarak oraya bakar, bir fork'tan kurmak icin `KIT_REPO`'yu *bilerek*
+override etmen gerekir. Kit **ic kanit uretir, garanti yok**. Bir tag/SHA pinle, **skill'leri
+calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, tedarik-zinciri
+rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md).
+
 ## Lisans
 [MIT](LICENSE) — [studiobinary.io](https://studiobinary.io) tarafindan gelistirildi.
