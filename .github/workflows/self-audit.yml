@@ -23,7 +23,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # gitleaks detect scans full history
-      - uses: astral-sh/setup-uv@v5   # provides uvx for semgrep (pinned in scan.sh)
+      - uses: astral-sh/setup-uv@v8.2.0   # provides uvx for semgrep (pinned in scan.sh)
+        with:
+          enable-cache: false   # no uv lockfile in this repo; avoids a useless-cache warning
       - name: doctor
         run: bash scan.sh doctor
       - name: secret scan (gitleaks, pinned by digest) + SARIF
@@ -33,6 +35,6 @@ jobs:
         run: SARIF=1 bash scan.sh sast
       - name: upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: docs/security/scan-findings/sarif
