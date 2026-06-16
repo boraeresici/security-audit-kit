@@ -18,12 +18,13 @@ Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs** (trivy),
 **SBOM** (syft). Any dimension whose toolchain is missing is skipped automatically.
 
-On top of these, two Claude skills add a judgment layer: **`sec-triage`** (raw
-scan -> real/false-positive decision -> fix/allowlist) and **`sec-sast-deep`**
-(*semantic* flaws that semgrep's pattern matching cannot see: horizontal
-authz/IDOR, vertical authz/missing-role, business logic — by following the call
-path). The latter does not run inside `scan.sh` (it's judgment, not a script); run
-it in Claude periodically / before a cutover / after a new endpoint.
+On top of these, three Claude skills add a judgment layer: **`sec-triage`** (raw
+scan -> real/false-positive decision -> fix/allowlist), **`sec-sast-deep`** (*semantic*
+code flaws semgrep's patterns miss: horizontal authz/IDOR, vertical authz/missing-role,
+business logic — by following the call path), and **`sec-ai-review`** (AI/LLM risks per
+the OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency). The
+latter two don't run inside `scan.sh` (judgment, not a script); run them in Claude
+periodically / before a cutover / after a new endpoint or AI surface.
 
 ## Install (recommended): bootstrap from this repo, pinned
 
@@ -125,6 +126,7 @@ digest** — so there is no drift vs. CI. Run `scan.sh doctor` to print the reso
 bash tools/security-audit-kit/scan.sh all        # full (before a PR)
 bash tools/security-audit-kit/scan.sh fast       # staged-secret + deps (after adding a package)
 bash tools/security-audit-kit/scan.sh staged     # sub-second secret scan of staged changes
+bash tools/security-audit-kit/scan.sh changed    # SAST on changed files only (diff-aware, fast)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 ```
@@ -164,6 +166,21 @@ authz/missing-role, business logic. It **complements semgrep, does not replace i
 - Output feeds the same `sec-triage` flow (findings file + follow-up registry promotion).
 - Source/inspiration: `github.com/utkusen/sast-skills` (three-phase
   recon->verify->merge); adapted to the kit's triage flow.
+
+## AI/LLM security review — `/sec-ai-review`
+
+If the codebase **calls an LLM**, exposes **tools/agents**, or does **RAG**, classic SAST
+doesn't cover the real risk: untrusted text reaching a powerful sink. `sec-ai-review` is a
+semantic skill (like `sec-sast-deep`) mapped to the **OWASP LLM Top 10** — prompt injection
+(direct/indirect), insecure output handling, excessive agency, system-prompt/sensitive-info
+disclosure, and model/data supply chain. It follows the data/authority flow, not a pattern.
+
+- **Does NOT run inside `scan.sh`**; run it as `/sec-ai-review` in Claude.
+- **When:** before shipping a new AI surface (a new tool the model can call, a new data
+  source fed into a prompt, a new autonomous agent / MCP server), or on request.
+- Output feeds the same `sec-triage` flow.
+- Source/inspiration: `github.com/utkusen/awesome-ai-security` + the OWASP LLM Top 10,
+  used as the living checklist (not a tracker) — currency comes from the release cadence.
 
 ## "When/how do I produce the triage file?" (triggering)
 

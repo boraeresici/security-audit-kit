@@ -8,6 +8,7 @@
 #   secret    Secret scan (gitleaks, full history)          [HARD]
 #   staged    Secret scan of STAGED changes only            [HARD]  sub-second
 #   sast      Static analysis (semgrep ERROR)               [HARD]
+#   changed   SAST on CHANGED files only (diff-aware)        [HARD]  fast
 #   iac       IaC misconfig (checkov, if terraform present) [soft]
 #   container Dep+OS+secret+misconfig (trivy fs)            [soft]
 #   sbom      Software inventory (syft CycloneDX+SPDX)       [artifact]
@@ -125,6 +126,30 @@ scan_sast(){
     || { [ $? -eq 127 ] && { warn sast "no uvx/pipx -> semgrep skipped"; return 0; }; return 1; }
 }
 
+# ---- sast on changed files only (diff-aware, fast) ----
+# Base ref: $BASE_REF, else merge-base with origin/main, else staged + unstaged changes.
+changed_files(){
+  local base="${BASE_REF:-}"
+  if [ -z "$base" ] && git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+    base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+  fi
+  if [ -n "$base" ]; then
+    git diff --name-only --diff-filter=ACMR "$base"
+  else
+    git diff --name-only --diff-filter=ACMR --cached
+    git diff --name-only --diff-filter=ACMR
+  fi
+}
+scan_sast_changed(){
+  local files; files="$(changed_files | sort -u | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)"
+  [ -z "$files" ] && { warn sast "no changed files vs base -> semgrep skipped"; return 0; }
+  local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
+  say sast "semgrep (changed files, ==$SEMGREP_VER)"
+  # shellcheck disable=SC2086
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $files \
+    || { [ $? -eq 127 ] && { warn sast "no uvx/pipx -> semgrep skipped"; return 0; }; return 1; }
+}
+
 # ---- iac (checkov) ----
 scan_iac(){
   local tf="${TF_DIR:-}"
@@ -193,12 +218,13 @@ run_scans(){
     secret)    _dim secret scan_secret || rc=1 ;;
     staged)    _dim staged scan_secret_staged || rc=1 ;;
     sast)      _dim sast scan_sast || rc=1 ;;
+    changed)   _dim sast scan_sast_changed || rc=1 ;;
     iac)       _dim iac scan_iac || rc=1 ;;
     container) _dim container scan_container || rc=1 ;;
     sbom)      _dim sbom scan_sbom || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|iac|container|sbom|fast|all|doctor)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|fast|all|doctor)"; return 2 ;;
   esac
   return $rc
 }

@@ -1,8 +1,9 @@
 name: self-audit
 
 # Dogfooding: the kit runs its own scans on this repo. A green badge means
-# security-audit-kit passes its own secret + SAST gates. The weekly schedule also
-# catches newly-disclosed issues in our pinned tools without a code change.
+# security-audit-kit passes its own secret + SAST gates. SARIF is uploaded to GitHub
+# code scanning (Security tab) so findings have a real, versioned home — not a committed
+# markdown dump. The weekly schedule also catches newly-disclosed issues in pinned tools.
 on:
   push:
     branches: [main]
@@ -11,17 +12,27 @@ on:
     - cron: '0 6 * * 1'   # every Monday 06:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF to code scanning
+
 jobs:
   self-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # gitleaks detect scans full history
       - uses: astral-sh/setup-uv@v5   # provides uvx for semgrep (pinned in scan.sh)
       - name: doctor
         run: bash scan.sh doctor
-      - name: secret scan (gitleaks, pinned by digest)
-        run: bash scan.sh secret
-      - name: SAST (semgrep, pinned by version)
-        run: bash scan.sh sast
+      - name: secret scan (gitleaks, pinned by digest) + SARIF
+        run: SARIF=1 bash scan.sh secret
+      - name: SAST (semgrep, pinned by version) + SARIF
+        if: always()   # run even if the secret gate failed, so both SARIFs exist
+        run: SARIF=1 bash scan.sh sast
+      - name: upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: docs/security/scan-findings/sarif

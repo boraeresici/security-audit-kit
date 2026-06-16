@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-16
+
+### Added
+- `sec-ai-review` skill — semantic AI/LLM security review mapped to the OWASP LLM Top 10
+  (prompt injection, insecure output handling, excessive agency, disclosure, supply chain).
+  Sourced from `utkusen/awesome-ai-security`. Installed into `.claude/skills/` like the others.
+- `scan.sh changed` — diff-aware SAST that runs semgrep only on files changed vs a base
+  (`$BASE_REF`, else merge-base with `origin/main`, else staged + unstaged).
+- Status badges in the README (ci, self-audit, license, release).
+- `self-audit` workflow (dogfooding): the kit runs its own `secret` + `sast` scans on this
+  repo and uploads SARIF to GitHub code scanning; weekly schedule + on push/PR.
+
+### Changed
+- Skill source templates moved from the repo root into `skills/` (organizational only; they
+  are still installed into the target repo's `.claude/skills/<name>/SKILL.md`).
+- CI split: `ci.yml` is shellcheck-only; the self-scan moved to `self-audit.yml`.
+- Bumped `actions/checkout` v4 → v5.
+
 ## [1.1.0] - 2026-06-16
 
 ### Added
@@ -36,5 +54,6 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.2.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/boraeresici/security-audit-kit/releases/tag/v1.0.0

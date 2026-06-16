@@ -38,12 +38,17 @@ else
 fi
 
 echo "== Claude skills =="
+# Source templates live in the kit under skills/; they are installed into the TARGET
+# repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
 mkdir -p "$ROOT/.claude/skills/sec-triage"
-cp "$KIT/sec-triage.skill.md" "$ROOT/.claude/skills/sec-triage/SKILL.md"
+cp "$KIT/skills/sec-triage.skill.md" "$ROOT/.claude/skills/sec-triage/SKILL.md"
 ok ".claude/skills/sec-triage/SKILL.md (finding triage)"
 mkdir -p "$ROOT/.claude/skills/sec-sast-deep"
-cp "$KIT/sec-sast-deep.skill.md" "$ROOT/.claude/skills/sec-sast-deep/SKILL.md"
+cp "$KIT/skills/sec-sast-deep.skill.md" "$ROOT/.claude/skills/sec-sast-deep/SKILL.md"
 ok ".claude/skills/sec-sast-deep/SKILL.md (semantic SAST: authz/IDOR/logic)"
+mkdir -p "$ROOT/.claude/skills/sec-ai-review"
+cp "$KIT/skills/sec-ai-review.skill.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
+ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
 mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
 
 cat <<EOF
@@ -54,6 +59,7 @@ cat <<EOF
   before a PR   : pre-push automatically runs 'all'
   finding triage: /sec-triage in Claude  -> docs/security/scan-findings/findings-<date>.md
   deep SAST     : /sec-sast-deep in Claude (authz/IDOR/logic; pre-cutover / after a new endpoint)
+  AI/LLM review : /sec-ai-review in Claude (prompt injection/agency; if the code calls an LLM)
   emergency bypass: SKIP_SECURITY=1 git commit   |   git push --no-verify
 
 HARD boundary: produces internal evidence; does NOT replace an ASV scan + pentest.

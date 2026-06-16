@@ -18,11 +18,13 @@ Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs**
 (trivy), **SBOM** (syft). Eksik toolchain olan boyut otomatik atlanir.
 
-Bunlarin ustune iki Claude skill'i yargi katmani ekler: **`sec-triage`** (ham
-tarama -> gercek/FP karari -> fix/allowlist) ve **`sec-sast-deep`** (semgrep'in
-pattern'le goremedigi *semantik* aciklar: yatay authz/IDOR, dikey authz/eksik-rol,
-business-logic — cagri-yolu izleyerek). Ikincisi `scan.sh`'a girmez (yargi, script
-degil); periyodik/cutover-oncesi/yeni-endpoint sonrasi Claude'da kosulur.
+Bunlarin ustune uc Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
+gercek/FP karari -> fix/allowlist), **`sec-sast-deep`** (semgrep'in pattern'le goremedigi
+*semantik* kod aciklari: yatay authz/IDOR, dikey authz/eksik-rol, business-logic —
+cagri-yolu izleyerek) ve **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
+prompt injection, guvensiz cikti islemesi, asiri yetki). Son ikisi `scan.sh`'a girmez
+(yargi, script degil); periyodik/cutover-oncesi/yeni-endpoint veya AI-yuzeyi sonrasi
+Claude'da kosulur.
 
 ## Kurulum (onerilen): bu repo'dan pinli bootstrap
 
@@ -126,6 +128,7 @@ digest**'le — yani CI ile drift yok. Pinleri gormek icin: `scan.sh doctor`.
 bash tools/security-audit-kit/scan.sh all        # tam (PR oncesi)
 bash tools/security-audit-kit/scan.sh fast       # staged-secret + deps (paket-yukleme)
 bash tools/security-audit-kit/scan.sh staged     # staged degisikliklerde saniye-alti sir taramasi
+bash tools/security-audit-kit/scan.sh changed    # sadece degisen dosyalarda SAST (diff-aware, hizli)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 ```
@@ -163,6 +166,21 @@ derin tarar: yatay authz/IDOR, dikey authz/eksik-rol, business-logic. semgrep'i
 - Cikti ayni `sec-triage` akisina baglanir (findings dosyasi + takip-listesi terfi).
 - Kaynak/ilham: `github.com/utkusen/sast-skills` (uc-fazli recon->verify->merge);
   kit'in triyaj akisina uyarlandi.
+
+## AI/LLM guvenlik incelemesi — `/sec-ai-review`
+
+Kod **bir LLM cagiriyorsa**, **tool/agent** sunuyorsa veya **RAG** yapiyorsa, klasik SAST
+asil riski kapsamaz: guvenilmez metnin guclu bir sink'e ulasmasi. `sec-ai-review`,
+`sec-sast-deep` gibi semantik bir skill — **OWASP LLM Top 10**'a eslenir: prompt injection
+(direct/indirect), guvensiz cikti islemesi, asiri yetki, sistem-prompt/hassas-bilgi
+sizintisi, model/veri tedarik zinciri. Pattern degil, veri/yetki akisini izler.
+
+- **`scan.sh`'a GIRMEZ**; Claude'da `/sec-ai-review` olarak kosulur.
+- **Ne zaman:** yeni bir AI-yuzeyi cikmadan once (modelin cagirabilecegi yeni tool, prompt'a
+  beslenen yeni veri kaynagi, yeni otonom agent / MCP server), veya talep uzerine.
+- Cikti ayni `sec-triage` akisina baglanir.
+- Kaynak/ilham: `github.com/utkusen/awesome-ai-security` + OWASP LLM Top 10; yasayan bir
+  checklist olarak kullanilir (tracker degil) — guncellik release ritminden gelir.
 
 ## "Triyaj dosyasini ne zaman/nasil uretirim?" (tetikleme)
 
