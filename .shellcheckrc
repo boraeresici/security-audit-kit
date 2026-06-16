@@ -4,6 +4,7 @@ disable=SC2086,SC2046
 # SC2015: `have x && ok || miss` — the middle branch (printf) never fails here, so the
 #         A && B || C caveat does not apply.
 disable=SC2015
-# SC2329: helper functions are invoked indirectly (command substitution / dispatch);
-#         shellcheck's reachability analysis flags them as unused. They are used.
-disable=SC2329
+# SC2329 (newer shellcheck) / SC2317 (older): helper functions are invoked indirectly
+#         (command substitution / dispatch); the reachability analysis flags them as
+#         unused/unreachable. They are used.
+disable=SC2329,SC2317
