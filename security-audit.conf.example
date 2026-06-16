@@ -1,0 +1,31 @@
+# security-audit-kit — per-project configuration EXAMPLE.
+#
+# Usage: copy this file to the repo ROOT as `.security-audit.conf`,
+# tune the values for your project, and COMMIT it (team-shared).
+# scan.sh sources it automatically.
+#
+# Precedence: env > this file > scan.sh default.  Thanks to the `:=` form you can
+# override for a single run via env:  SAST_PATHS="lib" bash scan.sh sast
+#
+# If you set none of these, the kit still works (smart defaults):
+#   SAST_PATHS=.  (whole repo; semgrep skips node_modules/.git/.venv)
+#   TF_DIR        auto from the first *.tf file
+#   js/py package manager + manifest auto-detected
+
+# --- SAST (semgrep) scan root ---
+# Narrow to source directories instead of the whole repo (faster, less noise).
+# Example: a backend + frontend source layout.
+: "${SAST_PATHS:=backend frontend}"
+
+# Semgrep rulesets (language/framework per project). Examples:
+#   p/owasp-top-ten p/secrets p/javascript p/python p/django p/golang p/react
+: "${SEMGREP_CONFIGS:=--config p/owasp-top-ten --config p/django --config p/secrets --config p/javascript}"
+
+# --- IaC (checkov) ---
+# Terraform directory. If left empty, it is auto-detected from the first *.tf.
+# : "${TF_DIR:=infra/terraform}"
+
+# --- Tool version pins (keep aligned with CI) ---
+# : "${GITLEAKS_VER:=v8.21.2}"
+# : "${TRIVY_VER:=0.58.0}"
+# : "${SYFT_VER:=v1.18.0}"

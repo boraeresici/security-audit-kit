@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# security-audit-kit pre-push — FULL local security scan before a PR.
+# Bypass (emergency): git push --no-verify  |  SKIP_SECURITY=1 git push
+set -euo pipefail
+[ "${SKIP_SECURITY:-0}" = "1" ] && { echo "[pre-push] SKIP_SECURITY=1"; exit 0; }
+
+ROOT="$(git rev-parse --show-toplevel)"
+echo "[pre-push] scan.sh all (full) — please wait..."
+if ! bash "$ROOT/tools/security-audit-kit/scan.sh" all; then
+  echo "[pre-push] BLOCKED. Triage: /sec-triage in Claude. Emergency: git push --no-verify"
+  exit 1
+fi
+exit 0

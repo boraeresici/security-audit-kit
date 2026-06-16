@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# security-audit-kit pre-commit — fast CVE audit when a dependency manifest changes.
+# Bypass (emergency): SKIP_SECURITY=1 git commit ...
+set -euo pipefail
+[ "${SKIP_SECURITY:-0}" = "1" ] && { echo "[pre-commit] SKIP_SECURITY=1"; exit 0; }
+
+ROOT="$(git rev-parse --show-toplevel)"
+KIT="$ROOT/tools/security-audit-kit"
+manifests='pyproject\.toml|uv\.lock|requirements.*\.txt|Pipfile|package\.json|pnpm-lock\.yaml|yarn\.lock|package-lock\.json'
+
+if git diff --cached --name-only | grep -qE "$manifests"; then
+  echo "[pre-commit] Dependency manifest changed -> scan.sh fast"
+  if ! bash "$KIT/scan.sh" fast; then
+    echo "[pre-commit] BLOCKED: dep/secret finding. Fix it or bypass with SKIP_SECURITY=1."
+    exit 1
+  fi
+fi
+exit 0
