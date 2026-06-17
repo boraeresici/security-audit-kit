@@ -45,10 +45,14 @@ The single canonical repository is:
 4. **Review diffs on update.** `bootstrap.sh <new-tag>` overwrites the vendored copy; run
    `git diff -- tools/security-audit-kit` before committing the bump.
 
-### Planned integrity tooling
-A `CHECKSUMS` manifest (SHA-256 of every kit file) plus a `scan.sh verify` command are planned,
-so you can detect tampering or a rogue skill added to a vendored copy. Transparency-logged
-signed releases may follow if adoption warrants. See the project roadmap.
+### Integrity verification (shipped)
+The kit ships a `CHECKSUMS` manifest (SHA-256 of every kit file). Run
+`bash tools/security-audit-kit/scan.sh verify` to confirm the vendored copy matches it — this
+detects a tampered file or a **rogue skill** dropped into a vendored copy. `install.sh` also
+runs it (advisory). Maintainers regenerate it with `scan.sh checksums`, and CI fails if it is
+stale. **Note:** the manifest lives in the same repo, so it proves *integrity vs. upstream*, not
+that upstream itself is honest — pair it with pinning a reviewed SHA. Transparency-logged signed
+releases (cosign) may follow if adoption warrants.
 
 ## Reporting a vulnerability
 Please report security issues **privately**, not in a public issue:

@@ -50,6 +50,17 @@ done
 echo "-- doctor --"
 $SCAN doctor >/dev/null 2>&1 && ok "doctor ran" || no "doctor failed"
 
+echo "-- integrity (verify / CHECKSUMS) --"
+if [ -f tools/security-audit-kit/CHECKSUMS ]; then
+  $SCAN verify >/dev/null 2>&1 && ok "verify: clean vendored copy passes" || no "verify: clean copy should pass"
+  echo "malicious instructions" > tools/security-audit-kit/skills/evil.skill.md
+  $SCAN verify >/dev/null 2>&1 && no "verify: rogue skill NOT detected" || ok "verify: rogue skill detected"
+  rm -f tools/security-audit-kit/skills/evil.skill.md
+  $SCAN verify >/dev/null 2>&1 && ok "verify: passes again after cleanup" || no "verify: should pass after cleanup"
+else
+  skip "verify tests (no CHECKSUMS in working tree yet)"
+fi
+
 echo "-- secret (gitleaks) + pre-commit gate --"
 if docker_ok; then
   $SCAN secret >/dev/null 2>&1 && ok "secret: clean repo passes" || no "secret: clean repo should pass"

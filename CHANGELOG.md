@@ -17,6 +17,9 @@ All notable changes to this project are documented here. The format is based on
 - **`tests/e2e.sh`** — end-to-end local test: vendors the working tree into a throwaway repo,
   runs `install.sh`, and asserts each gate fires (install/hooks/skills/config, secret + pre-commit
   gate, SAST via a fixture rule, summary.json). Tests the scriptable plumbing, not AI judgment.
+- **Supply-chain integrity (Tier S Layer 2):** a `CHECKSUMS` manifest + `scan.sh verify` (detects
+  tampered files / a rogue skill in a vendored copy) + `scan.sh checksums` to (re)generate it.
+  `install.sh` runs verify (advisory); CI fails if the manifest is stale.
 
 ### Changed
 - `sec-sast-deep` reframed as an explicit 3-phase **baseline → compare → assess** flow (map the

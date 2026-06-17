@@ -131,6 +131,7 @@ bash tools/security-audit-kit/scan.sh staged     # staged degisikliklerde saniye
 bash tools/security-audit-kit/scan.sh changed    # sadece degisen dosyalarda SAST (diff-aware, hizli)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
+bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 ```
 
 Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar. `SARIF=1`

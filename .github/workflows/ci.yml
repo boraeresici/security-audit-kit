@@ -14,3 +14,13 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 \
             scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push tests/e2e.sh
+
+  checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: CHECKSUMS manifest is current
+        run: |
+          bash scan.sh checksums
+          git diff --exit-code -- CHECKSUMS \
+            || { echo "::error::CHECKSUMS is stale — run 'bash scan.sh checksums' and commit it"; exit 1; }
