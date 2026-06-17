@@ -304,4 +304,4 @@ update. Full trust model, supply-chain guidance, and vulnerability reporting:
 [SECURITY.md](SECURITY.md).
 
 ## License
-[MIT](LICENSE) — developed by [studiobinary.io](https://studiobinary.io).
+[MIT](LICENSE) — developed by [studiobinary.co](https://studiobinary.co).

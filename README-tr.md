@@ -301,4 +301,4 @@ calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, te
 rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md).
 
 ## Lisans
-[MIT](LICENSE) — [studiobinary.io](https://studiobinary.io) tarafindan gelistirildi.
+[MIT](LICENSE) — [studiobinary.co](https://studiobinary.co) tarafindan gelistirildi.
