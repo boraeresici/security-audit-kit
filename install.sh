@@ -36,6 +36,12 @@ else
   cp "$KIT/security-audit.conf.example" "$ROOT/.security-audit.conf"
   ok ".security-audit.conf created (from example) -> edit SAST_PATHS etc. + commit it"
 fi
+if [ -f "$ROOT/.security-exclusions.md" ]; then
+  ok ".security-exclusions.md already exists (preserved)"
+else
+  cp "$KIT/exclusions.example.md" "$ROOT/.security-exclusions.md"
+  ok ".security-exclusions.md created (from example) -> triage reads it to drop noise + commit it"
+fi
 
 echo "== Claude skills =="
 # Source templates live in the kit under skills/; they are installed into the TARGET
@@ -50,6 +56,19 @@ mkdir -p "$ROOT/.claude/skills/sec-ai-review"
 cp "$KIT/skills/sec-ai-review.skill.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
 ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
 mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
+
+echo "== integrity =="
+# Advisory (not fatal): confirm the vendored kit matches its CHECKSUMS manifest. A modified
+# fork without a regenerated manifest will warn here — that is expected; review and proceed.
+if [ -f "$KIT/CHECKSUMS" ]; then
+  if bash "$KIT/scan.sh" verify >/dev/null 2>&1; then
+    ok "scan.sh verify: kit files match CHECKSUMS"
+  else
+    miss "scan.sh verify: MISMATCH — run 'bash $KIT_REL/scan.sh verify' and review before trusting"
+  fi
+else
+  miss "no CHECKSUMS manifest (older kit or a fork) -> skipping integrity check"
+fi
 
 cat <<EOF
 

@@ -15,6 +15,8 @@
 #   fast      staged + deps  (pre-commit / package install)
 #   all       secret + sast + deps + container + iac         (pre-push / pre-PR)
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
+#   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
+#   checksums (Re)generate the CHECKSUMS manifest             (maintainer)
 #
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
@@ -24,6 +26,10 @@ set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 1
+
+# Directory of the kit itself (where this script lives) — distinct from ROOT, which is the
+# TARGET repo. Used by `verify`/`checksums` so integrity is checked against the kit's files.
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # Per-project config (committed to the repo, shared with the team). Precedence is
 # env > conf > default: the conf only affects variables you did NOT set; env always wins.
@@ -203,9 +209,65 @@ scan_doctor(){
   git ls-files 2>/dev/null | grep -q  '\.tf$'                                                && echo "  terraform"  || true
 }
 
+# ---- integrity: CHECKSUMS manifest + verify (Tier S Layer 2) ----
+CHECKSUMS_FILE="$KIT_DIR/CHECKSUMS"
+
+sha256_of(){ # <file> -> the hex digest only
+  if have shasum; then shasum -a 256 "$1" | awk '{print $1}'
+  elif have sha256sum; then sha256sum "$1" | awk '{print $1}'
+  elif have openssl; then openssl dgst -sha256 "$1" | awk '{print $NF}'
+  else return 127; fi
+}
+have_sha(){ have shasum || have sha256sum || have openssl; }
+
+# The files that make up the kit (for manifest generation), from the kit's own git tree.
+# Excludes the manifest itself and local-only notes; per-project/generated files are not
+# tracked here so they never appear.
+kit_files(){ git -C "$KIT_DIR" ls-files 2>/dev/null | grep -vE '(^|/)CHECKSUMS$|\.local\.md$'; }
+
+# (Re)generate CHECKSUMS — maintainer action, run from the kit's git repo.
+scan_checksums(){
+  have_sha || { warn checksums "no sha256 tool (shasum/sha256sum/openssl)"; return 1; }
+  git -C "$KIT_DIR" rev-parse --show-toplevel >/dev/null 2>&1 || { warn checksums "not a git repo: $KIT_DIR"; return 1; }
+  local tmp; tmp="$(mktemp)"
+  ( cd "$KIT_DIR" && kit_files | while IFS= read -r f; do
+      [ -f "$f" ] && printf '%s  %s\n' "$(sha256_of "$f")" "$f"
+    done ) | LC_ALL=C sort -k2 > "$tmp"
+  mv "$tmp" "$CHECKSUMS_FILE"
+  say checksums "wrote ${CHECKSUMS_FILE#"$ROOT"/} ($(grep -c '' "$CHECKSUMS_FILE") files)"
+}
+
+# Verify the kit's files against CHECKSUMS: MODIFIED / MISSING listed files, plus EXTRA
+# files under skills/ (a rogue skill dropped into a vendored copy). Exit non-zero on any.
+scan_verify(){
+  [ -f "$CHECKSUMS_FILE" ] || { warn verify "no CHECKSUMS manifest (run: scan.sh checksums)"; return 1; }
+  have_sha || { warn verify "no sha256 tool (shasum/sha256sum/openssl)"; return 1; }
+  local issues; issues="$(mktemp)"
+  local want path got
+  while read -r want path; do
+    [ -z "${want:-}" ] && continue
+    if [ ! -f "$KIT_DIR/$path" ]; then printf 'MISSING   %s\n' "$path" >> "$issues"; continue; fi
+    got="$(cd "$KIT_DIR" && sha256_of "$path")"
+    [ "$got" = "$want" ] || printf 'MODIFIED  %s\n' "$path" >> "$issues"
+  done < "$CHECKSUMS_FILE"
+  if [ -d "$KIT_DIR/skills" ]; then
+    while IFS= read -r f; do
+      grep -qF "  $f" "$CHECKSUMS_FILE" || printf 'EXTRA     %s\n' "$f" >> "$issues"
+    done <<EOF
+$(cd "$KIT_DIR" && find skills -type f)
+EOF
+  fi
+  if [ -s "$issues" ]; then
+    printf '\033[31m[scan:verify] integrity FAILED:\033[0m\n'; cat "$issues"; rm -f "$issues"; return 1
+  fi
+  rm -f "$issues"; say verify "integrity OK ($(grep -c '' "$CHECKSUMS_FILE") files match CHECKSUMS)"; return 0
+}
+
 SARIF="${SARIF:-0}"
 
-[ "${1:-}" = "doctor" ] && { scan_doctor; exit 0; }
+[ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
+[ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
+[ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
 
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
@@ -224,7 +286,7 @@ run_scans(){
     sbom)      _dim sbom scan_sbom || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|fast|all|doctor)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|fast|all|doctor|verify|checksums)"; return 2 ;;
   esac
   return $rc
 }

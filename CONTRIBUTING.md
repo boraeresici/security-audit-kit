@@ -22,6 +22,12 @@ bash scan.sh doctor
 # Run a real dimension against this repo (dogfooding):
 bash scan.sh secret
 SARIF=1 bash scan.sh secret   # also writes docs/security/scan-findings/sarif/
+
+# End-to-end: vendor the working tree into a throwaway repo, install, and assert each
+# gate fires (install/hooks/skills/config, secret + pre-commit gate, SAST, summary.json).
+# Tests the scriptable plumbing, not the AI skills' judgment. Needs docker + uvx for full
+# coverage (missing tools skip their asserts).
+bash tests/e2e.sh
 ```
 
 ## Bumping a pinned tool version

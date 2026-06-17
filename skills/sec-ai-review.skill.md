@@ -78,14 +78,19 @@ The model/agent can do more than the task requires.
 ---
 
 ## Flow (three phases) — mirrors sec-sast-deep
+0. **Read `.security-exclusions.md`** at the repo root first (if present) — drop candidates
+   matching a do-not-report class / precedent before judging them.
 1. **Recon** — from the map, list *candidates* per category (input source → sink, why
    suspicious). Fan out with Explore/subagents if there are many.
-2. **Verify** — for each candidate, READ the data flow (file:line): can untrusted text reach
-   a powerful sink without an out-of-band gate? Justify it against the "not a flaw" cases.
-   If unsure, follow the flow; still unsure → treat as **real** (safe side).
+2. **Verify** — for each candidate, READ the data flow (file:line). The reachability gate IS the
+   core question here: **can untrusted text reach a powerful sink without an out-of-band gate?**
+   If not -> FP. Justify against the "not a flaw" cases, then assign a **confidence in `[0,1]`**
+   that it is real and exploitable. Report only `≥0.7` (bar: "would a security team raise this in
+   PR review?"); `<0.7` -> **Suppressed** with score + reason; uncertain at ≥0.7 -> UNCERTAIN.
 3. **Record** — append a `## Round N — sec-ai-review` section to the same
    `docs/security/scan-findings/findings-<TODAY>.md` (do NOT overwrite). Per finding:
-   location | OWASP-LLM id | severity | REAL/FP/UNCERTAIN | action.
+   location | OWASP-LLM id | severity | confidence | REAL/UNCERTAIN | action + a **Suppressed**
+   sub-list for what the gates dropped.
 
 ## Output -> hooking into the kit flow (same as sec-triage)
 - **REAL + small + high-confidence** → apply the fix (delimit + ignore-instructions-in-data,

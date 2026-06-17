@@ -129,6 +129,7 @@ bash tools/security-audit-kit/scan.sh staged     # sub-second secret scan of sta
 bash tools/security-audit-kit/scan.sh changed    # SAST on changed files only (diff-aware, fast)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
+bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 ```
 
 Every run writes a machine-readable `docs/security/scan-findings/summary.json`. Set
@@ -223,6 +224,14 @@ auto-detected). For customization, one file per project:
 use env for a one-off override: `SAST_PATHS="lib" bash scan.sh sast`.
 
 Pins live in the same file too: `GITLEAKS_VER` / `TRIVY_VER` / `SYFT_VER`.
+
+### Triage exclusions (signal control)
+`install.sh` also creates **`.security-exclusions.md`** (template:
+`exclusions.example.md`). The Claude triage skills read it **first** and auto-drop findings
+matching a do-not-report class (DoS, test-only files, memory-safe languages, UUID-guessing,
+trusted env vars…) or a precedent assumption — then run a **confidence-scored verification
+pass** and report only findings ≥ 0.7 (the rest go to a "Suppressed" section, on record). Tune
+and commit it per project; it kills recurring false-positive noise deterministically.
 
 ## HARD boundary
 These tools produce **internal evidence**. They **do not replace** PCI DSS Req

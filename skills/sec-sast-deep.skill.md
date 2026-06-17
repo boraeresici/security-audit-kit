@@ -20,9 +20,11 @@ of the **call path**, not a pattern. This skill deep-scans those 3 classes with 
 - When the user says "look for IDOR / authz / logic flaws, deep SAST".
 - **NOT on every push** — it costs tokens and needs judgment; run it periodically/on-trigger.
 
-## Prerequisite: an architecture map
-First produce a **scope map** (if you don't have one). Goal: which endpoint touches which
-resource, under which ownership/scope rule.
+## Phase 1 — baseline: map the architecture & the project's known-correct patterns
+Before judging anything, establish what *correct* looks like in THIS codebase, then flag
+**deviations** from it (a deviation is far higher-signal than a context-free pattern match).
+Produce a **scope map** (if you don't have one). Goal: which endpoint touches which resource,
+under which ownership/scope rule.
 - Endpoint inventory: `git grep -nE '@router\.(get|post|put|patch|delete)|@api\.|path\(|re_path\(|class .*View' <src-dir>`
 - Authz primitives: the tenant/owner scope helper, `request.user`/actor resolution, the
   `@PreAuthorize`-equivalent decorator/permission class, the four-eyes approval service, the
@@ -80,15 +82,23 @@ guards; an idempotency unique constraint; tested cumulative validation.
 
 ---
 
-## Flow (three phases)
-1. **Recon** — from the map above, produce a *candidate* list per class (endpoint/function +
-   reason for suspicion). If there are many candidates, fan out with Explore/subagents.
-2. **Verify** — for each candidate READ the call path (file:line). Justify the decision: is it
-   a flaw (no/avoidable protection) or the correct pattern (the "not a flaw" cases above)? If
-   unsure, follow the call site; if still unsure, treat it as **real** (safe side).
-3. **Record** — write the findings in `sec-triage` format: append a
-   `## Round N — sec-sast-deep` section to the same `docs/security/scan-findings/findings-<TODAY>.md`
-   (do NOT overwrite). Per finding: location | class | severity | REAL/FP/UNCERTAIN | action.
+## Flow (three phases: baseline -> compare -> assess)
+0. **Read `.security-exclusions.md`** at the repo root first (if present) — drop candidates that
+   match a do-not-report class or precedent assumption before spending judgment on them.
+1. **Phase 2 — compare (recon):** with Phase 1's baseline in hand, produce a *candidate* list per
+   class — each candidate is a **deviation** from the known-correct pattern (endpoint/function +
+   why it deviates). If there are many candidates, fan out with Explore/subagents.
+2. **Phase 3 — assess (verify):** for each candidate READ the call path (file:line) and apply two gates:
+   - **Reachability:** can untrusted input actually reach this sink? If not -> FP (not reachable).
+   - **Flaw vs. correct pattern:** is protection missing/avoidable, or is this one of the "not a
+     flaw" cases above? Justify against the baseline.
+   Then assign a **confidence in `[0,1]`** that it is a real, exploitable flaw. Report only
+   `≥0.7` (bar: "would a security team raise this in PR review?"); `<0.7` goes to **Suppressed**
+   with the score + reason. Genuinely uncertain at ≥0.7 -> keep as UNCERTAIN (safe side).
+3. **Record** — append a `## Round N — sec-sast-deep` section to the same
+   `docs/security/scan-findings/findings-<TODAY>.md` (do NOT overwrite). Per finding:
+   location | class | severity | confidence | REAL/UNCERTAIN | action. Add a **Suppressed**
+   sub-list for what the gates dropped (auditability).
 
 ## Output -> hooking into the kit flow
 This skill **feeds the raw-scan step of `sec-triage` with a deep SAST pass**; the triage/
