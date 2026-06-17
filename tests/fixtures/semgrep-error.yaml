@@ -1,0 +1,8 @@
+# Deterministic ERROR-severity rule for the e2e test (no registry download).
+# Matches a planted marker so we can assert the SAST gate fires reliably.
+rules:
+  - id: e2e-insecure-marker
+    languages: [generic]
+    severity: ERROR
+    message: e2e planted insecure marker
+    pattern: E2E_INSECURE_MARKER

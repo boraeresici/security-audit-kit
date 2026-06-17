@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format is based on
   section (on record, not silently dropped). New confidence column in the findings template.
 - **Reachability / attacker-control gate** across `sec-triage` and `sec-sast-deep`: a finding not
   reachable from untrusted input is dropped as FP.
+- **`tests/e2e.sh`** — end-to-end local test: vendors the working tree into a throwaway repo,
+  runs `install.sh`, and asserts each gate fires (install/hooks/skills/config, secret + pre-commit
+  gate, SAST via a fixture rule, summary.json). Tests the scriptable plumbing, not AI judgment.
 
 ### Changed
 - `sec-sast-deep` reframed as an explicit 3-phase **baseline → compare → assess** flow (map the

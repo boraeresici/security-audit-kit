@@ -13,4 +13,4 @@ jobs:
       - name: shellcheck (pinned image — no version drift; uses repo .shellcheckrc)
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 \
-            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push
+            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push tests/e2e.sh
