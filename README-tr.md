@@ -26,6 +26,30 @@ prompt injection, guvensiz cikti islemesi, asiri yetki). Son ikisi `scan.sh`'a g
 (yargi, script degil); periyodik/cutover-oncesi/yeni-endpoint veya AI-yuzeyi sonrasi
 Claude'da kosulur.
 
+## Yasam dongusu (kurulum → guncelleme → tarama)
+
+```mermaid
+flowchart TD
+    Q{First time, or<br/>already installed?}
+    Q -->|new| N1["mkdir -p tools/"]
+    N1 --> N2["download + review bootstrap.sh"]
+    N2 --> B["bash bootstrap.sh vX.Y.Z"]
+    Q -->|installed| C["bootstrap.sh --check"]
+    C -->|up to date| R
+    C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
+    RV --> B
+    B --> I["vendor into tools/security-audit-kit/ plus .kit-version,<br/>then install.sh: hooks, skills, .security-audit.conf,<br/>.security-exclusions.md, verify"]
+    I --> R(["ready"])
+    R --> S["scan: pre-commit staged-secret plus deps,<br/>pre-push all, or ad-hoc scan.sh"]
+    S -->|findings| T["/sec-triage in Claude:<br/>findings-DATE.md, then fix / allowlist"]
+    S -->|clean| D(["done"])
+    T --> D
+```
+
+Guncelleme **acik (manuel)**: `--check` yalniz raporlar (salt-okunur, kurmaz);
+`bootstrap.sh <tag>` re-vendor + install kosar. Hicbir sey upstream'i otomatik cekmez —
+tag'e pinle, diff'i incele, yukselt.
+
 ## Kurulum (onerilen): bu repo'dan pinli bootstrap
 
 `bootstrap.sh` kiti **pinli bir tag**'te ceker, projenin `tools/security-audit-kit/`'ine

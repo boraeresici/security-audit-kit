@@ -26,6 +26,29 @@ the OWASP LLM Top 10: prompt injection, insecure output handling, excessive agen
 latter two don't run inside `scan.sh` (judgment, not a script); run them in Claude
 periodically / before a cutover / after a new endpoint or AI surface.
 
+## Lifecycle (install → update → scan)
+
+```mermaid
+flowchart TD
+    Q{First time, or<br/>already installed?}
+    Q -->|new| N1["mkdir -p tools/"]
+    N1 --> N2["download + review bootstrap.sh"]
+    N2 --> B["bash bootstrap.sh vX.Y.Z"]
+    Q -->|installed| C["bootstrap.sh --check"]
+    C -->|up to date| R
+    C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
+    RV --> B
+    B --> I["vendor into tools/security-audit-kit/ plus .kit-version,<br/>then install.sh: hooks, skills, .security-audit.conf,<br/>.security-exclusions.md, verify"]
+    I --> R(["ready"])
+    R --> S["scan: pre-commit staged-secret plus deps,<br/>pre-push all, or ad-hoc scan.sh"]
+    S -->|findings| T["/sec-triage in Claude:<br/>findings-DATE.md, then fix / allowlist"]
+    S -->|clean| D(["done"])
+    T --> D
+```
+
+Updates are **explicit**: `--check` only reports (read-only, no install); `bootstrap.sh <tag>`
+re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, review the diff, bump.
+
 ## Install (recommended): bootstrap from this repo, pinned
 
 `bootstrap.sh` fetches the kit at a **pinned tag**, vendors it into your project's
