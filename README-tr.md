@@ -222,6 +222,14 @@ tek-seferlik override icin env kullan: `SAST_PATHS="lib" bash scan.sh sast`.
 
 Pin'ler de ayni dosyadan: `GITLEAKS_VER` / `TRIVY_VER` / `SYFT_VER`.
 
+### Triyaj exclusion'lari (sinyal kontrolu)
+`install.sh` ayrica **`.security-exclusions.md`** olusturur (sablon: `exclusions.example.md`).
+Claude triyaj skill'leri bunu **once** okur ve do-not-report sinifina (DoS, test-only dosya,
+memory-safe diller, UUID-tahmini, trusted env-var…) veya bir precedent varsayimina uyan
+bulgulari otomatik duser — sonra **confidence-skorlu bir dogrulama pasi** kosar ve yalniz ≥ 0.7
+bulgulari raporlar (gerisi kayit altinda "Suppressed" bolumune gider). Projene gore ayarla ve
+commit et; tekrar eden false-positive gurultusunu deterministik olarak yok eder.
+
 ## HARD sinir
 Bu araclar **ic kanit** uretir. PCI DSS Req 11.3.2 ASV scan ve Req 11.4 pentest
 **yerine gecmez** — onlar dis-makam/gated. Kit onlari kapatmaz; sadece kod-icine

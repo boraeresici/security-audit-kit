@@ -224,6 +224,14 @@ use env for a one-off override: `SAST_PATHS="lib" bash scan.sh sast`.
 
 Pins live in the same file too: `GITLEAKS_VER` / `TRIVY_VER` / `SYFT_VER`.
 
+### Triage exclusions (signal control)
+`install.sh` also creates **`.security-exclusions.md`** (template:
+`exclusions.example.md`). The Claude triage skills read it **first** and auto-drop findings
+matching a do-not-report class (DoS, test-only files, memory-safe languages, UUID-guessing,
+trusted env vars…) or a precedent assumption — then run a **confidence-scored verification
+pass** and report only findings ≥ 0.7 (the rest go to a "Suppressed" section, on record). Tune
+and commit it per project; it kills recurring false-positive noise deterministically.
+
 ## HARD boundary
 These tools produce **internal evidence**. They **do not replace** PCI DSS Req
 11.3.2 ASV scans or Req 11.4 pentests — those are external-authority / gated. The

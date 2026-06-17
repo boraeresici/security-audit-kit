@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Unreleased
+
+### Added — triage v2 (higher signal, less noise)
+- `.security-exclusions.md` (template `exclusions.example.md`, installed by `install.sh`): a
+  per-project list of do-not-report classes + precedent assumptions the triage skills read first.
+- **Confidence-scored verification pass** in `sec-triage`: every surviving finding is judged
+  independently with a `[0,1]` confidence; only ≥ 0.7 is reported, the rest go to a "Suppressed"
+  section (on record, not silently dropped). New confidence column in the findings template.
+- **Reachability / attacker-control gate** across `sec-triage` and `sec-sast-deep`: a finding not
+  reachable from untrusted input is dropped as FP.
+
+### Changed
+- `sec-sast-deep` reframed as an explicit 3-phase **baseline → compare → assess** flow (map the
+  project's known-correct patterns, flag deviations, then assess) + the reachability + confidence
+  gates and a Suppressed sub-list.
+- `sec-ai-review` gains the exclusions read + confidence gate (its data/authority flow already is
+  the reachability gate).
+
 ## [1.2.0] - 2026-06-16
 
 ### Added

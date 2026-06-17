@@ -36,6 +36,12 @@ else
   cp "$KIT/security-audit.conf.example" "$ROOT/.security-audit.conf"
   ok ".security-audit.conf created (from example) -> edit SAST_PATHS etc. + commit it"
 fi
+if [ -f "$ROOT/.security-exclusions.md" ]; then
+  ok ".security-exclusions.md already exists (preserved)"
+else
+  cp "$KIT/exclusions.example.md" "$ROOT/.security-exclusions.md"
+  ok ".security-exclusions.md created (from example) -> triage reads it to drop noise + commit it"
+fi
 
 echo "== Claude skills =="
 # Source templates live in the kit under skills/; they are installed into the TARGET
