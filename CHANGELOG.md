@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - Unreleased
+## [1.3.0] - 2026-06-17
 
 ### Added — triage v2 (higher signal, less noise)
 - `.security-exclusions.md` (template `exclusions.example.md`, installed by `install.sh`): a
@@ -78,6 +78,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.3.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/boraeresici/security-audit-kit/releases/tag/v1.0.0
