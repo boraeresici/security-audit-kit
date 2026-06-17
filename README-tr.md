@@ -225,6 +225,20 @@ sizintisi, model/veri tedarik zinciri. Pattern degil, veri/yetki akisini izler.
 - Kaynak/ilham: `github.com/utkusen/awesome-ai-security` + OWASP LLM Top 10; yasayan bir
   checklist olarak kullanilir (tracker degil) — guncellik release ritminden gelir.
 
+## Hangi skill ne siklikla (kadans)
+
+| Skill | Kadans | Tetik |
+|---|---|---|
+| `/sec-triage` | **rutin** — her bulgulu taramadan sonra | pre-push blok · paket ekledikten sonra · haftalik tarama |
+| `/sec-sast-deep` | **periyodik / kilometre tasi** (her push'ta degil) | cutover oncesi, veya yeni authz yuzeyi (endpoint/rol/4-goz) |
+| `/sec-ai-review` | **periyodik / kilometre tasi** (her push'ta degil) | yeni AI yuzeyi (LLM cagrisi / tool / agent / RAG / MCP); LLM yoksa atla |
+
+Release/cutover kapisinda ucuz → pahali kos:
+`scan.sh all` → `/sec-triage` → `/sec-sast-deep` (authz yuzeyi varsa) →
+`/sec-ai-review` (LLM varsa) → bulgulari konsolide et → fix/allowlist/takip → temiz tara.
+Iki derin skill token-maliyetli yargi pasidir — tetik-bazli, her push'ta degil; ciktilari
+ayni `findings-DATE.md`'ye eklenir.
+
 ## "Triyaj dosyasini ne zaman/nasil uretirim?" (tetikleme)
 
 **Tarama dosya URETMEZ; triyaj uretir.** Ayrim kasitli: `findings-*.md`
