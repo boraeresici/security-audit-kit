@@ -224,6 +224,20 @@ disclosure, and model/data supply chain. It follows the data/authority flow, not
 - Source/inspiration: `github.com/utkusen/awesome-ai-security` + the OWASP LLM Top 10,
   used as the living checklist (not a tracker) — currency comes from the release cadence.
 
+## When to run which skill (cadence)
+
+| Skill | Cadence | Trigger |
+|---|---|---|
+| `/sec-triage` | **routine** — after any scan with findings | pre-push block · after adding a package · weekly scan |
+| `/sec-sast-deep` | **periodic / milestone** (not every push) | before a cutover, or a new authz surface (endpoint/role/4-eyes) |
+| `/sec-ai-review` | **periodic / milestone** (not every push) | a new AI surface (LLM call / tool / agent / RAG / MCP); skip if no LLM |
+
+At a release/cutover gate, run cheap → expensive:
+`scan.sh all` → `/sec-triage` → `/sec-sast-deep` (if authz surfaces) →
+`/sec-ai-review` (if LLM) → consolidate findings → fix/allowlist/follow-up → re-scan clean.
+The two deep skills are token-costly judgment passes — trigger-based, not per-push; their
+findings append to the same `findings-DATE.md`.
+
 ## "When/how do I produce the triage file?" (triggering)
 
 **Scanning does NOT produce a file; triage does.** The split is deliberate:
@@ -290,4 +304,4 @@ update. Full trust model, supply-chain guidance, and vulnerability reporting:
 [SECURITY.md](SECURITY.md).
 
 ## License
-[MIT](LICENSE) — developed by [studiobinary.io](https://studiobinary.io).
+[MIT](LICENSE) — developed by [studiobinary.co](https://studiobinary.co).
