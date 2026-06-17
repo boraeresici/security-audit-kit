@@ -9,16 +9,16 @@ jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: shellcheck (pinned image — no version drift; uses repo .shellcheckrc)
         run: |
-          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 \
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
             scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push tests/e2e.sh
 
   checksums:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - name: CHECKSUMS manifest is current
         run: |
           bash scan.sh checksums

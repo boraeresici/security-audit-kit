@@ -73,8 +73,8 @@ fi
 cat <<EOF
 
 == install complete ==
-  ad-hoc scan   : bash $KIT_REL/scan.sh all      (or: fast|deps|secret|sast|iac|container|sbom)
-  adding a pkg  : pre-commit automatically runs 'fast'
+  ad-hoc scan   : bash $KIT_REL/scan.sh all      (or: fast|deps|secret|sast|changed|iac|container|sbom)
+  every commit  : pre-commit runs a staged-secret scan; + 'deps' when a manifest changes
   before a PR   : pre-push automatically runs 'all'
   finding triage: /sec-triage in Claude  -> docs/security/scan-findings/findings-<date>.md
   deep SAST     : /sec-sast-deep in Claude (authz/IDOR/logic; pre-cutover / after a new endpoint)

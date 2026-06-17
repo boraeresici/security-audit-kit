@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-06-17
+
+### Changed (supply-chain hardening of the kit's own CI/test tooling)
+- Pin the CI shellcheck image by **immutable digest** (was the `:v0.10.0` tag).
+- Pin all **GitHub Actions by commit SHA** (`actions/checkout`, `astral-sh/setup-uv`,
+  `github/codeql-action/upload-sarif`) with a `# vX.Y.Z` comment — mutable tags can be repointed.
+- Fix the `install.sh` summary wording: pre-commit runs a staged-secret scan on every commit
+  (+ `deps` on a manifest change), not `fast`; add `changed` to the listed scopes.
+
+> Note: the kit's docker scan tools (gitleaks/trivy/syft) were already digest-pinned. The
+> Python tools (semgrep/checkov/pip-audit) remain **version-pinned, not hash-pinned** — tracked
+> as a roadmap item to discuss before implementing.
+
 ## [1.3.0] - 2026-06-17
 
 ### Added — triage v2 (higher signal, less noise)
@@ -78,6 +91,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.3.1]: https://github.com/boraeresici/security-audit-kit/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.0.0...v1.1.0
