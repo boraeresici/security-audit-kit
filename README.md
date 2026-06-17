@@ -38,13 +38,31 @@ flowchart TD
     C -->|up to date| R
     C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
     RV --> B
-    B --> I["vendor into tools/security-audit-kit/ plus .kit-version,<br/>then install.sh: hooks, skills, .security-audit.conf,<br/>.security-exclusions.md, verify"]
+    B --> I["vendor + .kit-version, then install.sh:<br/>hooks, skills, .conf, .exclusions, verify"]
     I --> R(["ready"])
-    R --> S["scan: pre-commit staged-secret plus deps,<br/>pre-push all, or ad-hoc scan.sh"]
-    S -->|findings| T["/sec-triage in Claude:<br/>findings-DATE.md, then fix / allowlist"]
+
+    R --> S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>writes raw-DATE.log + summary.json"]
     S -->|clean| D(["done"])
-    T --> D
+    S -->|findings| T1
+
+    subgraph JUDGE["judgment in Claude — skills"]
+      direction TB
+      T1["1. /sec-triage — FIRST, after every scan<br/>exclusions, reachability, confidence >= 0.7"]
+      DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
+      AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
+      T1 --> F[["findings-DATE.md"]]
+      DEEP -. appends .-> F
+      AIR -. appends .-> F
+    end
+
+    F -->|FP / excluded| AL["allowlist (.gitleaks.toml / nosemgrep)<br/>or .security-exclusions.md"]
+    F -->|REAL| FX["fix now, OR promote to<br/>security-followups registry"]
+    FX --> S
 ```
+
+Skill order: **`/sec-triage` runs first** after any scan with findings (writes `findings-DATE.md`,
+splits FP→allowlist/exclusions vs REAL→fix/follow-up). **`/sec-sast-deep`** and **`/sec-ai-review`**
+are deeper, trigger-based passes whose findings append to the *same* file and flow.
 
 Updates are **explicit**: `--check` only reports (read-only, no install); `bootstrap.sh <tag>`
 re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, review the diff, bump.
