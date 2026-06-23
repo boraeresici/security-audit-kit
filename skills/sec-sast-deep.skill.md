@@ -10,8 +10,9 @@ description: Deep-scans with Claude for SEMANTIC security flaws that semgrep can
 of the **call path**, not a pattern. This skill deep-scans those 3 classes with Claude. It
 **complements semgrep, it does not replace it**.
 
-> Source/inspiration: `github.com/utkusen/sast-skills` (three-phase recon->verify->merge).
-> Adapted here to the kit's `sec-triage` flow and narrowed to the 3 most critical classes.
+> Independently written; inspired by `github.com/utkusen/sast-skills` (its three-phase
+> recon->verify->merge structure). Adapted to the kit's `sec-triage` flow and narrowed to the 3
+> most critical classes — no code or text is copied from it.
 
 ## When
 - **Before a cutover** (phase exit / version bump) — semgrep is clean but authz is not "deep".

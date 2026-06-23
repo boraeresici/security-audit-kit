@@ -209,8 +209,8 @@ authz/missing-role, business logic. It **complements semgrep, does not replace i
   surface (new endpoint/resolver/admin-viewer/4-eyes flow), or on request.
   NOT on every push.
 - Output feeds the same `sec-triage` flow (findings file + follow-up registry promotion).
-- Source/inspiration: `github.com/utkusen/sast-skills` (three-phase
-  recon->verify->merge); adapted to the kit's triage flow.
+- Independently written; inspired by `github.com/utkusen/sast-skills` (its three-phase
+  recon->verify->merge structure), adapted to the kit's triage flow — no code/text copied.
 
 ## AI/LLM security review — `/sec-ai-review`
 
@@ -224,8 +224,8 @@ disclosure, and model/data supply chain. It follows the data/authority flow, not
 - **When:** before shipping a new AI surface (a new tool the model can call, a new data
   source fed into a prompt, a new autonomous agent / MCP server), or on request.
 - Output feeds the same `sec-triage` flow.
-- Source/inspiration: `github.com/utkusen/awesome-ai-security` + the OWASP LLM Top 10,
-  used as the living checklist (not a tracker) — currency comes from the release cadence.
+- Independently written; inspired by `github.com/utkusen/awesome-ai-security` + the OWASP LLM
+  Top 10, used as the living checklist (not a tracker) — currency comes from the release cadence.
 
 ## Threat modeling — `/sec-threat-model`
 

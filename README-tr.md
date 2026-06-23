@@ -210,8 +210,8 @@ derin tarar: yatay authz/IDOR, dikey authz/eksik-rol, business-logic. semgrep'i
 - **Ne zaman:** cutover-oncesi (faz exit / version bump), yeni authz-yuzeyi sonrasi
   (yeni endpoint/resolver/admin-viewer/4-goz akisi), veya talep uzerine. Her push'ta DEGIL.
 - Cikti ayni `sec-triage` akisina baglanir (findings dosyasi + takip-listesi terfi).
-- Kaynak/ilham: `github.com/utkusen/sast-skills` (uc-fazli recon->verify->merge);
-  kit'in triyaj akisina uyarlandi.
+- Bagimsiz yazildi; `github.com/utkusen/sast-skills`'ten ilham (uc-fazli recon->verify->merge
+  yapisi), kit'in triyaj akisina uyarlandi — kod/metin kopyalanmadi.
 
 ## AI/LLM guvenlik incelemesi — `/sec-ai-review`
 
@@ -225,8 +225,8 @@ sizintisi, model/veri tedarik zinciri. Pattern degil, veri/yetki akisini izler.
 - **Ne zaman:** yeni bir AI-yuzeyi cikmadan once (modelin cagirabilecegi yeni tool, prompt'a
   beslenen yeni veri kaynagi, yeni otonom agent / MCP server), veya talep uzerine.
 - Cikti ayni `sec-triage` akisina baglanir.
-- Kaynak/ilham: `github.com/utkusen/awesome-ai-security` + OWASP LLM Top 10; yasayan bir
-  checklist olarak kullanilir (tracker degil) — guncellik release ritminden gelir.
+- Bagimsiz yazildi; `github.com/utkusen/awesome-ai-security` + OWASP LLM Top 10'dan ilham;
+  yasayan bir checklist olarak kullanilir (tracker degil) — guncellik release ritminden gelir.
 
 ## Tehdit modelleme — `/sec-threat-model`
 
