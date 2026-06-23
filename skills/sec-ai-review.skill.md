@@ -75,6 +75,19 @@ The model/agent can do more than the task requires.
   indirect injection; check what can enter the index and whether it is attributable.
 - Third-party tool/plugin/MCP server trusted with credentials or data without review.
 
+## Untrusted-text surfaces (check EACH — does any reach the model/tools unvalidated?)
+Treat every one of these as attacker-controllable, then ask "is it delimited from instructions, and
+can it reach a powerful sink without an out-of-band gate?":
+- inbound user text · retrieved/RAG documents · tool/function-call outputs · MCP server outputs ·
+  shell/web/HTTP results fed back in · prior-turn memory / conversation history · file contents /
+  patches · sub-agent or skill outputs. (Adapted from Lyrie's "Shield Doctrine".)
+
+## Known attack classes (ground findings in recognized techniques — static check, no execution)
+Assess whether prompt-handling code is hardened against the named jailbreak/injection families:
+- **crescendo** (gradual multi-turn escalation) · **tap / pair** (iterative tree / refinement) ·
+  **gcg** (gradient/adversarial suffix) · **autodan** (genetic black-box) ·
+  **indirect injection** via retrieved/tool content. Reference these by name in findings.
+
 ---
 
 ## Flow (three phases) — mirrors sec-sast-deep
