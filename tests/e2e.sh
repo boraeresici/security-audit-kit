@@ -98,6 +98,29 @@ if [ -f "$SUM" ]; then
   else skip "summary.json validity (no python3)"; fi
 else no "summary.json not written"; fi
 
+echo "-- bootstrap SHA-verify (--expect enforcement, offline local repo) --"
+# Build a throwaway 'kit repo' (local, offline) with a tag, then bootstrap from it.
+KITREPO="$(mktemp -d)"
+if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$KITREPO"/; else cp -R "$KIT_SRC"/. "$KITREPO"/ && rm -rf "$KITREPO/.git"; fi
+( cd "$KITREPO" && git init -q && git -c user.email=e2e@test -c user.name=e2e add -A \
+    && git -c user.email=e2e@test -c user.name=e2e commit -qm kit && git tag v0.0.0-test )
+GOOD="$(git -C "$KITREPO" rev-parse HEAD)"
+# wrong --expect -> must REFUSE and must NOT vendor
+T1="$(mktemp -d)"; ( cd "$T1" && git init -q )
+if ( cd "$T1" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v0.0.0-test --expect=deadbeefdeadbeef ) >/dev/null 2>&1; then
+  no "bootstrap: wrong --expect should be REFUSED"
+else
+  [ -d "$T1/tools/security-audit-kit" ] && no "bootstrap: refused but still vendored" || ok "bootstrap: wrong --expect refused (no vendor)"
+fi
+# correct --expect -> succeeds + vendors
+T2="$(mktemp -d)"; ( cd "$T2" && git init -q )
+if ( cd "$T2" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v0.0.0-test --expect="$GOOD" ) >/dev/null 2>&1; then
+  [ -f "$T2/tools/security-audit-kit/.kit-version" ] && ok "bootstrap: correct --expect succeeds + vendors" || no "bootstrap: succeeded but no vendor"
+else
+  no "bootstrap: correct --expect should succeed"
+fi
+rm -rf "$KITREPO" "$T1" "$T2"
+
 echo ""
 echo "== e2e: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

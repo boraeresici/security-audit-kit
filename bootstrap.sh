@@ -10,29 +10,36 @@
 #   curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh -o bootstrap.sh && less bootstrap.sh
 #   # 2) Run pinned to a tag:
 #   bash bootstrap.sh v1.0.0
-#   bash bootstrap.sh v1.0.0 --scan        # also run a full scan after install
-#   bash bootstrap.sh --check              # IS THERE AN UPDATE? (no clone, read-only)
+#   bash bootstrap.sh v1.0.0 --scan          # also run a full scan after install
+#   bash bootstrap.sh v1.0.0 --expect=<sha>  # REFUSE unless the ref resolves to <sha> (enforce the pin)
+#   bash bootstrap.sh --check                # IS THERE AN UPDATE? (no clone, read-only)
 #
-# Override (env): KIT_REPO, KIT_REF, DEST_REL.
+# Override (env): KIT_REPO, KIT_REF, DEST_REL, KIT_EXPECT_SHA.
 set -euo pipefail
 
 # --- configurable ---
 KIT_REPO="${KIT_REPO:-https://github.com/boraeresici/security-audit-kit.git}"
 DEST_REL="${DEST_REL:-tools/security-audit-kit}"
 
-# --- arg parse: first positional = ref (tag/SHA); --scan first scan; --check check ---
+# --- arg parse: first positional = ref (tag/SHA); --scan first scan; --check check;
+#     --expect=<sha> enforce the pin; --allow-ref-change permit a moved ref ---
 RUN_SCAN=0
 DO_CHECK=0
+ALLOW_REF_CHANGE=0
+EXPECT_SHA=""
 REF_ARG=""
 for a in "$@"; do
   case "$a" in
     --scan) RUN_SCAN=1 ;;
     --check|check) DO_CHECK=1 ;;
-    -*) echo "unknown flag: $a (--scan | --check supported)"; exit 2 ;;
+    --allow-ref-change) ALLOW_REF_CHANGE=1 ;;
+    --expect=*) EXPECT_SHA="${a#--expect=}" ;;
+    -*) echo "unknown flag: $a (--scan | --check | --expect=<sha> | --allow-ref-change)"; exit 2 ;;
     *) REF_ARG="$a" ;;
   esac
 done
 KIT_REF="${KIT_REF:-${REF_ARG:-}}"
+EXPECT_SHA="${EXPECT_SHA:-${KIT_EXPECT_SHA:-}}"
 
 ok(){ printf '  \033[32mok\033[0m  %s\n' "$1"; }
 warn(){ printf '  \033[33m!!\033[0m  %s\n' "$1"; }
@@ -78,6 +85,27 @@ if ! git clone --depth 1 --branch "$KIT_REF" "$KIT_REPO" "$TMP" 2>/dev/null; the
 fi
 SHA="$(git -C "$TMP" rev-parse HEAD)"
 ok "fetched @ $KIT_REF ($SHA)"
+
+# --- SHA verification (Layer 0 hardening): ENFORCE the pin, don't just record it. ---
+# Runs BEFORE the vendor step (the rsync --delete below would remove the old .kit-version).
+# (a) --expect / KIT_EXPECT_SHA: refuse if the resolved SHA isn't the one you reviewed.
+if [ -n "$EXPECT_SHA" ]; then
+  case "$SHA" in
+    "$EXPECT_SHA"*) ok "SHA matches --expect ($EXPECT_SHA)" ;;
+    *) die "SHA mismatch: '$KIT_REF' resolved to $SHA but --expect was $EXPECT_SHA. Refusing (possible tag repoint / wrong ref)." ;;
+  esac
+fi
+# (b) Tag-repoint guard: re-vendoring the SAME ref already pinned, but it now resolves to a
+#     DIFFERENT commit -> the tag/branch MOVED. Refuse unless explicitly allowed.
+if [ -f "$ROOT/$DEST_REL/.kit-version" ]; then
+  prev_ref="$(awk '{print $1}' "$ROOT/$DEST_REL/.kit-version")"
+  prev_sha="$(awk '{print $2}' "$ROOT/$DEST_REL/.kit-version")"
+  if [ "$prev_ref" = "$KIT_REF" ] && [ -n "$prev_sha" ] && [ "$prev_sha" != "$SHA" ]; then
+    [ "$ALLOW_REF_CHANGE" = "1" ] \
+      && warn "ref '$KIT_REF' moved ${prev_sha:0:12} -> ${SHA:0:12} (allowed via --allow-ref-change)" \
+      || die "ref '$KIT_REF' now resolves to ${SHA:0:12} but the pinned .kit-version has ${prev_sha:0:12} — the tag/branch MOVED (possible repoint). Review it, then re-run with --expect=$SHA or --allow-ref-change."
+  fi
+fi
 
 # Vendor: copy the clone contents into DEST (excluding .git). Idempotent: overwrites.
 rm -rf "$TMP/.git"

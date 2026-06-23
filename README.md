@@ -81,7 +81,8 @@ curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
 bash bootstrap.sh v1.0.0
-bash bootstrap.sh v1.0.0 --scan        # also run a full scan after install
+bash bootstrap.sh v1.0.0 --scan          # also run a full scan after install
+bash bootstrap.sh v1.0.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
@@ -116,7 +117,10 @@ Why this shape (consistent with the kit's own ethos):
   a remote script straight into a shell is the exact anti-pattern the kit warns against.
 - **Pinning is required in practice.** A moving ref (`main`) breaks the "no drift vs.
   CI" promise; bootstrap warns if you don't pass a tag/SHA. It writes a `.kit-version`
-  (ref + resolved SHA) you can commit so the whole team shares one pinned version.
+  (ref + resolved SHA) you can commit so the whole team shares one pinned version. Pass
+  `--expect=<sha>` to **enforce** the pin (refuse if the ref resolves elsewhere), and a
+  re-vendor of an already-pinned ref that now points to a different commit is refused
+  (tag-repoint guard) unless you pass `--allow-ref-change`.
 - **Auto-scan is opt-in** (`--scan`), not the default — it respects the kit's split
   between the gate (hooks, deterministic) and judgment (`/sec-triage`, needs Claude).
 - **Idempotent.** Re-run `bash tools/security-audit-kit/bootstrap.sh <new-tag>` to

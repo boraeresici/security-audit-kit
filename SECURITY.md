@@ -39,6 +39,9 @@ The single canonical repository is:
 2. **Pin a tag or commit SHA.** `bootstrap.sh` writes a `.kit-version` (ref + resolved SHA);
    commit it so your whole team shares one reviewed, pinned version. A git commit SHA is a
    content hash of the entire tree — pinning it is your strongest built-in integrity control.
+   Pass `bootstrap.sh <ref> --expect=<sha>` to **enforce** the pin (it refuses if the ref
+   resolves to a different commit), and a re-vendor of an already-pinned ref that has moved is
+   refused (tag-repoint guard) unless you pass `--allow-ref-change`.
 3. **Review the skills.** Files under `.claude/skills/` are instructions an AI will follow.
    Read them like any code you grant access to. A hash proves a skill is *unchanged from
    upstream*; it does **not** prove it is *safe* — that is what review is for.
