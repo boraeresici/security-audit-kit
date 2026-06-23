@@ -18,12 +18,13 @@ Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs**
 (trivy), **SBOM** (syft). Eksik toolchain olan boyut otomatik atlanir.
 
-Bunlarin ustune uc Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
+Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
 gercek/FP karari -> fix/allowlist), **`sec-sast-deep`** (semgrep'in pattern'le goremedigi
 *semantik* kod aciklari: yatay authz/IDOR, dikey authz/eksik-rol, business-logic —
-cagri-yolu izleyerek) ve **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
-prompt injection, guvensiz cikti islemesi, asiri yetki). Son ikisi `scan.sh`'a girmez
-(yargi, script degil); periyodik/cutover-oncesi/yeni-endpoint veya AI-yuzeyi sonrasi
+cagri-yolu izleyerek), **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
+prompt injection, guvensiz cikti islemesi, asiri yetki) ve **`sec-threat-model`** (STRIDE +
+data-flow ile saldiri yuzeyi tehdit modeli). Son ucu `scan.sh`'a girmez (yargi, script
+degil); periyodik/cutover-oncesi/yeni-endpoint, AI-yuzeyi veya yeni-subsystem sonrasi
 Claude'da kosulur.
 
 ## Yasam dongusu (kurulum → guncelleme → tarama)
@@ -50,9 +51,11 @@ flowchart TD
       T1["1. /sec-triage — FIRST, after every scan<br/>exclusions, reachability, confidence >= 0.7"]
       DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
       AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
+      TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
       T1 --> F[["findings-DATE.md"]]
       DEEP -. appends .-> F
       AIR -. appends .-> F
+      TM -. appends .-> F
     end
 
     F -->|FP / excluded| AL["allowlist (.gitleaks.toml / nosemgrep)<br/>or .security-exclusions.md"]
@@ -225,6 +228,18 @@ sizintisi, model/veri tedarik zinciri. Pattern degil, veri/yetki akisini izler.
 - Kaynak/ilham: `github.com/utkusen/awesome-ai-security` + OWASP LLM Top 10; yasayan bir
   checklist olarak kullanilir (tracker degil) — guncellik release ritminden gelir.
 
+## Tehdit modelleme — `/sec-threat-model`
+
+`sec-sast-deep`'ten daha yuksek irtifa (o somut kod aciklari bulur): `sec-threat-model` **saldiri
+yuzeyini ve trust boundary'leri** haritalar ve *tasarim geregi ne ters gidebilir, ne savunulmamis*
+diye sorar — **STRIDE + data-flow** ile. Yargi-only, her repoda yeniden kullanilabilir.
+
+- **`scan.sh`'a GIRMEZ**; Claude'da `/sec-threat-model` olarak kosulur.
+- **Ne zaman:** yeni bir subsystem / trust boundary, guvenlik tasarim incelemesi, cutover oncesi
+  veya talep uzerine. Her push'ta degil.
+- **Cikti:** yasayan bir `docs/security/threat-model-<TARIH>.md` (data-flow + STRIDE tablolari);
+  somut bosluklar ayni `sec-triage` akisina (findings + takip) terfi eder.
+
 ## Hangi skill ne siklikla (kadans)
 
 | Skill | Kadans | Tetik |
@@ -232,6 +247,7 @@ sizintisi, model/veri tedarik zinciri. Pattern degil, veri/yetki akisini izler.
 | `/sec-triage` | **rutin** — her bulgulu taramadan sonra | pre-push blok · paket ekledikten sonra · haftalik tarama |
 | `/sec-sast-deep` | **periyodik / kilometre tasi** (her push'ta degil) | cutover oncesi, veya yeni authz yuzeyi (endpoint/rol/4-goz) |
 | `/sec-ai-review` | **periyodik / kilometre tasi** (her push'ta degil) | yeni AI yuzeyi (LLM cagrisi / tool / agent / RAG / MCP); LLM yoksa atla |
+| `/sec-threat-model` | **periyodik / kilometre tasi** (her push'ta degil) | yeni subsystem / trust boundary, veya guvenlik tasarim incelemesi |
 
 Release/cutover kapisinda ucuz → pahali kos:
 `scan.sh all` → `/sec-triage` → `/sec-sast-deep` (authz yuzeyi varsa) →

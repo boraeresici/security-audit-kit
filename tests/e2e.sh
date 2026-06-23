@@ -41,7 +41,7 @@ SCAN="bash tools/security-audit-kit/scan.sh"
 echo "-- install --"
 bash tools/security-audit-kit/install.sh >/dev/null 2>&1 && ok "install.sh ran" || no "install.sh failed"
 [ "$(git config core.hooksPath)" = "tools/security-audit-kit/hooks" ] && ok "hooksPath set" || no "hooksPath not set"
-for s in sec-triage sec-sast-deep sec-ai-review; do
+for s in sec-triage sec-sast-deep sec-ai-review sec-threat-model; do
   [ -f ".claude/skills/$s/SKILL.md" ] && ok "skill installed: $s" || no "skill missing: $s"
 done
 [ -f .security-audit.conf ] && ok ".security-audit.conf created" || no ".security-audit.conf missing"

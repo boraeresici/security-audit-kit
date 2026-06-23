@@ -55,6 +55,9 @@ ok ".claude/skills/sec-sast-deep/SKILL.md (semantic SAST: authz/IDOR/logic)"
 mkdir -p "$ROOT/.claude/skills/sec-ai-review"
 cp "$KIT/skills/sec-ai-review.skill.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
 ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
+mkdir -p "$ROOT/.claude/skills/sec-threat-model"
+cp "$KIT/skills/sec-threat-model.skill.md" "$ROOT/.claude/skills/sec-threat-model/SKILL.md"
+ok ".claude/skills/sec-threat-model/SKILL.md (STRIDE + data-flow threat modeling)"
 mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
 
 echo "== integrity =="
@@ -79,6 +82,7 @@ cat <<EOF
   finding triage: /sec-triage in Claude  -> docs/security/scan-findings/findings-<date>.md
   deep SAST     : /sec-sast-deep in Claude (authz/IDOR/logic; pre-cutover / after a new endpoint)
   AI/LLM review : /sec-ai-review in Claude (prompt injection/agency; if the code calls an LLM)
+  threat model  : /sec-threat-model in Claude (STRIDE/data-flow; new subsystem / design review)
   emergency bypass: SKIP_SECURITY=1 git commit   |   git push --no-verify
 
 HARD boundary: produces internal evidence; does NOT replace an ASV scan + pentest.
