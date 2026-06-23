@@ -68,6 +68,11 @@ high-signal**: raw scan -> exclusions + reachability filter -> confidence-scored
      sanitize injection). Show the diff and, if possible, re-run the scan to confirm it is clean.
    - Not directly fixable / cross-cutting -> add an entry to the project's security tracking list
      (a `security-followups.md`-style registry if one exists; else mark it "OPEN" + a follow-up note).
+   - **Before deferring/allowlisting a *dependency CVE*, check its exploit signals** — look them up
+     on demand for just those few CVEs: **CISA KEV** (is it actively exploited in the wild?) and
+     **EPSS** (exploit-probability score). **In KEV or high EPSS -> do NOT defer**; fix or escalate
+     now. A not-in-KEV, low-EPSS CVE with no available patch is safer to defer with a follow-up.
+     (On-demand lookup only — the kit does not vendor these feeds; they must stay fresh.)
 
 7. **Summary:** counts of REAL / UNCERTAIN / FP / suppressed; which allowlists; which fixes; which
    entries opened. If the pre-push was blocked: after FP allowlist + real fix, `scan.sh all` must

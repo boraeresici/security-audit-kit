@@ -4,7 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2026-06-17
+## [1.5.0] - 2026-06-23
+
+### Changed (skill content enrichment — no new infra)
+- **`sec-triage`:** before deferring/allowlisting a *dependency CVE*, check **CISA KEV** +
+  **EPSS** on demand (just those CVEs) — in KEV / high EPSS → do not defer. Lightweight close of
+  the KEV/EPSS idea (no vendored feeds; the kit stays offline, the lookup stays fresh).
+- **`sec-sast-deep`:** added a "past-fix recurrence & incomplete patches" bonus pass — diff recent
+  security commits for incomplete fixes; grep the codebase for siblings of a past finding's pattern.
+- **`sec-ai-review`:** added an explicit untrusted-text-surfaces checklist (8 surfaces, from Lyrie's
+  "Shield Doctrine") + named attack classes (crescendo / tap / pair / gcg / autodan) for static review.
+
+## [1.4.0] - 2026-06-23
 
 ### Added
 - **`sec-threat-model` skill** — STRIDE + data-flow threat modeling of the repo's attack surface
@@ -99,6 +110,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.5.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/boraeresici/security-audit-kit/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.2.0...v1.3.0

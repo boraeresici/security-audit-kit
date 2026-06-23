@@ -81,6 +81,16 @@ code**. High-value examples (adapt to your domain):
 **Not a flaw:** server-side amount recomputation (does not trust the client); FSM transition
 guards; an idempotency unique constraint; tested cumulative validation.
 
+## Bonus pass — past-fix recurrence & incomplete patches
+Cheap and high-signal: a real flaw is usually fixed in ONE place, but the same bug-class often
+lives elsewhere. Run this alongside the 3 classes.
+- **Incomplete fix:** read recent security commits/patches (`git log --grep` for fix/CVE/security/
+  CVE-IDs) — does the patch cover *every* call path, or only the reported one? Look for the same
+  sink hardened here but left raw next door.
+- **Recurrence:** take the *pattern* of a past finding/CVE (unscoped query, missing role check,
+  unsanitized sink) and grep the codebase for siblings that match it.
+- Record matches as normal findings (location | class | severity | confidence | REAL/UNCERTAIN).
+
 ---
 
 ## Flow (three phases: baseline -> compare -> assess)
