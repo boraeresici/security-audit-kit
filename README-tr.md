@@ -82,7 +82,8 @@ curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
 bash bootstrap.sh v1.0.0
-bash bootstrap.sh v1.0.0 --scan        # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.0.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.0.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
@@ -118,7 +119,10 @@ Neden bu bicim (kitin kendi felsefesiyle tutarli):
   anti-pattern'dir.
 - **Pinleme pratikte zorunlu.** Hareketli ref (`main`) "CI ile drift yok" vaadini
   bozar; tag/SHA vermezsen bootstrap uyarir. `.kit-version` (ref + cozulen SHA)
-  yazar — commit'lersen tum takim tek pinli surumu paylasir.
+  yazar — commit'lersen tum takim tek pinli surumu paylasir. `--expect=<sha>` ile pini
+  **dayatabilirsin** (ref baska commit'e cozulurse reddeder); ayrica pinli bir ref'i
+  yeniden vendor'larken farkli commit'e tasinmissa (tag-repoint korumasi) `--allow-ref-change`
+  vermeden reddedilir.
 - **Auto-scan opt-in** (`--scan`), varsayilan DEGIL — kitin **kapi (hook,
   deterministik) ↔ yargi (`/sec-triage`, Claude gerekir)** ayrimina saygi.
 - **Idempotent.** Yeni pinli surume gecmek icin
