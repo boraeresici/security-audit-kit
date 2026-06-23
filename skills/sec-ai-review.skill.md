@@ -11,9 +11,9 @@ flow and granted authority, not a regex. This skill reviews that boundary with C
 **complements** `sec-sast-deep` (code authz/logic) and `scan.sh` (secrets/SAST/deps); it
 does not replace them.
 
-> Source/inspiration: `github.com/utkusen/awesome-ai-security` (curated AI-security
-> resources) and the **OWASP Top 10 for LLM Applications**. Use those as the living
-> checklist; this skill adapts them to the kit's `sec-triage` output flow.
+> Independently written; inspired by `github.com/utkusen/awesome-ai-security` (used as a
+> checklist source) and the **OWASP Top 10 for LLM Applications**. This skill adapts those ideas
+> to the kit's `sec-triage` output flow — no code or text is copied from those sources.
 
 ## When
 - The codebase **calls an LLM** (chat/completion/embeddings), exposes **tools/function

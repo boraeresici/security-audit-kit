@@ -18,13 +18,14 @@ Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs** (trivy),
 **SBOM** (syft). Any dimension whose toolchain is missing is skipped automatically.
 
-On top of these, three Claude skills add a judgment layer: **`sec-triage`** (raw
+On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
 scan -> real/false-positive decision -> fix/allowlist), **`sec-sast-deep`** (*semantic*
 code flaws semgrep's patterns miss: horizontal authz/IDOR, vertical authz/missing-role,
-business logic — by following the call path), and **`sec-ai-review`** (AI/LLM risks per
-the OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency). The
-latter two don't run inside `scan.sh` (judgment, not a script); run them in Claude
-periodically / before a cutover / after a new endpoint or AI surface.
+business logic — by following the call path), **`sec-ai-review`** (AI/LLM risks per the
+OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency), and
+**`sec-threat-model`** (STRIDE + data-flow threat modeling of the attack surface). The
+latter three don't run inside `scan.sh` (judgment, not a script); run them in Claude
+periodically / before a cutover / after a new endpoint, AI surface, or subsystem.
 
 ## Lifecycle (install → update → scan)
 
@@ -50,9 +51,11 @@ flowchart TD
       T1["1. /sec-triage — FIRST, after every scan<br/>exclusions, reachability, confidence >= 0.7"]
       DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
       AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
+      TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
       T1 --> F[["findings-DATE.md"]]
       DEEP -. appends .-> F
       AIR -. appends .-> F
+      TM -. appends .-> F
     end
 
     F -->|FP / excluded| AL["allowlist (.gitleaks.toml / nosemgrep)<br/>or .security-exclusions.md"]
@@ -206,8 +209,8 @@ authz/missing-role, business logic. It **complements semgrep, does not replace i
   surface (new endpoint/resolver/admin-viewer/4-eyes flow), or on request.
   NOT on every push.
 - Output feeds the same `sec-triage` flow (findings file + follow-up registry promotion).
-- Source/inspiration: `github.com/utkusen/sast-skills` (three-phase
-  recon->verify->merge); adapted to the kit's triage flow.
+- Independently written; inspired by `github.com/utkusen/sast-skills` (its three-phase
+  recon->verify->merge structure), adapted to the kit's triage flow — no code/text copied.
 
 ## AI/LLM security review — `/sec-ai-review`
 
@@ -221,8 +224,20 @@ disclosure, and model/data supply chain. It follows the data/authority flow, not
 - **When:** before shipping a new AI surface (a new tool the model can call, a new data
   source fed into a prompt, a new autonomous agent / MCP server), or on request.
 - Output feeds the same `sec-triage` flow.
-- Source/inspiration: `github.com/utkusen/awesome-ai-security` + the OWASP LLM Top 10,
-  used as the living checklist (not a tracker) — currency comes from the release cadence.
+- Independently written; inspired by `github.com/utkusen/awesome-ai-security` + the OWASP LLM
+  Top 10, used as the living checklist (not a tracker) — currency comes from the release cadence.
+
+## Threat modeling — `/sec-threat-model`
+
+Higher-altitude than `sec-sast-deep` (which finds concrete code flaws): `sec-threat-model` maps
+the **attack surface and trust boundaries** and asks *what could go wrong by design, and what is
+not defended* — using **STRIDE + a data-flow** view. Judgment-only, reusable in any repo.
+
+- **Does NOT run inside `scan.sh`**; run it as `/sec-threat-model` in Claude.
+- **When:** a new subsystem / trust boundary, a security design review, before a cutover, or on
+  request. NOT per-push.
+- **Output:** a living `docs/security/threat-model-<DATE>.md` (data-flow + STRIDE tables); concrete
+  gaps are promoted into the same `sec-triage` flow (findings file + follow-up registry).
 
 ## When to run which skill (cadence)
 
@@ -231,6 +246,7 @@ disclosure, and model/data supply chain. It follows the data/authority flow, not
 | `/sec-triage` | **routine** — after any scan with findings | pre-push block · after adding a package · weekly scan |
 | `/sec-sast-deep` | **periodic / milestone** (not every push) | before a cutover, or a new authz surface (endpoint/role/4-eyes) |
 | `/sec-ai-review` | **periodic / milestone** (not every push) | a new AI surface (LLM call / tool / agent / RAG / MCP); skip if no LLM |
+| `/sec-threat-model` | **periodic / milestone** (not every push) | a new subsystem / trust boundary, or a security design review |
 
 At a release/cutover gate, run cheap → expensive:
 `scan.sh all` → `/sec-triage` → `/sec-sast-deep` (if authz surfaces) →
