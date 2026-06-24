@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-06-24
+
+### Fixed (dependency-scan reliability — found via dogfooding)
+- **pip-audit now audits the project's environment, not uvx's empty one.** It points
+  `PIPAPI_PYTHON_LOCATION` at an active `$VIRTUAL_ENV` (else the repo's `.venv`); without one it
+  says so and suggests `scan.sh osv`. Previously "No known vulnerabilities found" was effectively
+  auditing nothing for venv/uv projects.
+- **JS audit now includes dev/build dependencies** (dropped `--prod` / `--omit=dev`). Vulns in
+  build tooling (vite, undici, …) are real and were silently skipped; the triage layer decides
+  reachability. **Note:** this may surface previously-missed dev-dep vulns and block a pre-push —
+  that's the fix working; allowlist/triage as needed.
+- **trivy skips build-output dirs** (`TRIVY_SKIP_DIRS`, default `**/.next,**/dist,**/build,…`) —
+  removes the noise/memory/slowness from scanning `.next` etc. (which also contributed to a
+  concurrent-run log garble). Configurable in `.security-audit.conf`.
+
+> For lockfile-accurate, all-ecosystem dependency CVEs (incl. transitive + dev), `scan.sh osv`
+> remains the most reliable — it reads `uv.lock`/`pnpm-lock` directly.
+
 ## [1.9.0] - 2026-06-24
 
 ### Added
@@ -148,6 +166,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.9.1]: https://github.com/boraeresici/security-audit-kit/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.6.0...v1.7.0
