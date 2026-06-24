@@ -1,0 +1,49 @@
+# pre-commit framework integration — https://pre-commit.com
+#
+# For teams already using pre-commit. Add to your .pre-commit-config.yaml:
+#
+#   - repo: https://github.com/boraeresici/security-audit-kit
+#     rev: v1.6.0            # pin a tag
+#     hooks:
+#       - id: sec-staged     # every commit: sub-second staged-secret scan
+#       - id: sec-deps       # when a dependency manifest changes: CVE audit
+#       - id: sec-all        # pre-push / manual: full scan
+#
+#   pre-commit install                              # wires sec-staged + sec-deps
+#   pre-commit install --hook-type pre-push         # wires sec-all
+#
+# NOTE: use EITHER the pre-commit framework (these hooks) OR the kit's own git hooks
+# (install.sh / core.hooksPath) — not both (core.hooksPath would shadow pre-commit).
+# For the Claude skills only, without touching hooks:  install.sh --skills-only
+#
+# scan.sh auto-detects the toolchain (docker / uvx) and skips any missing dimension.
+
+- id: sec-staged
+  name: security-audit-kit · staged secret scan
+  description: Sub-second gitleaks scan of staged changes (HARD gate).
+  entry: scan.sh
+  args: [staged]
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: sec-deps
+  name: security-audit-kit · dependency CVE audit
+  description: pip-audit / npm audit when a dependency manifest changes (HARD gate).
+  entry: scan.sh
+  args: [deps]
+  language: script
+  pass_filenames: false
+  files: '(^|/)(pyproject\.toml|uv\.lock|requirements.*\.txt|Pipfile|package\.json|pnpm-lock\.yaml|yarn\.lock|package-lock\.json)$'
+  stages: [pre-commit]
+
+- id: sec-all
+  name: security-audit-kit · full scan
+  description: Full local security scan (secret + sast + deps + container + iac).
+  entry: scan.sh
+  args: [all]
+  language: script
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push, manual]

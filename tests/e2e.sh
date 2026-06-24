@@ -121,6 +121,20 @@ else
 fi
 rm -rf "$KITREPO" "$T1" "$T2"
 
+echo "-- pre-commit framework integration --"
+if have python3; then
+  python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \
+    && ok ".pre-commit-hooks.yaml valid (sec-staged/deps/all -> scan.sh)" || no ".pre-commit-hooks.yaml invalid"
+else skip ".pre-commit-hooks.yaml (no python3)"; fi
+# install --skills-only: skills present, but core.hooksPath NOT set
+TSO="$(mktemp -d)"
+mkdir -p "$TSO/tools/security-audit-kit"
+if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TSO/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TSO/tools/security-audit-kit"/; fi
+( cd "$TSO" && git init -q && bash tools/security-audit-kit/install.sh --skills-only ) >/dev/null 2>&1
+[ -f "$TSO/.claude/skills/sec-triage/SKILL.md" ] && ok "--skills-only: skills installed" || no "--skills-only: skills missing"
+[ -z "$(git -C "$TSO" config core.hooksPath 2>/dev/null || true)" ] && ok "--skills-only: core.hooksPath NOT set" || no "--skills-only: hooksPath should be unset"
+rm -rf "$TSO"
+
 echo ""
 echo "== e2e: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

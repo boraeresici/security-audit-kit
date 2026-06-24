@@ -112,6 +112,28 @@ cp -R /project-a/tools/security-audit-kit /project-b/tools/
 cd /project-b && bash tools/security-audit-kit/install.sh
 ```
 
+## Using the pre-commit framework (alternative to the kit's own hooks)
+
+Already on [pre-commit](https://pre-commit.com)? Add the kit to your `.pre-commit-config.yaml`
+instead of using its git hooks:
+
+```yaml
+- repo: https://github.com/boraeresici/security-audit-kit
+  rev: v1.6.0          # pin a tag
+  hooks:
+    - id: sec-staged   # every commit: staged-secret scan
+    - id: sec-deps     # on a dependency-manifest change: CVE audit
+    - id: sec-all      # pre-push / manual: full scan
+```
+```bash
+pre-commit install                         # sec-staged + sec-deps
+pre-commit install --hook-type pre-push    # sec-all
+```
+
+Use **either** the pre-commit framework **or** the kit's own hooks (`install.sh` / `core.hooksPath`),
+not both (`core.hooksPath` would shadow pre-commit). For the Claude skills + config without
+touching hooks: `bash tools/security-audit-kit/install.sh --skills-only`.
+
 Why this shape (consistent with the kit's own ethos):
 - **No `curl | bash`.** This is a *security* tool — download, review, then run. Piping
   a remote script straight into a shell is the exact anti-pattern the kit warns against.

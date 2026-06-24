@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-06-23
+
+### Added (adoption / interop)
+- **`.pre-commit-hooks.yaml`** — use the kit via the [pre-commit](https://pre-commit.com)
+  framework: `sec-staged` (every commit), `sec-deps` (on a manifest change), `sec-all`
+  (pre-push / manual). An alternative to the kit's own git hooks.
+- **`install.sh --skills-only`** — installs the skills + config WITHOUT setting
+  `core.hooksPath`, so pre-commit-framework users get the Claude skills without a hooks clash.
+- e2e covers both (`.pre-commit-hooks.yaml` validity + `--skills-only` leaves hooksPath unset).
+
 ## [1.6.0] - 2026-06-23
 
 ### Added (supply-chain hardening — Tier S Layer 0)
@@ -119,6 +129,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.7.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.3.1...v1.4.0

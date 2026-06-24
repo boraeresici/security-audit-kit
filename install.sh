@@ -18,6 +18,11 @@ ok(){ printf '  \033[32mok\033[0m  %s\n' "$1"; }
 miss(){ printf '  \033[33m--\033[0m  %s\n' "$1"; }
 have(){ command -v "$1" >/dev/null 2>&1; }
 
+# --skills-only: install skills/config but DON'T touch git hooks (for teams driving the
+# triggers via the pre-commit framework, which would clash with core.hooksPath).
+SKILLS_ONLY=0
+[ "${1:-}" = "--skills-only" ] && SKILLS_ONLY=1
+
 echo "== prerequisite check (a missing one only skips that dimension; install still runs) =="
 have docker && ok "docker (gitleaks/trivy/syft)" || miss "docker MISSING -> secret/container/sbom skipped"
 { have uvx || have pipx; } && ok "uvx/pipx (semgrep/checkov/pip-audit)" || miss "uvx/pipx MISSING -> sast/iac/py-deps skipped"
@@ -25,9 +30,13 @@ have docker && ok "docker (gitleaks/trivy/syft)" || miss "docker MISSING -> secr
 
 echo "== hooks =="
 chmod +x "$KIT/scan.sh" "$KIT/hooks/pre-commit" "$KIT/hooks/pre-push"
-# Point hooksPath directly at the kit to avoid clashing with existing .git/hooks.
-git config core.hooksPath "$KIT_REL/hooks"
-ok "core.hooksPath -> $KIT_REL/hooks (pre-commit=fast, pre-push=all)"
+if [ "$SKILLS_ONLY" = "1" ]; then
+  miss "skipped (--skills-only) — drive triggers via the pre-commit framework (.pre-commit-hooks.yaml)"
+else
+  # Point hooksPath directly at the kit to avoid clashing with existing .git/hooks.
+  git config core.hooksPath "$KIT_REL/hooks"
+  ok "core.hooksPath -> $KIT_REL/hooks (pre-commit=staged+deps, pre-push=all)"
+fi
 
 echo "== project config =="
 if [ -f "$ROOT/.security-audit.conf" ]; then
@@ -83,6 +92,8 @@ cat <<EOF
   deep SAST     : /sec-sast-deep in Claude (authz/IDOR/logic; pre-cutover / after a new endpoint)
   AI/LLM review : /sec-ai-review in Claude (prompt injection/agency; if the code calls an LLM)
   threat model  : /sec-threat-model in Claude (STRIDE/data-flow; new subsystem / design review)
+  pre-commit fw : already use pre-commit? add this repo via .pre-commit-hooks.yaml instead of
+                  the kit's hooks; run 'install.sh --skills-only' for the skills (no hooksPath)
   emergency bypass: SKIP_SECURITY=1 git commit   |   git push --no-verify
 
 HARD boundary: produces internal evidence; does NOT replace an ASV scan + pentest.
