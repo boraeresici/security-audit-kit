@@ -25,6 +25,10 @@
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.
 # : "${TF_DIR:=infra/terraform}"
 
+# --- container (trivy) ---
+# Build-output dirs trivy should skip (noise + memory + speed). Comma-separated globs.
+# : "${TRIVY_SKIP_DIRS:=**/.next,**/dist,**/build,**/.nuxt,**/.svelte-kit,**/.turbo}"
+
 # --- Tool version pins (keep ALL of these aligned with CI to avoid drift) ---
 # Python tools (uvx/pipx) — pinned by version:
 # : "${SEMGREP_VER:=1.166.0}"

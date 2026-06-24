@@ -51,6 +51,9 @@ SYFT_DIGEST="${SYFT_DIGEST:-sha256:a2066c7d582669db5c9191ed8b8055766a63a3c231b41
 OSV_VER="${OSV_VER:-v2.4.0}"
 OSV_DIGEST="${OSV_DIGEST:-sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc109d621a63ac416d475}"
 
+# trivy: skip build-output dirs (noise + memory + speed). Comma-separated glob patterns.
+TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelte-kit,**/.turbo}"
+
 # Python tools — pinned by version (no drift vs. CI). Empty = latest (not recommended).
 SEMGREP_VER="${SEMGREP_VER:-1.166.0}"
 CHECKOV_VER="${CHECKOV_VER:-3.3.1}"
@@ -85,7 +88,16 @@ scan_py_deps(){
   git ls-files | grep -qE 'pyproject\.toml|requirements.*\.txt|uv\.lock|Pipfile' || { warn deps "no Python project"; return 0; }
   local flags=""
   [ -f .pip-audit-ignore ] && flags="$(awk '/^[^#]/{printf " --ignore-vuln %s",$1}' .pip-audit-ignore)"
-  say deps "pip-audit --strict (==$PIP_AUDIT_VER)"
+  # Audit the PROJECT's environment, not uvx's ephemeral one. pip-audit defaults to the running
+  # interpreter (empty under uvx) -> point it at an active venv, else the repo's .venv.
+  local venv="${VIRTUAL_ENV:-}"
+  [ -z "$venv" ] && [ -x "$ROOT/.venv/bin/python" ] && venv="$ROOT/.venv"
+  if [ -n "$venv" ] && [ -x "$venv/bin/python" ]; then
+    export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
+    say deps "pip-audit --strict (==$PIP_AUDIT_VER, env ${venv#"$ROOT"/})"
+  else
+    say deps "pip-audit --strict (==$PIP_AUDIT_VER) — no project venv found; for lockfile-accurate deps run 'scan.sh osv'"
+  fi
   # shellcheck disable=SC2086
   pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags || { [ $? -eq 127 ] && { warn deps "no uvx/pipx -> pip-audit skipped"; return 0; }; return 1; }
 }
@@ -96,9 +108,11 @@ scan_js_deps(){
   [ -z "$pj" ] && { warn deps "no JS project"; return 0; }
   local dir; dir="$(dirname "$pj")"
   ( cd "$dir" || exit 1
-    if [ -f pnpm-lock.yaml ] && have pnpm;  then say deps "pnpm audit ($dir)";  pnpm audit --prod --audit-level high
+    # Audit ALL deps (incl. dev/build) — vulns in build tooling (vite/undici/…) are real; the
+    # triage layer decides reachability. (Previously --prod/--omit=dev hid them.)
+    if [ -f pnpm-lock.yaml ] && have pnpm;  then say deps "pnpm audit ($dir)";  pnpm audit --audit-level high
     elif [ -f yarn.lock ] && have yarn;     then say deps "yarn audit ($dir)";  yarn npm audit --severity high
-    elif have npm;                          then say deps "npm audit ($dir)";   npm audit --omit=dev --audit-level=high
+    elif have npm;                          then say deps "npm audit ($dir)";   npm audit --audit-level=high
     else warn deps "no JS package manager"; fi )
 }
 
@@ -176,10 +190,11 @@ scan_container(){
   # .trivyignore.yaml auto-detect does not work in this docker setup -> pass it explicitly
   # (only if present; for deliberately accepted findings, committed to the repo).
   local ign=""; [ -f "$ROOT/.trivyignore.yaml" ] && ign="--ignorefile /repo/.trivyignore.yaml"
+  local skip=""; [ -n "$TRIVY_SKIP_DIRS" ] && skip="--skip-dirs $TRIVY_SKIP_DIRS"
   local out="--exit-code 0"; [ "$SARIF" = "1" ] && out="--exit-code 0 --format sarif --output /repo/$(sarif_rel trivy.sarif)"
   # shellcheck disable=SC2086
   docker run --rm -v "$ROOT:/repo" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
-    --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign /repo
+    --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
 }
 
 # ---- sbom (syft) ----
