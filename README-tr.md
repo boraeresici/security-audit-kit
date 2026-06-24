@@ -113,6 +113,28 @@ cp -R /proje-a/tools/security-audit-kit /proje-b/tools/
 cd /proje-b && bash tools/security-audit-kit/install.sh
 ```
 
+## pre-commit framework ile (kitin kendi hook'larina alternatif)
+
+Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari yerine onu
+`.pre-commit-config.yaml`'ine ekle:
+
+```yaml
+- repo: https://github.com/boraeresici/security-audit-kit
+  rev: v1.6.0          # bir tag'e pinle
+  hooks:
+    - id: sec-staged   # her commit: staged-secret taramasi
+    - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
+    - id: sec-all      # pre-push / manual: tam tarama
+```
+```bash
+pre-commit install                         # sec-staged + sec-deps
+pre-commit install --hook-type pre-push    # sec-all
+```
+
+**Ya** pre-commit framework **ya da** kitin kendi hook'lari (`install.sh` / `core.hooksPath`)
+kullan, ikisi birden degil (`core.hooksPath` pre-commit'i golgeler). Hook'lara dokunmadan
+yalniz Claude skill'leri + config icin: `bash tools/security-audit-kit/install.sh --skills-only`.
+
 Neden bu bicim (kitin kendi felsefesiyle tutarli):
 - **`curl | bash` YOK.** Bu bir *guvenlik* aracidir — indir, gozden gecir, sonra
   calistir. Uzaktan scripti dogrudan shell'e pipe etmek tam da kitin uyardigi
