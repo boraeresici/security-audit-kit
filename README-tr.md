@@ -16,7 +16,8 @@ bir Claude skill'ine baglayan kendi-kendine yeten kit.
 
 Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs**
-(trivy), **SBOM** (syft). Eksik toolchain olan boyut otomatik atlanir.
+(trivy), **SBOM** (syft) ve **opsiyonel cok-ekosistem bagimlilik CVE** boyutu
+(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…). Eksik toolchain olan boyut otomatik atlanir.
 
 Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
 gercek/FP karari -> fix/allowlist), **`sec-sast-deep`** (semgrep'in pattern'le goremedigi
@@ -185,7 +186,7 @@ Commit'lenen `.kit-version` (ref + SHA) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir.
 
 ## Gereksinimler (hangisi yoksa o boyut atlanir)
-- **docker** — gitleaks / trivy / syft (pinli image, kurulum yok)
+- **docker** — gitleaks / trivy / syft / osv-scanner (pinli image, kurulum yok)
 - **uvx veya pipx** — semgrep / checkov / pip-audit (kurulum yok, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (projede hangisi varsa)
 
@@ -201,6 +202,7 @@ bash tools/security-audit-kit/scan.sh fast       # staged-secret + deps (paket-y
 bash tools/security-audit-kit/scan.sh staged     # staged degisikliklerde saniye-alti sir taramasi
 bash tools/security-audit-kit/scan.sh changed    # sadece degisen dosyalarda SAST (diff-aware, hizli)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
+bash tools/security-audit-kit/scan.sh osv        # opsiyonel: cok-ekosistem dep CVE (OSV-Scanner)
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 ```

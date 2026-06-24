@@ -121,6 +121,14 @@ else
 fi
 rm -rf "$KITREPO" "$T1" "$T2"
 
+echo "-- osv (OSV-Scanner optional dimension) --"
+if docker_ok; then
+  # target has no lockfiles -> osv-scanner exits 128 -> scan.sh maps that to a clean pass (0)
+  $SCAN osv >/dev/null 2>&1 && ok "osv: wired + clean on a lockfile-less repo" || no "osv: should pass (exit 0) with no lockfiles"
+else
+  skip "osv (docker unavailable)"
+fi
+
 echo "-- pre-commit framework integration --"
 if have python3; then
   python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \
