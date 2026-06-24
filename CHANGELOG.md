@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-06-24
+
+### Added
+- **`sec-audit` orchestrator skill** — a one-command entry point: runs `scan.sh all` + triage,
+  then runs **only the deep passes the repo calls for** (signal-gated: `sec-sast-deep` on authz
+  surfaces, `sec-ai-review` if the code calls an LLM, `sec-threat-model` for a new subsystem; all
+  on `deep`), and consolidates into one `findings-<DATE>.md`. Cost-aware + transparent: announces
+  which deep pass runs and why before spending tokens; default = scan + triage only (respects the
+  cadence). Installed into `.claude/skills/`; READMEs + e2e updated.
+
 ## [1.8.0] - 2026-06-24
 
 ### Added
@@ -138,6 +148,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.9.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.5.0...v1.6.0

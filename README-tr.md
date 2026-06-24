@@ -28,6 +28,10 @@ data-flow ile saldiri yuzeyi tehdit modeli). Son ucu `scan.sh`'a girmez (yargi, 
 degil); periyodik/cutover-oncesi/yeni-endpoint, AI-yuzeyi veya yeni-subsystem sonrasi
 Claude'da kosulur.
 
+Secmek istemiyor musun? **`sec-audit`** tek-komut orchestrator: scan + triage'i ve repoya
+*gercekten uyan* deep paslari (kor degil, sinyal-gated) kosar, hepsini tek findings dosyasinda
+toplar.
+
 ## Yasam dongusu (kurulum → guncelleme → tarama)
 
 ```mermaid
@@ -268,10 +272,19 @@ diye sorar — **STRIDE + data-flow** ile. Yargi-only, her repoda yeniden kullan
 - **Cikti:** yasayan bir `docs/security/threat-model-<TARIH>.md` (data-flow + STRIDE tablolari);
   somut bosluklar ayni `sec-triage` akisina (findings + takip) terfi eder.
 
+## Tek komut — `/sec-audit`
+
+Secmek istemiyorsan: `/sec-audit` orchestrator giris noktasidir — `scan.sh all` kosar,
+triage eder (exclusions → reachability → confidence), sonra **yalniz reponun gerektirdigi**
+deep paslari kosar — authz yuzeyi varsa `sec-sast-deep`, kod LLM cagiriyorsa `sec-ai-review`,
+yeni subsystem icin `sec-threat-model` (veya `deep` ile hepsi). Token harcamadan once *hangi*
+deep pasi *neden* kosacagini soyler ve tek `findings-<TARIH>.md` yazar.
+
 ## Hangi skill ne siklikla (kadans)
 
 | Skill | Kadans | Tetik |
 |---|---|---|
+| `/sec-audit` | **her zaman** — tek-komut giris noktasi | "bu repoyu audit et" / PR oncesi; dogru seyleri senin yerine kosar |
 | `/sec-triage` | **rutin** — her bulgulu taramadan sonra | pre-push blok · paket ekledikten sonra · haftalik tarama |
 | `/sec-sast-deep` | **periyodik / kilometre tasi** (her push'ta degil) | cutover oncesi, veya yeni authz yuzeyi (endpoint/rol/4-goz) |
 | `/sec-ai-review` | **periyodik / kilometre tasi** (her push'ta degil) | yeni AI yuzeyi (LLM cagrisi / tool / agent / RAG / MCP); LLM yoksa atla |
