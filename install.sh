@@ -67,6 +67,9 @@ ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/age
 mkdir -p "$ROOT/.claude/skills/sec-threat-model"
 cp "$KIT/skills/sec-threat-model.skill.md" "$ROOT/.claude/skills/sec-threat-model/SKILL.md"
 ok ".claude/skills/sec-threat-model/SKILL.md (STRIDE + data-flow threat modeling)"
+mkdir -p "$ROOT/.claude/skills/sec-audit"
+cp "$KIT/skills/sec-audit.skill.md" "$ROOT/.claude/skills/sec-audit/SKILL.md"
+ok ".claude/skills/sec-audit/SKILL.md (one-command orchestrator: scan + triage + signal-gated deep)"
 mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
 
 echo "== integrity =="
@@ -92,6 +95,7 @@ cat <<EOF
   deep SAST     : /sec-sast-deep in Claude (authz/IDOR/logic; pre-cutover / after a new endpoint)
   AI/LLM review : /sec-ai-review in Claude (prompt injection/agency; if the code calls an LLM)
   threat model  : /sec-threat-model in Claude (STRIDE/data-flow; new subsystem / design review)
+  one-command   : /sec-audit in Claude (orchestrator: scan + triage + signal-gated deep passes)
   pre-commit fw : already use pre-commit? add this repo via .pre-commit-hooks.yaml instead of
                   the kit's hooks; run 'install.sh --skills-only' for the skills (no hooksPath)
   emergency bypass: SKIP_SECURITY=1 git commit   |   git push --no-verify

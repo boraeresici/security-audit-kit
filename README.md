@@ -29,6 +29,10 @@ OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency),
 latter three don't run inside `scan.sh` (judgment, not a script); run them in Claude
 periodically / before a cutover / after a new endpoint, AI surface, or subsystem.
 
+Don't want to pick? **`sec-audit`** is a one-command orchestrator: it runs the scan + triage
+and the deep passes that *actually apply* to the repo (signal-gated, not blindly), and
+consolidates everything into one findings file.
+
 ## Lifecycle (install → update → scan)
 
 ```mermaid
@@ -268,10 +272,19 @@ not defended* — using **STRIDE + a data-flow** view. Judgment-only, reusable i
 - **Output:** a living `docs/security/threat-model-<DATE>.md` (data-flow + STRIDE tables); concrete
   gaps are promoted into the same `sec-triage` flow (findings file + follow-up registry).
 
+## One command — `/sec-audit`
+
+Prefer not to choose? `/sec-audit` is the orchestrator entry point: it runs `scan.sh all`,
+triages (exclusions → reachability → confidence), then runs **only the deep passes the repo
+calls for** — `sec-sast-deep` if there are authz surfaces, `sec-ai-review` if the code calls an
+LLM, `sec-threat-model` for a new subsystem (or all on `deep`). It announces *which* deep pass
+it runs and *why* before spending the tokens, and writes one consolidated `findings-<DATE>.md`.
+
 ## When to run which skill (cadence)
 
 | Skill | Cadence | Trigger |
 |---|---|---|
+| `/sec-audit` | **anytime** — the one-command entry point | "audit this repo" / before a PR; runs the right things for you |
 | `/sec-triage` | **routine** — after any scan with findings | pre-push block · after adding a package · weekly scan |
 | `/sec-sast-deep` | **periodic / milestone** (not every push) | before a cutover, or a new authz surface (endpoint/role/4-eyes) |
 | `/sec-ai-review` | **periodic / milestone** (not every push) | a new AI surface (LLM call / tool / agent / RAG / MCP); skip if no LLM |
