@@ -12,6 +12,7 @@
 #   iac       IaC misconfig (checkov, if terraform present) [soft]
 #   container Dep+OS+secret+misconfig (trivy fs)            [soft]
 #   sbom      Software inventory (syft CycloneDX+SPDX)       [artifact]
+#   osv       Broad multi-ecosystem dep CVE (osv-scanner)    [HARD]  optional (not in 'all')
 #   fast      staged + deps  (pre-commit / package install)
 #   all       secret + sast + deps + container + iac         (pre-push / pre-PR)
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
@@ -47,6 +48,8 @@ TRIVY_VER="${TRIVY_VER:-0.58.0}"
 TRIVY_DIGEST="${TRIVY_DIGEST:-sha256:b88012e2a0a309d6a8a00463d4e63e5e513377fb74eccbc8f9b0f8f81940ebeb}"
 SYFT_VER="${SYFT_VER:-v1.18.0}"
 SYFT_DIGEST="${SYFT_DIGEST:-sha256:a2066c7d582669db5c9191ed8b8055766a63a3c231b4134a5c75e65a70f30b23}"
+OSV_VER="${OSV_VER:-v2.4.0}"
+OSV_DIGEST="${OSV_DIGEST:-sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc109d621a63ac416d475}"
 
 # Python tools — pinned by version (no drift vs. CI). Empty = latest (not recommended).
 SEMGREP_VER="${SEMGREP_VER:-1.166.0}"
@@ -187,6 +190,25 @@ scan_sbom(){
     -o cyclonedx-json=/repo/sbom.cyclonedx.json -o spdx-json=/repo/sbom.spdx.json
 }
 
+# ---- osv (OSV-Scanner) — broad multi-ecosystem dep CVE, OPTIONAL (not in 'all') ----
+# Complements pip-audit/npm: scans lockfiles across ecosystems (py/js/go/rust/...) against
+# OSV.dev. Standalone + opt-in so it doesn't double-gate with the other dep scanners.
+scan_osv(){
+  docker_ok || { warn osv "no docker -> osv-scanner skipped"; return 0; }
+  say osv "osv-scanner scan source (all lockfile ecosystems)"
+  local out=""; [ "$SARIF" = "1" ] && out="--format sarif --output /repo/$(sarif_rel osv.sarif)"
+  # shellcheck disable=SC2086
+  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+    scan source --recursive $out /repo
+  local rc=$?
+  case "$rc" in
+    0) return 0 ;;                                              # scanned, clean
+    1) return 1 ;;                                              # vulnerabilities found (HARD)
+    128) warn osv "no lockfiles found -> nothing to scan"; return 0 ;;
+    *) warn osv "osv-scanner exit $rc (scan error, not a finding)"; return 0 ;;
+  esac
+}
+
 # ---- doctor: report environment, pins and detected projects (no scan) ----
 scan_doctor(){
   printf '== security-audit-kit doctor ==\n'
@@ -200,6 +222,7 @@ scan_doctor(){
   printf '  gitleaks   %s @ %s\n' "$GITLEAKS_VER" "${GITLEAKS_DIGEST:-<tag>}"
   printf '  trivy      %s @ %s\n' "$TRIVY_VER" "${TRIVY_DIGEST:-<tag>}"
   printf '  syft       %s @ %s\n' "$SYFT_VER" "${SYFT_DIGEST:-<tag>}"
+  printf '  osv-scanner %s @ %s\n' "$OSV_VER" "${OSV_DIGEST:-<tag>}"
   printf '  semgrep    %s\n' "${SEMGREP_VER:-<latest>}"
   printf '  checkov    %s\n' "${CHECKOV_VER:-<latest>}"
   printf '  pip-audit  %s\n' "${PIP_AUDIT_VER:-<latest>}"
@@ -284,9 +307,10 @@ run_scans(){
     iac)       _dim iac scan_iac || rc=1 ;;
     container) _dim container scan_container || rc=1 ;;
     sbom)      _dim sbom scan_sbom || rc=1 ;;
+    osv)       _dim osv scan_osv || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|fast|all|doctor|verify|checksums)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|fast|all|doctor|verify|checksums)"; return 2 ;;
   esac
   return $rc
 }

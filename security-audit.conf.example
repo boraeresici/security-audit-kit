@@ -39,3 +39,5 @@
 # : "${TRIVY_DIGEST:=sha256:b88012e2a0a309d6a8a00463d4e63e5e513377fb74eccbc8f9b0f8f81940ebeb}"
 # : "${SYFT_VER:=v1.18.0}"
 # : "${SYFT_DIGEST:=sha256:a2066c7d582669db5c9191ed8b8055766a63a3c231b4134a5c75e65a70f30b23}"
+# : "${OSV_VER:=v2.4.0}"   # optional 'scan.sh osv' dimension (broad multi-ecosystem dep CVE)
+# : "${OSV_DIGEST:=sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc109d621a63ac416d475}"

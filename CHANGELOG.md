@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-06-24
+
+### Added
+- **`scan.sh osv`** — optional broad multi-ecosystem dependency-CVE dimension via **OSV-Scanner**
+  (Google), pinned by docker digest (`v2.4.0`). Scans lockfiles across py/js/go/rust/… against
+  OSV.dev; HARD when run (exit 1 = vulnerabilities). Standalone / opt-in (NOT in `all`) so it does
+  not double-gate with pip-audit/npm/trivy. SARIF supported (`SARIF=1`). `OSV_VER`/`OSV_DIGEST`
+  pins; `doctor` + conf example + e2e + READMEs updated.
+
 ## [1.7.0] - 2026-06-23
 
 ### Added (adoption / interop)
@@ -129,6 +138,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.8.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.4.0...v1.5.0

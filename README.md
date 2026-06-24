@@ -16,7 +16,9 @@ finding triage into a Claude skill.
 
 Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE**
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs** (trivy),
-**SBOM** (syft). Any dimension whose toolchain is missing is skipped automatically.
+**SBOM** (syft), plus an **optional broad multi-ecosystem dependency CVE** dimension
+(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…). Any dimension whose toolchain is missing
+is skipped automatically.
 
 On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
 scan -> real/false-positive decision -> fix/allowlist), **`sec-sast-deep`** (*semantic*
@@ -182,7 +184,7 @@ The committed `.kit-version` (ref + SHA) is the team's shared record of which pi
 version is in use, and what `--check` compares against next time.
 
 ## Requirements (a missing one only skips that dimension)
-- **docker** — gitleaks / trivy / syft (pinned images, no install)
+- **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)
 - **uvx or pipx** — semgrep / checkov / pip-audit (no install, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (whichever the project uses)
 
@@ -198,6 +200,7 @@ bash tools/security-audit-kit/scan.sh fast       # staged-secret + deps (after a
 bash tools/security-audit-kit/scan.sh staged     # sub-second secret scan of staged changes
 bash tools/security-audit-kit/scan.sh changed    # SAST on changed files only (diff-aware, fast)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
+bash tools/security-audit-kit/scan.sh osv        # optional: broad multi-ecosystem dep CVE (OSV-Scanner)
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 ```
