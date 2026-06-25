@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] - 2026-06-25
+
+### Fixed (secret scan in a git worktree — silent false-clean)
+- **gitleaks now works in a git worktree.** A worktree's `.git` is a *file* pointing to a gitdir
+  outside the worktree, so gitleaks-in-docker (mounting only the worktree) couldn't reach the
+  history and silently reported "no leaks" (exit 0) — a dangerous false-clean. `scan.sh` now also
+  mounts the common gitdir (`git rev-parse --git-common-dir`) when `.git` is a file. **No-op for a
+  normal repo** (`.git` is a directory). Covers `secret` + `staged`. New e2e: a committed secret
+  is caught when scanned from a worktree. (Found via a dogfooding question.)
+
+> Note: normal branches were never affected — `scan.sh` scans the current checkout / branch (not
+> `main`); semgrep/trivy/checkov already worked in worktrees too.
+
 ## [1.9.1] - 2026-06-24
 
 ### Fixed (dependency-scan reliability — found via dogfooding)
@@ -166,6 +179,7 @@ All notable changes to this project are documented here. The format is based on
 - Git-hook triggers (pre-commit / pre-push) and `bootstrap.sh` pinned-vendor installer.
 - Two Claude skills: `sec-triage` (finding triage) and `sec-sast-deep` (semantic SAST).
 
+[1.9.2]: https://github.com/boraeresici/security-audit-kit/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/boraeresici/security-audit-kit/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/boraeresici/security-audit-kit/compare/v1.7.0...v1.8.0

@@ -143,6 +143,25 @@ if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SR
 [ -z "$(git -C "$TSO" config core.hooksPath 2>/dev/null || true)" ] && ok "--skills-only: core.hooksPath NOT set" || no "--skills-only: hooksPath should be unset"
 rm -rf "$TSO"
 
+echo "-- worktree: gitleaks reaches history (no silent false-clean) --"
+if docker_ok; then
+  AK="AKIA"; PLANT="${AK}1234567890ABCDEF"
+  printf 'k = "%s"\n' "$PLANT" > wt-leak.txt
+  git -c user.email=e2e@test -c user.name=e2e add wt-leak.txt
+  # --no-verify: the kit's own pre-commit hook (installed earlier) would otherwise block this.
+  git -c user.email=e2e@test -c user.name=e2e commit --no-verify -qm "planted secret (worktree test)"
+  WTBASE="$(mktemp -d)"; WT="$WTBASE/wt"
+  git worktree add -q "$WT" -b e2e-wt >/dev/null 2>&1
+  if ( cd "$WT" && bash tools/security-audit-kit/scan.sh secret ) >/dev/null 2>&1; then
+    no "worktree: gitleaks MISSED the committed secret (silent false-clean)"
+  else
+    ok "worktree: gitleaks catches committed secret (history reachable)"
+  fi
+  git worktree remove --force "$WT" >/dev/null 2>&1; rm -rf "$WTBASE"; git branch -D e2e-wt >/dev/null 2>&1
+else
+  skip "worktree gitleaks (docker unavailable)"
+fi
+
 echo ""
 echo "== e2e: $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]
