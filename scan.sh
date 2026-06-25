@@ -116,6 +116,16 @@ scan_js_deps(){
     else warn deps "no JS package manager"; fi )
 }
 
+# Extra docker mounts so gitleaks can reach git history in a git WORKTREE — whose .git is a
+# FILE pointing to a gitdir OUTSIDE the worktree (else gitleaks silently scans 0 commits and
+# reports "no leaks", a false-clean). No-op for a normal repo (.git is a directory).
+git_extra_mounts(){
+  [ -f "$ROOT/.git" ] || return 0
+  local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
+  case "$common" in /*) ;; *) common="$ROOT/$common" ;; esac
+  [ -n "$common" ] && [ -d "$common" ] && printf -- '-v %s:%s' "$common" "$common"
+}
+
 # ---- secret, full history (gitleaks detect) ----
 scan_secret(){
   docker_ok || { warn secret "no docker -> gitleaks skipped"; return 0; }
@@ -123,7 +133,7 @@ scan_secret(){
   local rep=""; [ "$SARIF" = "1" ] && rep="--report-format sarif --report-path /repo/$(sarif_rel gitleaks.sarif)"
   say secret "gitleaks detect (full history)"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     detect --source /repo $cfg $rep --redact --exit-code 1 --verbose
 }
 
@@ -133,7 +143,7 @@ scan_secret_staged(){
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
   say secret "gitleaks protect --staged"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     protect --staged --source /repo $cfg --redact --exit-code 1 --verbose
 }
 
