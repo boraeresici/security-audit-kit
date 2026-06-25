@@ -36,7 +36,9 @@ deep passes you will run and **why** before running them.
    - **`sec-sast-deep`** if there are **authorization surfaces** or they changed — routes/
      endpoints/resolvers, role/permission checks, multi-tenant scoping, four-eyes/approval
      flows. Signal: `git grep -nE '@router\.|@app\.(get|post)|permission|has_perm|tenant|@PreAuthorize'`
-     or changed endpoints in the diff.
+     or changed endpoints in the diff. **Also** when there are **raw injection sinks** semgrep
+     may miss across the call path — Signal: `git grep -nE '\.raw\(|\.extra\(|RawSQL|render_template_string|child_process|\bexec\(|pickle\.loads|yaml\.load\b'`
+     (its Class 4 covers semantic/stack-specific injection).
    - **`sec-ai-review`** if the code **calls an LLM / exposes tools or agents / does RAG**.
      Signal: `git grep -nE 'anthropic|openai|chat\.completions|invoke_model|generate_content|tools=|tool_call|mcp'`.
      Skip entirely if no LLM.

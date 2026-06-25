@@ -59,7 +59,40 @@ SEMGREP_VER="${SEMGREP_VER:-1.166.0}"
 CHECKOV_VER="${CHECKOV_VER:-3.3.1}"
 PIP_AUDIT_VER="${PIP_AUDIT_VER:-2.10.1}"
 
-SEMGREP_CONFIGS="${SEMGREP_CONFIGS:---config p/owasp-top-ten --config p/secrets --config p/javascript}"
+# Stack-aware semgrep rulesets. If SEMGREP_CONFIGS is set (env/conf) it wins verbatim;
+# otherwise we auto-select language/framework packs from what's actually in the repo, so each
+# project gets its own injection rules (Django ORM, React XSS, …) instead of a one-size config.
+# Base packs (always): owasp-top-ten (incl. injection A03) + secrets. Only registry packs that
+# exist are referenced (a missing pack would hard-fail this deterministic gate).
+detect_semgrep_configs(){
+  local cfg="--config p/owasp-top-ten --config p/secrets"
+  local files; files="$(git ls-files 2>/dev/null | grep -v node_modules)"
+  # Dependency-manifest contents (small files only) — used to detect frameworks by package name.
+  local manifests mtext=""
+  manifests="$(printf '%s\n' "$files" | grep -E '(^|/)(requirements[^/]*\.txt|pyproject\.toml|Pipfile|package\.json|composer\.json|Gemfile)$')"
+  [ -n "$manifests" ] && mtext="$(printf '%s\n' "$manifests" | while IFS= read -r m; do [ -f "$m" ] && cat "$m"; done)"
+  _hasf(){ printf '%s\n' "$files" | grep -qE "$1"; }
+  _dep(){ printf '%s' "$mtext" | grep -qiE "$1"; }
+
+  if _hasf '\.py$' || _hasf '(^|/)(pyproject\.toml|requirements[^/]*\.txt|Pipfile|uv\.lock)$'; then
+    cfg="$cfg --config p/python"
+    { _hasf '(^|/)(manage|settings|asgi|wsgi)\.py$' || _dep '(^|[^a-z])django'; } && cfg="$cfg --config p/django"
+    _dep '(^|[^a-z])flask' && cfg="$cfg --config p/flask"
+  fi
+  if _hasf '(^|/)package\.json$'; then
+    cfg="$cfg --config p/javascript"
+    _hasf '\.tsx?$' && cfg="$cfg --config p/typescript"
+    { _hasf '\.(jsx|tsx)$' || _dep '"react"'; } && cfg="$cfg --config p/react"
+  fi
+  _hasf '\.go$|(^|/)go\.mod$'                          && cfg="$cfg --config p/golang"
+  _hasf '\.java$|(^|/)pom\.xml$|(^|/)build\.gradle'    && cfg="$cfg --config p/java"
+  _hasf '\.php$|(^|/)composer\.json$'                  && cfg="$cfg --config p/php"
+  _hasf '\.rb$|(^|/)Gemfile$'                          && cfg="$cfg --config p/ruby"
+  _hasf '\.cs$|\.csproj$'                              && cfg="$cfg --config p/csharp"
+  printf '%s' "$cfg"
+}
+[ -n "${SEMGREP_CONFIGS:-}" ] && SEMGREP_CONFIGS_OVERRIDDEN=1
+SEMGREP_CONFIGS="${SEMGREP_CONFIGS:-$(detect_semgrep_configs)}"
 
 have(){ command -v "$1" >/dev/null 2>&1; }
 say(){ printf '\033[36m[scan:%s]\033[0m %s\n' "$1" "$2"; }
@@ -153,7 +186,7 @@ scan_sast(){
   # Override SAST_PATHS via env to narrow/speed up the scan.
   local paths="${SAST_PATHS:-.}"
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
-  say sast "semgrep ($paths, ==$SEMGREP_VER)"
+  say sast "semgrep ($paths, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
   pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $paths \
     || { [ $? -eq 127 ] && { warn sast "no uvx/pipx -> semgrep skipped"; return 0; }; return 1; }
@@ -177,7 +210,7 @@ scan_sast_changed(){
   local files; files="$(changed_files | sort -u | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)"
   [ -z "$files" ] && { warn sast "no changed files vs base -> semgrep skipped"; return 0; }
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
-  say sast "semgrep (changed files, ==$SEMGREP_VER)"
+  say sast "semgrep (changed files, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
   pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $files \
     || { [ $? -eq 127 ] && { warn sast "no uvx/pipx -> semgrep skipped"; return 0; }; return 1; }
@@ -249,6 +282,7 @@ scan_doctor(){
   printf '  syft       %s @ %s\n' "$SYFT_VER" "${SYFT_DIGEST:-<tag>}"
   printf '  osv-scanner %s @ %s\n' "$OSV_VER" "${OSV_DIGEST:-<tag>}"
   printf '  semgrep    %s\n' "${SEMGREP_VER:-<latest>}"
+  printf '  semgrep cfg %s%s\n' "$SEMGREP_CONFIGS" "$([ -n "${SEMGREP_CONFIGS_OVERRIDDEN:-}" ] && echo ' (from env/conf)' || echo ' (stack-auto)')"
   printf '  checkov    %s\n' "${CHECKOV_VER:-<latest>}"
   printf '  pip-audit  %s\n' "${PIP_AUDIT_VER:-<latest>}"
   printf '\ndetected in this repo:\n'

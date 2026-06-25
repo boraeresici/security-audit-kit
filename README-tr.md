@@ -21,8 +21,8 @@ Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 
 Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
 gercek/FP karari -> fix/allowlist), **`sec-sast-deep`** (semgrep'in pattern'le goremedigi
-*semantik* kod aciklari: yatay authz/IDOR, dikey authz/eksik-rol, business-logic —
-cagri-yolu izleyerek), **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
+*semantik* kod aciklari: yatay authz/IDOR, dikey authz/eksik-rol, business-logic,
+semantik/stack-ozel injection — cagri-yolu izleyerek), **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
 prompt injection, guvensiz cikti islemesi, asiri yetki) ve **`sec-threat-model`** (STRIDE +
 data-flow ile saldiri yuzeyi tehdit modeli). Son ucu `scan.sh`'a girmez (yargi, script
 degil); periyodik/cutover-oncesi/yeni-endpoint, AI-yuzeyi veya yeni-subsystem sonrasi
@@ -234,8 +234,10 @@ bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-Y
 
 `scan.sh sast` (semgrep) **pattern-tabanli**: bilinen kotu-imzayi yakalar.
 Authorization ve business-rule aciklari ise koddaki **niyet**e baglidir — pattern
-degil **cagri-yolu** meselesi. `sec-sast-deep` skill'i o 3 sinifi Claude ile
-derin tarar: yatay authz/IDOR, dikey authz/eksik-rol, business-logic. semgrep'i
+degil **cagri-yolu** meselesi. `sec-sast-deep` skill'i o 4 sinifi Claude ile
+derin tarar: yatay authz/IDOR, dikey authz/eksik-rol, business-logic ve
+semantik/stack-ozel injection (second-order, wrapper-icinde gizli, semgrep'in
+cagri-yolu boyunca kacirdigi ORM/SSTI/NoSQL idiom'lari). semgrep'i
 **degistirmez, tamamlar**.
 
 - **`scan.sh`'a GIRMEZ** (yargi, script degil); Claude'da `/sec-sast-deep` olarak kosulur.
@@ -319,7 +321,12 @@ Otomasyon istersen: bir hook'tan `claude -p "/sec-triage"` headless cagrilabilir
 
 Kit **sifir-config calisir** (default `SAST_PATHS=.` tum repo, semgrep
 node_modules/.git/.venv atlar; `TF_DIR` ilk `*.tf`'den auto; js/py paket
-yoneticisi auto-detect). Ozellestirme icin proje-basina bir dosya:
+yoneticisi auto-detect). **Semgrep kural setleri stack-aware**: `SEMGREP_CONFIGS`
+set degilse `scan.sh` repodaki stack'e gore pack secer — taban `p/owasp-top-ten` +
+`p/secrets`, ustune tespit edilen dil/framework pack'leri (`p/python`/`p/django`,
+`p/javascript`/`p/typescript`/`p/react`, `p/golang`, `p/java`, `p/php`, `p/ruby`,
+`p/csharp`) — boylece her proje kendi injection kurallarini alir. `scan.sh doctor`
+secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
 
 1. `install.sh` kurulumda repo kokune **`.security-audit.conf`** olusturur
    (sablon: `security-audit.conf.example`).
@@ -327,7 +334,7 @@ yoneticisi auto-detect). Ozellestirme icin proje-basina bir dosya:
    ```sh
    : "${SAST_PATHS:=backend frontend}"     # kaynak dizinleri daralt
    : "${TF_DIR:=infra/terraform}"          # terraform dizini
-   : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"
+   # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # set degil = stack-auto; override icin set et
    ```
 3. `scan.sh` bunu otomatik source eder.
 

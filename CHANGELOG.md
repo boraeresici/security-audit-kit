@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-06-25
+
+### Added (stack-aware injection coverage)
+- **`scan.sh` now auto-selects semgrep packs from the repo's stack.** With `SEMGREP_CONFIGS`
+  unset, it builds the ruleset from what's actually present: base `p/owasp-top-ten` + `p/secrets`,
+  plus the detected language/framework packs — `p/python`/`p/django`/`p/flask`,
+  `p/javascript`/`p/typescript`/`p/react`, `p/golang`, `p/java`, `p/php`, `p/ruby`, `p/csharp`.
+  So a Django project gets Django's ORM-injection rules, a React project gets its XSS rules, etc.,
+  instead of a one-size config. Only registry packs verified to exist are referenced (a missing
+  pack would hard-fail this deterministic gate). Detection is git-based + manifest-content for
+  frameworks; `node_modules` excluded. **Override unchanged:** set `SEMGREP_CONFIGS` (env/conf) and
+  it wins verbatim — nothing is appended. `scan.sh doctor` now prints the resolved set and whether
+  it is `stack-auto` or `from env/conf`; the `sast` log line shows the packs used.
+- **`sec-sast-deep` gains Class 4 — semantic/stack-specific injection** (semgrep's blind spot):
+  second-order/stored injection, wrapper-hidden sinks, and stack idioms the pattern packs miss
+  (Django/SQLAlchemy `.raw()`/`.extra()`/`text()`, Flask `render_template_string` SSTI, Node
+  `child_process`/`eval`/NoSQL operator injection, Java `Statement`/OGNL, unsafe deserialization).
+  It reads the stack `scan.sh` detected and explicitly defers single-sink findings to `scan.sh sast`
+  (no double-reporting). `sec-audit` now also triggers `sec-sast-deep` on raw-injection-sink signals.
+
+### Changed
+- `security-audit.conf.example`: `SEMGREP_CONFIGS` is now commented out by default (leave unset =
+  stack-auto); documented that setting it overrides auto-selection verbatim. READMEs (en/tr) updated.
+
 ## [1.9.2] - 2026-06-25
 
 ### Fixed (secret scan in a git worktree — silent false-clean)
