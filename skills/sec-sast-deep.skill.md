@@ -1,17 +1,17 @@
 ---
 name: sec-sast-deep
-description: Deep-scans with Claude for SEMANTIC security flaws that semgrep cannot see (horizontal authz/IDOR, vertical authz/missing-role, business-logic). Follows the call path, not a pattern; three-phase recon -> verify -> record. Output feeds the sec-triage flow (docs/security/scan-findings + follow-up registry). NOT part of scan.sh; run it periodically / pre-cutover / after a new authz surface. Use it when asked to "deep SAST / look for IDOR / authz / logic flaws".
+description: Deep-scans with Claude for SEMANTIC security flaws that semgrep cannot see (horizontal authz/IDOR, vertical authz/missing-role, business-logic, semantic/stack-specific injection). Follows the call path, not a pattern; three-phase recon -> verify -> record. Output feeds the sec-triage flow (docs/security/scan-findings + follow-up registry). NOT part of scan.sh; run it periodically / pre-cutover / after a new authz surface. Use it when asked to "deep SAST / look for IDOR / authz / logic / injection flaws".
 ---
 
 # sec-sast-deep — semantic SAST (semgrep's blind spot)
 
 `scan.sh sast` (semgrep) is **pattern-based**: it catches known bad signatures, BUT
 *authorization* and *business-rule* flaws depend on the **intent** in the code — a matter
-of the **call path**, not a pattern. This skill deep-scans those 3 classes with Claude. It
+of the **call path**, not a pattern. This skill deep-scans those 4 classes with Claude. It
 **complements semgrep, it does not replace it**.
 
 > Independently written; inspired by `github.com/utkusen/sast-skills` (its three-phase
-> recon->verify->merge structure). Adapted to the kit's `sec-triage` flow and narrowed to the 3
+> recon->verify->merge structure). Adapted to the kit's `sec-triage` flow and narrowed to the 4
 > most critical classes — no code or text is copied from it.
 
 ## When
@@ -81,9 +81,39 @@ code**. High-value examples (adapt to your domain):
 **Not a flaw:** server-side amount recomputation (does not trust the client); FSM transition
 guards; an idempotency unique constraint; tested cumulative validation.
 
+## Class 4 — injection (semantic / stack-specific, semgrep's blind spot)
+`scan.sh sast` already runs the **stack-aware semgrep packs** (`p/owasp-top-ten` + the detected
+language/framework packs: `p/python`/`p/django`, `p/javascript`/`p/react`, `p/java`, …), so the
+**single-sink, in-function** injection patterns (raw SQL string-concat, `os.system(userinput)`,
+reflected XSS) are already covered there. This class targets only what those patterns **miss** —
+injection that depends on the **call path** or on a **stack idiom** the rule set doesn't model.
+First read the stack scan.sh detected (`scan.sh doctor` → `semgrep cfg`) so you hunt the **right
+idioms** for that stack; don't re-report what semgrep already flagged.
+
+**A flaw** (flag it — pattern scanners typically don't):
+- **Second-order / stored injection:** untrusted input is stored, then later read and passed to a
+  sink **in another request/function** without re-sanitization (taint crosses a persistence boundary).
+- **Wrapper-hidden sink:** the dangerous call sits in a helper (`run_cmd()`, `raw_query()`,
+  `build_html()`); the taint enters several frames up at a caller — no single line looks unsafe.
+- **Stack-idiom injection** (use the detected stack):
+  - *Django/SQLAlchemy:* `.extra()`, `.raw()`, `RawSQL(...)`, `cursor.execute(f"...")`,
+    `text("..."+x)` with interpolated input; `.order_by(request.GET[...])`.
+  - *Flask/Jinja:* `render_template_string(user_input)` / a user-controlled template name → **SSTI**.
+  - *Node/JS:* `sequelize.query`/`.literal` with interpolation; `child_process.exec(`...${x}`)`;
+    `eval`/`Function` reaching user data; `$where`/operator **NoSQL** injection into Mongo.
+  - *Java:* `Statement` + concatenation, `Runtime.exec`, OGNL/SpEL/EL evaluation of user input.
+- **Deserialization → execution:** `pickle.loads`, `yaml.load` (unsafe loader), Java native deser
+  of untrusted bytes; or path/`include` built from user input (path traversal / LFI as injection).
+
+**Not a flaw** (do NOT flag — the correct pattern):
+- Parameterized queries / bound params / the ORM's safe query builder (no string interpolation).
+- Auto-escaping templates with input rendered as data (not `| safe` / `mark_safe` / `dangerouslySetInnerHTML`).
+- A sink whose only input is a server-side constant / allow-listed enum — untrusted input can't reach it.
+- A finding semgrep **already reported** for the same sink — that belongs to `scan.sh sast`, not here.
+
 ## Bonus pass — past-fix recurrence & incomplete patches
 Cheap and high-signal: a real flaw is usually fixed in ONE place, but the same bug-class often
-lives elsewhere. Run this alongside the 3 classes.
+lives elsewhere. Run this alongside the 4 classes.
 - **Incomplete fix:** read recent security commits/patches (`git log --grep` for fix/CVE/security/
   CVE-IDs) — does the patch cover *every* call path, or only the reported one? Look for the same
   sink hardened here but left raw next door.

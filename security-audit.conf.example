@@ -17,9 +17,11 @@
 # Example: a backend + frontend source layout.
 : "${SAST_PATHS:=backend frontend}"
 
-# Semgrep rulesets (language/framework per project). Examples:
-#   p/owasp-top-ten p/secrets p/javascript p/python p/django p/golang p/react
-: "${SEMGREP_CONFIGS:=--config p/owasp-top-ten --config p/django --config p/secrets --config p/javascript}"
+# Semgrep rulesets. LEAVE UNSET to let scan.sh auto-select packs from your stack
+# (base p/owasp-top-ten + p/secrets, plus per-language/framework: p/python, p/django,
+# p/javascript, p/typescript, p/react, p/golang, p/java, p/php, p/ruby, p/csharp).
+# Set it ONLY to override that auto-selection verbatim (env/conf wins, nothing is appended):
+# : "${SEMGREP_CONFIGS:=--config p/owasp-top-ten --config p/django --config p/secrets --config p/javascript}"
 
 # --- IaC (checkov) ---
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.

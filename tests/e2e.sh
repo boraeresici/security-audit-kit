@@ -50,6 +50,27 @@ done
 echo "-- doctor --"
 $SCAN doctor >/dev/null 2>&1 && ok "doctor ran" || no "doctor failed"
 
+echo "-- stack-aware semgrep config --"
+# A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
+DOC="$($SCAN doctor 2>/dev/null)"
+printf '%s' "$DOC" | grep -q 'semgrep cfg .*owasp-top-ten.*secrets.*(stack-auto)' && ok "cfg: base packs auto" || no "cfg: base packs missing"
+printf '%s' "$DOC" | grep -q 'semgrep cfg.*p/python' && no "cfg: python pack on non-python repo" || ok "cfg: no language pack on bash repo"
+# Plant a python+react stack -> should pull p/python and p/react.
+mkdir -p stack/backend stack/frontend
+echo 'django==5.0' > stack/backend/requirements.txt
+echo 'def x(): pass' > stack/backend/manage.py
+printf '{ "dependencies": { "react": "^18" } }\n' > stack/package.json
+echo 'export const A=1' > stack/frontend/app.tsx
+git -c user.email=e2e@test -c user.name=e2e add stack >/dev/null 2>&1
+DOC2="$($SCAN doctor 2>/dev/null)"
+printf '%s' "$DOC2" | grep -q 'p/python' && printf '%s' "$DOC2" | grep -q 'p/django' \
+  && printf '%s' "$DOC2" | grep -q 'p/react' && ok "cfg: stack packs auto-selected (python+django+react)" || no "cfg: stack packs not selected"
+# Explicit override wins verbatim, nothing appended. Capture first (env-prefixed pipeline +
+# pipefail is fragile) — same command-substitution form as the base/stack assertions above.
+OVR="$(SEMGREP_CONFIGS='--config p/custom' $SCAN doctor 2>/dev/null)"
+printf '%s' "$OVR" | grep -q 'semgrep cfg --config p/custom (from env/conf)' && ok "cfg: env override wins" || no "cfg: env override ignored"
+git -c user.email=e2e@test -c user.name=e2e rm -rq stack >/dev/null 2>&1; rm -rf stack
+
 echo "-- integrity (verify / CHECKSUMS) --"
 if [ -f tools/security-audit-kit/CHECKSUMS ]; then
   $SCAN verify >/dev/null 2>&1 && ok "verify: clean vendored copy passes" || no "verify: clean copy should pass"

@@ -23,7 +23,7 @@ is skipped automatically.
 On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
 scan -> real/false-positive decision -> fix/allowlist), **`sec-sast-deep`** (*semantic*
 code flaws semgrep's patterns miss: horizontal authz/IDOR, vertical authz/missing-role,
-business logic — by following the call path), **`sec-ai-review`** (AI/LLM risks per the
+business logic, semantic/stack-specific injection — by following the call path), **`sec-ai-review`** (AI/LLM risks per the
 OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency), and
 **`sec-threat-model`** (STRIDE + data-flow threat modeling of the attack surface). The
 latter three don't run inside `scan.sh` (judgment, not a script); run them in Claude
@@ -233,8 +233,10 @@ finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-
 `scan.sh sast` (semgrep) is **pattern-based**: it catches known bad signatures.
 Authorization and business-rule flaws, however, depend on the **intent** in the
 code — a matter of the **call path**, not a pattern. The `sec-sast-deep` skill
-deep-scans those 3 classes with Claude: horizontal authz/IDOR, vertical
-authz/missing-role, business logic. It **complements semgrep, does not replace it**.
+deep-scans those 4 classes with Claude: horizontal authz/IDOR, vertical
+authz/missing-role, business logic, and semantic/stack-specific injection
+(second-order, wrapper-hidden, ORM/SSTI/NoSQL idioms semgrep misses across the
+call path). It **complements semgrep, does not replace it**.
 
 - **Does NOT run inside `scan.sh`** (judgment, not a script); run it as
   `/sec-sast-deep` in Claude.
@@ -321,7 +323,11 @@ on every scan; not recommended for interactive use).
 
 The kit runs **zero-config** (default `SAST_PATHS=.` whole repo, semgrep skips
 node_modules/.git/.venv; `TF_DIR` auto from the first `*.tf`; js/py package manager
-auto-detected). For customization, one file per project:
+auto-detected). **Semgrep rulesets are stack-aware**: with `SEMGREP_CONFIGS` unset, `scan.sh`
+auto-selects packs from what's in the repo — base `p/owasp-top-ten` + `p/secrets`, plus the
+detected language/framework packs (`p/python`/`p/django`, `p/javascript`/`p/typescript`/`p/react`,
+`p/golang`, `p/java`, `p/php`, `p/ruby`, `p/csharp`) — so each project gets its own injection
+rules. `scan.sh doctor` prints the resolved set. For customization, one file per project:
 
 1. On setup, `install.sh` creates **`.security-audit.conf`** at the repo root
    (template: `security-audit.conf.example`).
@@ -329,7 +335,7 @@ auto-detected). For customization, one file per project:
    ```sh
    : "${SAST_PATHS:=backend frontend}"     # narrow source directories
    : "${TF_DIR:=infra/terraform}"          # terraform directory
-   : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"
+   # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # leave unset = stack-auto; set to override
    ```
 3. `scan.sh` sources it automatically.
 
