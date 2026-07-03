@@ -71,6 +71,39 @@ OVR="$(SEMGREP_CONFIGS='--config p/custom' $SCAN doctor 2>/dev/null)"
 printf '%s' "$OVR" | grep -q 'semgrep cfg --config p/custom (from env/conf)' && ok "cfg: env override wins" || no "cfg: env override ignored"
 git -c user.email=e2e@test -c user.name=e2e rm -rq stack >/dev/null 2>&1; rm -rf stack
 
+echo "-- stack fixture matrix (per-stack detection isolation) --"
+# Materialize each benign fixture (tests/fixtures/stacks/<stack>/*.tpl, .tpl stripped) into a
+# fresh throwaway git repo and assert scan.sh detects the right packs/dimensions — in isolation.
+KIT_FX="$TARGET/tools/security-audit-kit/tests/fixtures/stacks"
+if [ -d "$KIT_FX" ]; then
+  # doctor output of a fresh repo populated from fixture stack $1
+  doctor_of(){
+    local src="$KIT_FX/$1" dst; dst="$(mktemp -d)"
+    ( cd "$src" && find . -type f -name '*.tpl' | while IFS= read -r f; do
+        out="$dst/${f#./}"; out="${out%.tpl}"; mkdir -p "$(dirname "$out")"; cp "$f" "$out"; done )
+    ( cd "$dst" && git init -q \
+        && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1 \
+        && git -c user.email=e2e@test -c user.name=e2e commit -qm init >/dev/null 2>&1
+      bash "$TARGET/tools/security-audit-kit/scan.sh" doctor 2>/dev/null )
+    rm -rf "$dst"
+  }
+  D="$(doctor_of django)"
+  { printf '%s' "$D" | grep -q 'p/python' && printf '%s' "$D" | grep -q 'p/django'; } \
+    && ok "matrix django: python+django packs" || no "matrix django: python+django packs"
+  D="$(doctor_of react)"
+  { printf '%s' "$D" | grep -q 'p/javascript' && printf '%s' "$D" | grep -q 'p/react'; } \
+    && ok "matrix react: js+react packs" || no "matrix react: js+react packs"
+  D="$(doctor_of terraform)"
+  printf '%s' "$D" | grep -qi 'terraform' && ok "matrix terraform: detected" || no "matrix terraform: detected"
+  { printf '%s' "$D" | grep -q 'p/python' || printf '%s' "$D" | grep -q 'p/javascript'; } \
+    && no "matrix terraform: leaked a language pack" || ok "matrix terraform: base-only packs"
+  D="$(doctor_of monorepo)"
+  { printf '%s' "$D" | grep -q 'p/python' && printf '%s' "$D" | grep -q 'p/react'; } \
+    && ok "matrix monorepo: python+react packs" || no "matrix monorepo: python+react packs"
+else
+  skip "stack fixture matrix (fixtures dir missing)"
+fi
+
 echo "-- integrity (verify / CHECKSUMS) --"
 if [ -f tools/security-audit-kit/CHECKSUMS ]; then
   $SCAN verify >/dev/null 2>&1 && ok "verify: clean vendored copy passes" || no "verify: clean copy should pass"
