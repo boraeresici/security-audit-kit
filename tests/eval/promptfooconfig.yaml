@@ -1,0 +1,28 @@
+# Eval harness config (dev-only; see README.md). Measures the sec-triage REAL/FP judgment
+# against the labeled corpus in cases.yaml. Run via ./run.sh (which pins promptfoo + scores
+# precision/recall). Needs a provider API key (default: ANTHROPIC_API_KEY).
+#
+# Provider-swappable: this is the local-model / provider-agnostic de-risk hook — change the
+# `providers` id (e.g. `ollama:chat:llama3.1` or an openai model) to compare a candidate backend
+# against Claude on the SAME corpus before wiring it into any flow. Keep the model pinned.
+description: "sec-triage REAL/FP judgment eval"
+
+prompts:
+  - file://triage_prompt.md
+
+providers:
+  - id: anthropic:messages:claude-opus-4-8   # baseline = the tier the skills run on; swap to compare
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: |
+        let out = String(output).trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+        let verdict = null;
+        try { verdict = JSON.parse(out).verdict; }
+        catch (e) { const m = out.match(/\b(REAL|FP)\b/i); verdict = m ? m[1].toUpperCase() : null; }
+        const expected = String(context.vars.expected || '').toUpperCase();
+        const pass = verdict === expected;
+        return { pass, score: pass ? 1 : 0, reason: `predicted=${verdict} expected=${expected}` };
+
+tests: file://cases.yaml

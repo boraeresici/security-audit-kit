@@ -213,6 +213,28 @@ else
   skip "zizmor (uvx/pipx unavailable)"
 fi
 
+echo "-- eval harness (dev-only skill regression) --"
+if have node; then
+  # run.sh MUST skip cleanly (exit 0) with no provider key — force the key empty so e2e never
+  # triggers a live/costed eval even if the environment happens to have one set.
+  ( cd tools/security-audit-kit && env ANTHROPIC_API_KEY= bash tests/eval/run.sh >/dev/null 2>&1 ) \
+    && ok "eval: run.sh skips cleanly without a key" || no "eval: run.sh should exit 0 when key absent"
+  # score.mjs metric math on a fixed mock (1 TP, 1 FN, 1 TN, 1 FP -> recall 50%, precision 50%)
+  cat > eval_mock.json <<'JSON'
+{"results":{"results":[
+ {"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"REAL\"}"}},
+ {"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"FP\"}"}},
+ {"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"FP\"}"}},
+ {"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"REAL\"}"}}
+]}}
+JSON
+  node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null | grep -q 'recall:     50.0%' \
+    && ok "eval: score.mjs precision/recall math" || no "eval: score.mjs math wrong"
+  rm -f eval_mock.json
+else
+  skip "eval harness (node unavailable)"
+fi
+
 echo "-- pre-commit framework integration --"
 if have python3; then
   python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \
