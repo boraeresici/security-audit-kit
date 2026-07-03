@@ -69,7 +69,9 @@ printf '%s' "$DOC2" | grep -q 'p/python' && printf '%s' "$DOC2" | grep -q 'p/dja
 # pipefail is fragile) — same command-substitution form as the base/stack assertions above.
 OVR="$(SEMGREP_CONFIGS='--config p/custom' $SCAN doctor 2>/dev/null)"
 printf '%s' "$OVR" | grep -q 'semgrep cfg --config p/custom (from env/conf)' && ok "cfg: env override wins" || no "cfg: env override ignored"
-git -c user.email=e2e@test -c user.name=e2e rm -rq stack >/dev/null 2>&1; rm -rf stack
+# Robust cleanup: `git rm` fails silently on staged-but-uncommitted paths (no -f), leaving them
+# tracked. Remove the working tree then `git add -A` the path to stage its removal from the index.
+rm -rf stack; git -c user.email=e2e@test -c user.name=e2e add -A stack >/dev/null 2>&1
 
 echo "-- stack fixture matrix (per-stack detection isolation) --"
 # Materialize each benign fixture (tests/fixtures/stacks/<stack>/*.tpl, .tpl stripped) into a
@@ -181,6 +183,34 @@ if docker_ok; then
   $SCAN osv >/dev/null 2>&1 && ok "osv: wired + clean on a lockfile-less repo" || no "osv: should pass (exit 0) with no lockfiles"
 else
   skip "osv (docker unavailable)"
+fi
+
+echo "-- guarddog (malicious/typosquat deps, optional) --"
+if have uvx || have pipx; then
+  # target has no requirements*.txt / package.json -> scan.sh skips cleanly (exit 0)
+  $SCAN guarddog >/dev/null 2>&1 && ok "guarddog: wired + clean on a manifest-less repo" || no "guarddog: should pass (exit 0) with no manifests"
+else
+  skip "guarddog (uvx/pipx unavailable)"
+fi
+
+echo "-- zizmor (GitHub Actions security, optional) --"
+if have uvx || have pipx; then
+  $SCAN zizmor >/dev/null 2>&1 && ok "zizmor: clean pass when no workflows" || no "zizmor: should pass (exit 0) with no workflows"
+  mkdir -p .github/workflows
+  cat > .github/workflows/vuln.yml <<'YAML'
+name: vuln
+on: pull_request_target
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.event.pull_request.title }}"
+YAML
+  git -c user.email=e2e@test -c user.name=e2e add .github/workflows/vuln.yml >/dev/null 2>&1
+  $SCAN zizmor >/dev/null 2>&1 && no "zizmor: planted vulnerable workflow NOT caught" || ok "zizmor: planted vulnerable workflow caught"
+  git -c user.email=e2e@test -c user.name=e2e rm -q .github/workflows/vuln.yml >/dev/null 2>&1; rm -rf .github
+else
+  skip "zizmor (uvx/pipx unavailable)"
 fi
 
 echo "-- pre-commit framework integration --"

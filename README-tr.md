@@ -16,8 +16,11 @@ bir Claude skill'ine baglayan kendi-kendine yeten kit.
 
 Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs**
-(trivy), **SBOM** (syft) ve **opsiyonel cok-ekosistem bagimlilik CVE** boyutu
-(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…). Eksik toolchain olan boyut otomatik atlanir.
+(trivy), **SBOM** (syft) ve opsiyonel boyutlar: **cok-ekosistem bagimlilik CVE**
+(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **kotu niyetli/typosquat bagimlilik**
+(`scan.sh guarddog` — GuardDog; bilinen-CVE kor noktasi) ve **GitHub Actions guvenligi**
+(`scan.sh zizmor` — template injection, poisoned pipeline, token asiri-izin). Eksik
+toolchain olan boyut otomatik atlanir.
 
 Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
 gercek/FP karari -> fix/allowlist), **`sec-sast-deep`** (semgrep'in pattern'le goremedigi
@@ -207,6 +210,8 @@ bash tools/security-audit-kit/scan.sh staged     # staged degisikliklerde saniye
 bash tools/security-audit-kit/scan.sh changed    # sadece degisen dosyalarda SAST (diff-aware, hizli)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh osv        # opsiyonel: cok-ekosistem dep CVE (OSV-Scanner)
+bash tools/security-audit-kit/scan.sh guarddog   # opsiyonel: kotu niyetli/typosquat dep (GuardDog; network gerekir)
+bash tools/security-audit-kit/scan.sh zizmor     # opsiyonel: GitHub Actions guvenligi (zizmor; offline)
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 ```

@@ -36,6 +36,9 @@
 # : "${SEMGREP_VER:=1.166.0}"
 # : "${CHECKOV_VER:=3.3.1}"
 # : "${PIP_AUDIT_VER:=2.10.1}"
+# : "${GUARDDOG_VER:=3.0.2}"   # optional 'scan.sh guarddog' (malicious/typosquat deps; needs network)
+# : "${ZIZMOR_VER:=1.26.1}"    # optional 'scan.sh zizmor' (GitHub Actions security; offline)
+# : "${ZIZMOR_ARGS:=}"         # e.g. "--min-severity medium" or "--persona pedantic"
 #
 # Docker tools — pinned by IMMUTABLE digest (preferred) + a readable tag. To bump,
 # set BOTH the *_VER and *_DIGEST together (or clear the digest to use the tag).
