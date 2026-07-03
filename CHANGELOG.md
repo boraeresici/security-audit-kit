@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-07-03
+
+### Added (two new optional scan dimensions — supply-chain + CI/CD coverage)
+- **`scan.sh guarddog`** — malicious/typosquat **dependency** detection via **GuardDog**
+  (`==3.0.2`, Apache-2.0), run through uvx/pipx. `guarddog verify` checks each declared dependency
+  (`requirements*.txt` → PyPI, `package.json` → npm) against the live registry for typosquatting,
+  compromised-maintainer metadata, and malicious install scripts — the blind spot of the CVE
+  scanners (osv/pip-audit/npm only find *known* CVEs). **HARD when run; standalone (not in `all`);
+  needs network.** `GUARDDOG_VER` pin; `doctor` + conf + READMEs + e2e updated.
+- **`scan.sh zizmor`** — GitHub Actions security via **zizmor** (`==1.26.1`, MIT), run through
+  uvx/pipx, **offline** (no GitHub API → deterministic/air-gap friendly). Flags template injection,
+  dangerous triggers (`pull_request_target`), token over-permissioning, credential persistence,
+  unpinned actions. Runs only when `.github/workflows/` is present. **HARD when run; standalone
+  (not in `all`).** SARIF supported (`SARIF=1`). `ZIZMOR_VER` pin + `ZIZMOR_ARGS` passthrough
+  (e.g. `--min-severity medium`); `doctor` + conf + READMEs + e2e updated.
+
+### Changed (self-dogfooding — the kit now passes its own zizmor gate)
+- Hardened the kit's **own GitHub Actions workflows** to pass `scan.sh zizmor`: least-privilege
+  `permissions:` blocks (top-level `contents: read` + job-scoped `security-events: write` only where
+  SARIF upload needs it) and `persist-credentials: false` on all `actions/checkout` steps.
+
 ## [1.10.1] - 2026-07-03
 
 ### Added (maintainer tooling — no change to scan behavior or skills)

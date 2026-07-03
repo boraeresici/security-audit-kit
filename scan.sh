@@ -13,6 +13,8 @@
 #   container Dep+OS+secret+misconfig (trivy fs)            [soft]
 #   sbom      Software inventory (syft CycloneDX+SPDX)       [artifact]
 #   osv       Broad multi-ecosystem dep CVE (osv-scanner)    [HARD]  optional (not in 'all')
+#   guarddog  Malicious/typosquat deps (guarddog verify)     [HARD]  optional (not in 'all'; needs network)
+#   zizmor    GitHub Actions security (zizmor, if workflows) [HARD]  optional (not in 'all')
 #   fast      staged + deps  (pre-commit / package install)
 #   all       secret + sast + deps + container + iac         (pre-push / pre-PR)
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
@@ -22,7 +24,7 @@
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
 #   pins: GITLEAKS_VER/_DIGEST, TRIVY_VER/_DIGEST, SYFT_VER/_DIGEST,
-#         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER.
+#         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER, GUARDDOG_VER, ZIZMOR_VER.
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -58,6 +60,10 @@ TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelt
 SEMGREP_VER="${SEMGREP_VER:-1.166.0}"
 CHECKOV_VER="${CHECKOV_VER:-3.3.1}"
 PIP_AUDIT_VER="${PIP_AUDIT_VER:-2.10.1}"
+GUARDDOG_VER="${GUARDDOG_VER:-3.0.2}"
+ZIZMOR_VER="${ZIZMOR_VER:-1.26.1}"
+# zizmor extra args (persona/severity tuning). Runs offline by default (no GitHub API).
+ZIZMOR_ARGS="${ZIZMOR_ARGS:-}"
 
 # Stack-aware semgrep rulesets. If SEMGREP_CONFIGS is set (env/conf) it wins verbatim;
 # otherwise we auto-select language/framework packs from what's actually in the repo, so each
@@ -267,6 +273,55 @@ scan_osv(){
   esac
 }
 
+# ---- guarddog — malicious/typosquat dependency detection, OPTIONAL (not in 'all'; needs network) ----
+# Complements osv/pip-audit/npm (which only find KNOWN CVEs) by catching *malicious* packages:
+# typosquats, compromised-maintainer metadata, malicious install scripts. `verify` checks each
+# declared dependency against the LIVE registry, so this dimension needs network. Standalone + opt-in.
+scan_guarddog(){
+  { have uvx || have pipx; } || { warn guarddog "no uvx/pipx -> guarddog skipped"; return 0; }
+  local pyreqs npmpkgs rc=0 f
+  pyreqs="$(git ls-files | grep -E '(^|/)requirements[^/]*\.txt$' | grep -v node_modules || true)"
+  npmpkgs="$(git ls-files | grep -E '(^|/)package\.json$' | grep -v node_modules || true)"
+  [ -z "$pyreqs" ] && [ -z "$npmpkgs" ] && { warn guarddog "no requirements*.txt or package.json -> nothing to verify"; return 0; }
+  say guarddog "guarddog verify (malicious/typosquat deps, ==$GUARDDOG_VER, needs network)"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    say guarddog "pypi verify $f"
+    pyrun guarddog "$GUARDDOG_VER" guarddog pypi verify "$f" --exit-non-zero-on-finding || rc=1
+  done <<EOF
+$pyreqs
+EOF
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    say guarddog "npm verify $f"
+    pyrun guarddog "$GUARDDOG_VER" guarddog npm verify "$f" --exit-non-zero-on-finding || rc=1
+  done <<EOF
+$npmpkgs
+EOF
+  return $rc
+}
+
+# ---- zizmor — GitHub Actions security, OPTIONAL (not in 'all') ----
+# Static analysis of GitHub Actions workflows/actions (template injection, dangerous triggers,
+# token over-permissioning, unpinned actions). Runs OFFLINE by default (no GitHub API), so it is
+# deterministic and air-gap friendly. Standalone + opt-in. Tune with ZIZMOR_ARGS (e.g. --min-severity).
+scan_zizmor(){
+  { have uvx || have pipx; } || { warn zizmor "no uvx/pipx -> zizmor skipped"; return 0; }
+  git ls-files | grep -qE '^\.github/workflows/.*\.(yml|yaml)$' \
+    || { warn zizmor "no .github/workflows -> nothing to scan"; return 0; }
+  say zizmor "zizmor --offline (.github, ==$ZIZMOR_VER)"
+  local rc
+  if [ "$SARIF" = "1" ]; then
+    pyrun zizmor "$ZIZMOR_VER" zizmor --offline --format sarif $ZIZMOR_ARGS .github/ > "$SARIF_DIR/zizmor.sarif"
+    rc=$?
+  else
+    pyrun zizmor "$ZIZMOR_VER" zizmor --offline $ZIZMOR_ARGS .github/
+    rc=$?
+  fi
+  # zizmor exits non-zero when it has findings (it warns, not errors, on workflow syntax by default).
+  [ "$rc" -eq 0 ] && return 0 || return 1
+}
+
 # ---- doctor: report environment, pins and detected projects (no scan) ----
 scan_doctor(){
   printf '== security-audit-kit doctor ==\n'
@@ -274,7 +329,7 @@ scan_doctor(){
   printf 'config : %s\n\n' "$([ -f "$CONF" ] && echo "$CONF" || echo '(none; using defaults)')"
   printf 'toolchain (a missing one only skips that dimension):\n'
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
-  { have uvx || have pipx; } && echo "  ok  uvx/pipx      (semgrep/checkov/pip-audit)" || echo "  --  uvx/pipx      MISSING -> sast/iac/py-deps skipped"
+  { have uvx || have pipx; } && echo "  ok  uvx/pipx      (semgrep/checkov/pip-audit/guarddog/zizmor)" || echo "  --  uvx/pipx      MISSING -> sast/iac/py-deps/guarddog/zizmor skipped"
   { have pnpm || have yarn || have npm; } && echo "  ok  js pkg mgr    (js-deps)" || echo "  --  js pkg mgr    MISSING -> js-deps skipped"
   printf '\npins:\n'
   printf '  gitleaks   %s @ %s\n' "$GITLEAKS_VER" "${GITLEAKS_DIGEST:-<tag>}"
@@ -285,10 +340,13 @@ scan_doctor(){
   printf '  semgrep cfg %s%s\n' "$SEMGREP_CONFIGS" "$([ -n "${SEMGREP_CONFIGS_OVERRIDDEN:-}" ] && echo ' (from env/conf)' || echo ' (stack-auto)')"
   printf '  checkov    %s\n' "${CHECKOV_VER:-<latest>}"
   printf '  pip-audit  %s\n' "${PIP_AUDIT_VER:-<latest>}"
+  printf '  guarddog   %s\n' "${GUARDDOG_VER:-<latest>}"
+  printf '  zizmor     %s\n' "${ZIZMOR_VER:-<latest>}"
   printf '\ndetected in this repo:\n'
   git ls-files 2>/dev/null | grep -qE 'pyproject\.toml|requirements.*\.txt|Pipfile|uv\.lock' && echo "  python"     || true
   git ls-files 2>/dev/null | grep -q  'package\.json'                                        && echo "  javascript" || true
   git ls-files 2>/dev/null | grep -q  '\.tf$'                                                && echo "  terraform"  || true
+  git ls-files 2>/dev/null | grep -qE '^\.github/workflows/.*\.(yml|yaml)$'                   && echo "  github-actions (zizmor)" || true
 }
 
 # ---- integrity: CHECKSUMS manifest + verify (Tier S Layer 2) ----
@@ -367,9 +425,11 @@ run_scans(){
     container) _dim container scan_container || rc=1 ;;
     sbom)      _dim sbom scan_sbom || rc=1 ;;
     osv)       _dim osv scan_osv || rc=1 ;;
+    guarddog)  _dim guarddog scan_guarddog || rc=1 ;;
+    zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|fast|all|doctor|verify|checksums)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums)"; return 2 ;;
   esac
   return $rc
 }

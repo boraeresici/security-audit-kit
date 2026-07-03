@@ -16,9 +16,11 @@ finding triage into a Claude skill.
 
 Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE**
 (pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs** (trivy),
-**SBOM** (syft), plus an **optional broad multi-ecosystem dependency CVE** dimension
-(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…). Any dimension whose toolchain is missing
-is skipped automatically.
+**SBOM** (syft), plus optional dimensions: **broad multi-ecosystem dependency CVE**
+(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **malicious/typosquat dependencies**
+(`scan.sh guarddog` — GuardDog; the known-CVE blind spot), and **GitHub Actions security**
+(`scan.sh zizmor` — template injection, poisoned pipelines, token over-permissioning). Any
+dimension whose toolchain is missing is skipped automatically.
 
 On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
 scan -> real/false-positive decision -> fix/allowlist), **`sec-sast-deep`** (*semantic*
@@ -205,6 +207,8 @@ bash tools/security-audit-kit/scan.sh staged     # sub-second secret scan of sta
 bash tools/security-audit-kit/scan.sh changed    # SAST on changed files only (diff-aware, fast)
 bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh osv        # optional: broad multi-ecosystem dep CVE (OSV-Scanner)
+bash tools/security-audit-kit/scan.sh guarddog   # optional: malicious/typosquat deps (GuardDog; needs network)
+bash tools/security-audit-kit/scan.sh zizmor     # optional: GitHub Actions security (zizmor; offline)
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 ```
