@@ -13,7 +13,7 @@ jobs:
       - name: shellcheck (pinned image — no version drift; uses repo .shellcheckrc)
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
-            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push tests/e2e.sh
+            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push tests/e2e.sh scripts/release.sh
 
   checksums:
     runs-on: ubuntu-latest

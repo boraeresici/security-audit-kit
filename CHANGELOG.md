@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-07-03
+
+### Added (maintainer tooling — no change to scan behavior or skills)
+- **`RELEASING.md` + `scripts/release.sh`** — RC-gated release flow. Consumers pin to release tags,
+  so every stable `vX.Y.Z` is gated behind a dogfooded `vX.Y.Z-rc.N` **pre-release**, and the final
+  tag is cut on the **exact tested RC commit**. `release.sh` runs a preflight (on `main`, clean tree,
+  in sync with origin, `scan.sh verify`, `e2e`, required CI checks green via `gh`) then cuts
+  `rc` / `final` tags + GitHub releases (`preflight` / `rc [X.Y.Z]` / `final X.Y.Z`; `--yes`/`--skip-e2e`/`--no-gh`).
+- **e2e stack fixture matrix** — `tests/fixtures/stacks/{django,react,terraform,monorepo}` (benign
+  `.tpl` fixtures, materialized per-stack into throwaway repos) assert stack-aware detection in
+  isolation; catches "wrong packs in a real project" before merge. 5 new assertions (36/0 total).
+- **`.github/rulesets/main.json`** — importable branch-protection ruleset for `main` (PR required;
+  required checks `shellcheck`/`checksums`/`self-audit`; no force-push/delete) + a README with UI/`gh`/manual apply steps.
+
+### Changed
+- CI `shellcheck` job now also lints `scripts/release.sh`.
+
 ## [1.10.0] - 2026-06-25
 
 ### Added (stack-aware injection coverage)
