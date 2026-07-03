@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2026-07-03
+
+### Added (eval harness — dev-only skill-quality regression; not in the scan path)
+- **`tests/eval/`** — a promptfoo-based (`@0.121.17`, pinned) harness that grades the `sec-triage`
+  **REAL/FP judgment** against a labeled corpus (`cases.yaml`: 5 real exploitable findings + 5
+  false positives across the classes triage must suppress — test-only, not-reachable, dev-placeholder,
+  safe-parameterized, allow-listed). `run.sh` feeds each case + a provider-neutral distillation of the
+  skill's Pass 1/2 (`triage_prompt.md`) to a model and `score.mjs` reports precision / recall / F1 /
+  accuracy for the REAL class. This is roadmap **Tier-L L1** — the gate for Phase-A prompt changes and
+  any future local / other-provider backend (change `providers:` to grade a candidate on the SAME
+  corpus). Optional regression gates: `EVAL_MIN_RECALL` / `EVAL_MIN_PRECISION`. **Dev-only:** needs
+  `node`/`npx` + a provider key (`ANTHROPIC_API_KEY`); skips cleanly (exit 0) otherwise, so it never
+  hard-fails CI/e2e. CI `shellcheck` now also lints `tests/eval/run.sh`; e2e smoke-tests the skip path
+  + `score.mjs` math; `output.json`/`.promptfoo/` gitignored.
+
 ## [1.11.0] - 2026-07-03
 
 ### Added (two new optional scan dimensions — supply-chain + CI/CD coverage)

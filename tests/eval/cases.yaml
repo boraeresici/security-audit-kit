@@ -1,0 +1,152 @@
+# Labeled triage corpus for the eval harness (dev-only; see README.md).
+# Each case is a promptfoo test: vars feed the judgment prompt; `expected` is the ground-truth
+# verdict (REAL|FP) the model should reach. metadata documents the class for humans + reporting.
+# Code is embedded as a STRING (not real .py/.js files) so it never trips the kit's own self-audit;
+# any "secret" is an obvious placeholder. Extend this corpus over time (more classes, real CVEs).
+
+# ---------------- REAL (should be caught: verdict = REAL) ----------------
+- description: "REAL sqli — f-string into cursor.execute, reachable from request param"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/views.py:42
+    finding_severity: ERROR
+    finding_message: "Detected string formatting in a SQL statement (python.sqlalchemy.security.sql-injection)"
+    expected: REAL
+    code: |
+      def get_user(request):
+          uid = request.GET["id"]          # untrusted
+          q = f"SELECT * FROM users WHERE id = {uid}"
+          return db.cursor().execute(q).fetchone()
+  metadata: { label: REAL, vuln_class: sql-injection }
+
+- description: "REAL command-injection — os.system with request input"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/ops.py:17
+    finding_severity: ERROR
+    finding_message: "Detected subprocess/command execution with a formatted string"
+    expected: REAL
+    code: |
+      import os
+      def ping(request):
+          host = request.args.get("host")   # untrusted
+          os.system("ping -c1 " + host)
+  metadata: { label: REAL, vuln_class: command-injection }
+
+- description: "REAL path-traversal — open() on user-controlled path, reachable"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/files.py:9
+    finding_severity: ERROR
+    finding_message: "Path traversal: user input flows into a file path"
+    expected: REAL
+    code: |
+      def download(request):
+          name = request.GET["f"]           # untrusted, no normalization
+          with open("/var/data/" + name) as fh:
+              return fh.read()
+  metadata: { label: REAL, vuln_class: path-traversal }
+
+- description: "REAL hardcoded credential committed to source (not a placeholder)"
+  vars:
+    finding_tool: gitleaks
+    finding_location: app/client.py:3
+    finding_severity: HIGH
+    finding_message: "Hardcoded credential assigned to a variable used at runtime"
+    expected: REAL
+    code: |
+      # used by the live API client below
+      HARDCODED_TOKEN = "PLACEHOLDER_prod_token_do_not_use_0000"
+      def call():
+          return http.get(API, headers={"Authorization": "Bearer " + HARDCODED_TOKEN})
+  metadata: { label: REAL, vuln_class: hardcoded-secret }
+
+- description: "REAL missing authorization — delete without ownership check, reachable endpoint"
+  vars:
+    finding_tool: sec-sast-deep
+    finding_location: app/api.py:55
+    finding_severity: HIGH
+    finding_message: "Object deleted by id with no tenant/owner scoping (IDOR / missing authz)"
+    expected: REAL
+    code: |
+      @router.delete("/orders/{order_id}")
+      def delete_order(order_id: int, request):
+          # no ownership/tenant check on request.user
+          Order.objects.get(id=order_id).delete()
+  metadata: { label: REAL, vuln_class: missing-authz }
+
+# ---------------- FALSE POSITIVE (should be suppressed: verdict = FP) ----------------
+- description: "FP test-only — sqli-shaped code but in a tests/ path (exclusion class)"
+  vars:
+    finding_tool: semgrep
+    finding_location: tests/test_users.py:12
+    finding_severity: ERROR
+    finding_message: "Detected string formatting in a SQL statement"
+    expected: FP
+    code: |
+      # tests/test_users.py — fixture, never runs against untrusted input
+      def test_query_builder():
+          uid = 1
+          q = f"SELECT * FROM users WHERE id = {uid}"
+          assert "1" in q
+  metadata: { label: FP, fp_class: test-only, vuln_class: sql-injection }
+
+- description: "FP not-reachable — dangerous sink in dead code never called with untrusted data"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/legacy.py:88
+    finding_severity: ERROR
+    finding_message: "Detected subprocess/command execution with a formatted string"
+    expected: FP
+    code: |
+      import os
+      def _debug_ping(host="127.0.0.1"):   # private, only ever called with a constant below
+          os.system("ping -c1 " + host)
+      # no caller passes untrusted input; used once as _debug_ping() with the default
+  metadata: { label: FP, fp_class: not-reachable, vuln_class: command-injection }
+
+- description: "FP dev placeholder — obvious changeme password in an example config template"
+  vars:
+    finding_tool: gitleaks
+    finding_location: config.example.yaml:4
+    finding_severity: HIGH
+    finding_message: "Possible hardcoded password"
+    expected: FP
+    code: |
+      # config.example.yaml — committed template; users copy + fill in
+      database:
+        user: app
+        password: "changeme"   # placeholder, documented
+  metadata: { label: FP, fp_class: dev-placeholder, vuln_class: hardcoded-secret }
+
+- description: "FP parameterized query — safe bound params, scanner mismatch"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/views.py:30
+    finding_severity: ERROR
+    finding_message: "Detected SQL statement (possible injection)"
+    expected: FP
+    code: |
+      def get_user(request):
+          uid = request.GET["id"]
+          # parameterized — driver escapes uid; not injectable
+          return db.cursor().execute("SELECT * FROM users WHERE id = %s", (uid,)).fetchone()
+  metadata: { label: FP, fp_class: safe-parameterized, vuln_class: sql-injection }
+
+- description: "FP allow-listed input — command built from a fixed enum, not user input"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/ops.py:40
+    finding_severity: ERROR
+    finding_message: "Detected subprocess/command execution"
+    expected: FP
+    code: |
+      import subprocess
+      ACTIONS = {"start": "svc-start", "stop": "svc-stop"}
+      def run(request):
+          action = request.args.get("action")
+          cmd = ACTIONS.get(action)         # only maps to a fixed, safe value
+          if not cmd:
+              return "bad action", 400
+          subprocess.run([cmd], check=True)  # arg list, no shell, allow-listed
+  metadata: { label: FP, fp_class: allow-listed, vuln_class: command-injection }

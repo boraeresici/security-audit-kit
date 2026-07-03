@@ -11,5 +11,9 @@ sbom.spdx.json
 # Local-only notes / roadmap (tracked on this machine, never published)
 *.local.md
 
+# Eval harness run artifacts (dev-only; regenerated per run)
+tests/eval/output.json
+.promptfoo/
+
 # OS / editor noise
 .DS_Store
