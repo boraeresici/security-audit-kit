@@ -8,12 +8,16 @@ sbom.cyclonedx.json
 sbom.spdx.json
 .kit-version
 
-# Local-only notes / roadmap (tracked on this machine, never published)
+# Local-only notes / roadmap / mocks (tracked on this machine, never published)
 *.local.md
+*.local.sh
 
 # Eval harness run artifacts (dev-only; regenerated per run)
-tests/eval/output.json
+tests/eval/output*.json
 .promptfoo/
 
 # OS / editor noise
 .DS_Store
+**/.env
+**/.env.local
+**.env**

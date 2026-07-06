@@ -356,6 +356,12 @@ bulgulari otomatik duser — sonra **confidence-skorlu bir dogrulama pasi** kosa
 bulgulari raporlar (gerisi kayit altinda "Suppressed" bolumune gider). Projene gore ayarla ve
 commit et; tekrar eden false-positive gurultusunu deterministik olarak yok eder.
 
+## Karsilastirma
+**Aikido** ve **Semgrep** ile uc-yonlu, guncel tutulan ozellik karsilastirmasi — kitin bilerek
+kapsam disi biraktiklari ve planlananlar (🔜) dahil —
+[docs/compare/aikido-semgrep.md](docs/compare/aikido-semgrep.md) dosyasinda (Ingilizce). Yeni
+ozellikler ciktikca guncellenir.
+
 ## HARD sinir
 Bu araclar **ic kanit** uretir. PCI DSS Req 11.3.2 ASV scan ve Req 11.4 pentest
 **yerine gecmez** — onlar dis-makam/gated. Kit onlari kapatmaz; sadece kod-icine
