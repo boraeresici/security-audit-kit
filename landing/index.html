@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>security-audit-kit — portable local security scanning</title>
+<meta name="description" content="A self-contained kit that runs pinned, deterministic security scans in any git repo — secrets, SAST, CVE, IaC, containers, SBOM — plus an AI judgment layer. Nothing leaves your machine. MIT.">
+<meta property="og:title" content="security-audit-kit">
+<meta property="og:description" content="Portable local security scanning: deterministic pinned toolchain + AI judgment layer. No SaaS, no server side.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>▚</text></svg>">
+<style>
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:100 700;font-display:swap;src:url(fonts/plex-sans-var.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/plex-mono-400.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(fonts/plex-mono-500.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/plex-mono-600.woff2) format("woff2")}
+:root{
+  --bg:#f7faf7;
+  --panel:#ffffff;
+  --ink:#141f18;
+  --dim:#54655b;
+  --faint:#87958c;
+  --line:#e1e8e1;
+  --line-hi:#c9d5c9;
+  --green:#0c7c4e;
+  --green-ink:#0a6642;
+  --green-wash:#eaf5ee;
+  --amber:#a1671b;
+  --red:#b94a40;
+  --blue:#2b6cb0;
+  --tbg:#101812;
+  --ttxt:#c9dccf;
+  --tgreen:#3bdb8d;
+  --tdim:#6d8377;
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15.5px;line-height:1.65}
+::selection{background:var(--green);color:#fff}
+a{color:var(--green-ink);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+code,.mono{font-family:var(--mono)}
+
+/* ---------- nav ---------- */
+nav{position:sticky;top:0;z-index:100;background:rgba(247,250,247,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:30px;height:58px}
+.brand{font-family:var(--mono);font-weight:600;font-size:14.5px;color:var(--ink);white-space:nowrap}
+.brand i{font-style:normal;color:var(--green)}
+nav .links{display:flex;gap:24px;margin-left:auto;font-size:13.5px;font-weight:500}
+nav .links a{color:var(--dim)}
+nav .links a:hover{color:var(--green-ink);text-decoration:none}
+nav .gh{border:1px solid var(--line-hi);border-radius:6px;padding:5px 14px;color:var(--ink)!important;background:var(--panel)}
+nav .gh:hover{border-color:var(--green);color:var(--green-ink)!important}
+@media(max-width:760px){nav .links a:not(.gh){display:none}}
+
+/* ---------- hero ---------- */
+header{padding:76px 0 60px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#fff 0%,var(--bg) 100%)}
+.hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:56px;align-items:center}
+@media(max-width:940px){.hero-grid{grid-template-columns:1fr;gap:40px}}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:26px}
+.badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;
+  color:var(--dim);border:1px solid var(--line);border-radius:99px;padding:4px 12px;background:var(--panel)}
+.badge b{color:var(--green-ink);font-weight:600}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+h1{font-weight:650;font-size:clamp(30px,3.7vw,46px);line-height:1.1;letter-spacing:-.025em;
+  max-width:18ch;text-wrap:balance}
+h1 em{font-style:normal;color:var(--green-ink)}
+.sub{margin:22px 0 0;max-width:64ch;color:var(--dim);font-size:17px;line-height:1.6}
+.sub b{color:var(--ink);font-weight:600}
+.hero-cta{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap}
+.btn{display:inline-block;font-size:14.5px;font-weight:600;padding:11px 22px;border-radius:8px;
+  background:var(--green);color:#fff!important;border:1px solid var(--green);transition:.15s}
+.btn:hover{background:var(--green-ink);text-decoration:none}
+.btn.ghost{background:var(--panel);color:var(--ink)!important;border-color:var(--line-hi)}
+.btn.ghost:hover{border-color:var(--green);color:var(--green-ink)!important;background:#fff}
+
+/* ---------- lifecycle wizard (hero right) ---------- */
+.wiz{border-radius:14px;background:var(--tbg);overflow:hidden;
+  box-shadow:0 1px 2px rgba(20,31,24,.08),0 24px 55px -26px rgba(20,31,24,.4)}
+.term-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+.term-bar i{width:10px;height:10px;border-radius:50%;background:#2c3a30}
+.term-bar span{margin-left:8px;color:var(--tdim);font-family:var(--mono);font-size:12px}
+.term-bar button{margin-left:auto;font-family:var(--mono);font-size:11.5px;cursor:pointer;border-radius:6px;
+  background:none;border:1px solid #2c3a30;color:var(--tdim);padding:4px 13px;transition:.15s}
+.term-bar button:hover{color:var(--tgreen);border-color:var(--tgreen)}
+.wiz ol{list-style:none;position:relative;padding:10px 0 14px}
+.wiz ol::before{content:"";position:absolute;left:40px;top:34px;bottom:34px;width:1px;background:#243429}
+.step{position:relative;display:grid;grid-template-columns:44px 1fr;gap:2px 12px;
+  padding:15px 20px 15px 18px;transition:background .4s}
+.step .node{grid-row:1/span 3;justify-self:center;align-self:start;margin-top:1px;
+  width:26px;height:26px;border-radius:50%;border:1px solid #2c4a38;background:var(--tbg);
+  color:var(--tdim);font-family:var(--mono);font-size:11px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;position:relative;z-index:1;transition:.4s}
+.step h4{font-family:var(--mono);font-size:13px;font-weight:600;color:#dce9df;letter-spacing:.02em}
+.step .cmd{font-family:var(--mono);font-size:12px;color:var(--tgreen);white-space:nowrap;overflow-x:auto}
+.step small{font-size:12.5px;color:#8ba192;line-height:1.5;display:block}
+.step.active{background:rgba(59,219,141,.06)}
+.step.active .node{border-color:var(--tgreen);color:var(--tgreen);box-shadow:0 0 14px -4px var(--tgreen)}
+.step.done .node{color:var(--tgreen);border-color:#2c4a38}
+
+/* ---------- stats ---------- */
+.stats{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  margin-top:36px;background:var(--panel)}
+.stat{flex:1;min-width:150px;padding:18px 22px;border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat .n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;font-size:24px;color:var(--green-ink)}
+.stat .l{font-size:12px;color:var(--faint);margin-top:2px}
+@media(max-width:700px){.stat{min-width:45%;border-bottom:1px solid var(--line)}}
+
+/* ---------- sections ---------- */
+section{padding:84px 0 0}
+.eyebrow{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--green);margin-bottom:12px}
+h2{font-weight:650;font-size:clamp(23px,3vw,32px);letter-spacing:-.02em;text-wrap:balance}
+.sec-sub{color:var(--dim);max-width:68ch;margin:14px 0 38px;font-size:15.5px}
+.sec-sub b{color:var(--ink);font-weight:600}
+.sec-sub code,td code,p code{background:var(--green-wash);border:1px solid #d7e9dd;border-radius:5px;
+  padding:1px 6px;font-size:.88em;color:var(--green-ink);white-space:nowrap}
+
+/* ---------- dimension cards ---------- */
+.dims{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.dims{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.dims{grid-template-columns:1fr}}
+.dim{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px;
+  position:relative;transition:border-color .15s,box-shadow .15s}
+.dim:hover{border-color:var(--line-hi);box-shadow:0 6px 22px -12px rgba(20,31,24,.18)}
+.dim .cmd{font-family:var(--mono);color:var(--green-ink);font-size:13.5px;font-weight:600}
+.dim .tool{font-family:var(--mono);color:var(--faint);font-size:11.5px;margin-top:3px}
+.dim p{color:var(--dim);font-size:13.5px;margin-top:12px;line-height:1.6}
+.tag{position:absolute;top:16px;right:16px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--faint)}
+.tag.opt{color:var(--amber);border-color:#ecd9bc;background:#fdf7ee}
+
+/* ---------- skills ---------- */
+.skills{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+.skill{display:grid;grid-template-columns:210px 120px 1fr;gap:20px;align-items:baseline;
+  padding:20px 24px;border-bottom:1px solid var(--line)}
+.skill:last-child{border-bottom:0}
+.skill .name{font-family:var(--mono);color:var(--green-ink);font-weight:600;font-size:14px}
+.skill .cad{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber)}
+.skill .cad.routine{color:var(--blue)}
+.skill .cad.one{color:var(--green-ink)}
+.skill p{color:var(--dim);font-size:13.5px}
+@media(max-width:760px){.skill{grid-template-columns:1fr;gap:6px}}
+
+/* ---------- loop diagram (stays terminal — authentic) ---------- */
+.loop{margin-top:40px;border-radius:12px;background:var(--tbg);padding:26px 28px;overflow-x:auto;
+  box-shadow:0 1px 2px rgba(20,31,24,.08)}
+.loop pre{font-family:var(--mono);font-size:13px;line-height:1.9;color:#93a89b;min-width:640px}
+.loop .k{color:var(--tgreen)}
+.loop .a{color:#e5b567}
+.loop .r{color:#e88b82}
+.loop .f{color:var(--tdim)}
+
+/* ---------- comparison ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:18px;margin:0 0 20px;font-size:13px;color:var(--dim)}
+.legend b{font-family:var(--mono);font-weight:600}
+.tbl-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:860px;font-size:13.5px}
+th,td{padding:11px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+thead th{background:#f2f6f2;color:var(--dim);font-weight:600;font-size:12px;letter-spacing:.06em;
+  text-transform:uppercase;position:sticky;top:58px}
+thead th:nth-child(4){color:var(--green-ink)}
+tbody tr:nth-child(even) td{background:#fbfdfb}
+td:first-child{font-weight:500;min-width:230px}
+td:not(:first-child){color:var(--dim)}
+tbody tr:last-child td{border-bottom:0}
+.m{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.m.y{color:var(--green)}
+.m.n{color:var(--red)}
+.m.p{color:var(--amber)}
+.m.s{color:var(--blue)}
+.m.d{color:var(--faint)}
+.note{display:block;color:var(--faint);font-size:12px;margin-top:2px;font-weight:400}
+.src{color:var(--faint);font-size:12.5px;margin-top:14px;max-width:80ch}
+
+/* ---------- scope ---------- */
+.scope{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:38px}
+@media(max-width:700px){.scope{grid-template-columns:1fr}}
+.scope div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.scope h3{font-size:14px;color:var(--ink);font-weight:600;margin-bottom:6px}
+.scope h3 .m{margin-right:8px}
+.scope p{font-size:13.5px;color:var(--dim)}
+
+/* ---------- trust ---------- */
+.trust{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.trust{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.trust{grid-template-columns:1fr}}
+.trust>div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.trust h3{font-size:14px;font-weight:600;margin-bottom:7px}
+.trust h3 i{font-style:normal;color:var(--green);margin-right:9px}
+.trust p{font-size:13.5px;color:var(--dim)}
+
+/* ---------- why (manifesto) ---------- */
+.why-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:36px 40px;position:relative;overflow:hidden}
+.why-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green)}
+.why-card .lead{font-size:19px;color:var(--ink);font-weight:500;line-height:1.55;
+  max-width:56ch;text-wrap:balance;letter-spacing:-.01em}
+.why-card p{color:var(--dim);font-size:15px;margin-top:16px;max-width:66ch;line-height:1.7}
+.why-card p b{color:var(--ink);font-weight:600}
+.sig{display:flex;align-items:center;gap:12px;margin-top:26px;font-family:var(--mono);font-size:13px;color:var(--ink)}
+.sig::before{content:"";width:26px;height:1px;background:var(--green)}
+.sig span{color:var(--faint)}
+@media(max-width:600px){.why-card{padding:26px 24px}}
+
+/* ---------- cta / footer ---------- */
+.cta{margin-top:96px;background:var(--tbg);padding:76px 0;text-align:center}
+.cta h2{color:#eef5ef;max-width:26ch;margin:0 auto}
+.cta h2 em{font-style:normal;color:var(--tgreen)}
+.cta p{color:#93a89b;margin:16px auto 32px;max-width:56ch}
+.cta .btn{background:var(--tgreen);border-color:var(--tgreen);color:#0a1f13!important}
+.cta .btn:hover{filter:brightness(1.08)}
+.cta .btn.ghost{background:none;color:var(--tgreen)!important;border-color:#2c4a38}
+footer{background:var(--tbg);border-top:1px solid rgba(255,255,255,.07);font-size:12.5px;color:var(--tdim)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center;padding:16px 28px}
+footer a{color:#93a89b}
+footer .right{margin-left:auto}
+
+.rv{opacity:0;transform:translateY(14px);transition:opacity .55s ease,transform .55s ease}
+.rv.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <span class="brand"><i>▚</i> security-audit-kit</span>
+    <div class="links">
+      <a href="#scan">Scan layer</a>
+      <a href="#judge">Judgment layer</a>
+      <a href="#compare">Comparison</a>
+      <a href="#trust">Trust</a>
+      <a href="#why">Why</a>
+      <a class="gh" href="https://github.com/boraeresici/security-audit-kit">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <div class="badges">
+          <span class="badge"><span class="dot"></span> ci <b>passing</b></span>
+          <span class="badge"><span class="dot"></span> self-audit <b>passing</b></span>
+          <span class="badge">license <b>MIT</b></span>
+          <span class="badge">release <b>v1.11.1</b></span>
+        </div>
+        <h1>Security scanning that runs <em>in your repo</em> — not in someone's cloud.</h1>
+        <p class="sub">
+          A self-contained kit vendored into any git repo: a <b>deterministic, pinned-toolchain scan layer</b>
+          — secrets, SAST, dependency CVE, IaC, containers, SBOM — triggered by git hooks, plus an
+          <b>AI judgment layer</b> that separates real findings from noise. No SaaS, no server side, no CI billing.
+        </p>
+        <div class="hero-cta">
+          <a class="btn" href="https://github.com/boraeresici/security-audit-kit">Get the kit</a>
+          <a class="btn ghost" href="#compare">See how it compares</a>
+        </div>
+      </div>
+
+      <div class="wiz rv" aria-label="Install lifecycle">
+        <div class="term-bar">
+          <i></i><i></i><i></i><span>install lifecycle</span>
+          <button data-copy="curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh -o bootstrap.sh && less bootstrap.sh">copy bootstrap</button>
+        </div>
+        <ol id="wiz-steps">
+          <li class="step active">
+            <span class="node">1</span>
+            <h4>Vendor, pinned</h4>
+            <span class="cmd">$ bash bootstrap.sh v1.11.1</span>
+            <small>Download → read → run. Tag + resolved SHA land in a committed <b>.kit-version</b>.</small>
+          </li>
+          <li class="step">
+            <span class="node">2</span>
+            <h4>Install</h4>
+            <span class="cmd">▸ hooks · skills · .security-audit.conf</span>
+            <small>Everything lands in <b>tools/security-audit-kit/</b> — reviewable, idempotent.</small>
+          </li>
+          <li class="step">
+            <span class="node">3</span>
+            <h4>Scan on every commit</h4>
+            <span class="cmd">$ scan.sh staged · all</span>
+            <small>Pre-commit &amp; pre-push, deterministic — same result on laptop and CI.</small>
+          </li>
+          <li class="step">
+            <span class="node">4</span>
+            <h4>Triage in Claude</h4>
+            <span class="cmd">/sec-triage → findings-2026-07-06.md</span>
+            <small>FP → allowlist · REAL → fix or follow-up registry → re-scan clean.</small>
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="stats rv">
+      <div class="stat"><div class="n">9</div><div class="l">scan dimensions</div></div>
+      <div class="stat"><div class="n">5</div><div class="l">judgment skills</div></div>
+      <div class="stat"><div class="n">100%</div><div class="l">local by default</div></div>
+      <div class="stat"><div class="n">0</div><div class="l">servers, SaaS, billing</div></div>
+      <div class="stat"><div class="n">MIT</div><div class="l">license — free</div></div>
+    </div>
+  </div>
+</header>
+
+<section id="scan">
+  <div class="wrap">
+    <div class="eyebrow rv">01 · Scan layer</div>
+    <h2 class="rv">Deterministic by construction</h2>
+    <p class="sec-sub rv">
+      Every tool is pinned — Python tools by version, docker tools by <b>immutable digest</b> — so a scan
+      on your laptop is byte-for-byte the scan in CI. A missing toolchain skips its dimension, never blocks you.
+      Runs zero-config; tune one committed <code>.security-audit.conf</code> per project.
+    </p>
+    <div class="dims rv">
+      <div class="dim"><span class="tag">core</span>
+        <div class="cmd">$ scan.sh secret</div><div class="tool">gitleaks · docker, digest-pinned</div>
+        <p>Full git-history secret scan, plus a sub-second staged mode wired into pre-commit.</p>
+      </div>
+      <div class="dim"><span class="tag">core</span>
+        <div class="cmd">$ scan.sh sast</div><div class="tool">semgrep · uvx, version-pinned</div>
+        <p>Stack-aware ruleset auto-selection: OWASP Top-Ten base + the packs your languages actually need.</p>
+      </div>
+      <div class="dim"><span class="tag">core</span>
+        <div class="cmd">$ scan.sh deps</div><div class="tool">pip-audit · npm / pnpm / yarn</div>
+        <p>Dependency CVE audit across Python and JS — package manager auto-detected.</p>
+      </div>
+      <div class="dim"><span class="tag">core</span>
+        <div class="cmd">$ scan.sh iac</div><div class="tool">checkov</div>
+        <p>Terraform misconfiguration scanning; <code>TF_DIR</code> auto-detected from the first *.tf.</p>
+      </div>
+      <div class="dim"><span class="tag">core</span>
+        <div class="cmd">$ scan.sh container</div><div class="tool">trivy · docker, digest-pinned</div>
+        <p>Container &amp; filesystem: vulnerabilities, secrets, misconfig and license scanning in one pass.</p>
+      </div>
+      <div class="dim"><span class="tag">core</span>
+        <div class="cmd">$ scan.sh sbom</div><div class="tool">syft · docker, digest-pinned</div>
+        <p>SBOM generation in CycloneDX and SPDX — the machine-readable inventory of what you ship.</p>
+      </div>
+      <div class="dim"><span class="tag opt">optional</span>
+        <div class="cmd">$ scan.sh osv</div><div class="tool">OSV-Scanner</div>
+        <p>Broad multi-ecosystem dependency CVE — Python, JS, Go, Rust and more, from one database.</p>
+      </div>
+      <div class="dim"><span class="tag opt">optional</span>
+        <div class="cmd">$ scan.sh guarddog</div><div class="tool">GuardDog · needs network</div>
+        <p>Malicious &amp; typosquat package detection (PyPI + npm) — the blind spot of known-CVE scanners.</p>
+      </div>
+      <div class="dim"><span class="tag opt">optional</span>
+        <div class="cmd">$ scan.sh zizmor</div><div class="tool">zizmor · offline</div>
+        <p>GitHub Actions security: template injection, poisoned pipelines, token over-permissioning.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="judge">
+  <div class="wrap">
+    <div class="eyebrow rv">02 · Judgment layer</div>
+    <h2 class="rv">Scanners emit findings. They don't decide.</h2>
+    <p class="sec-sub rv">
+      Five Claude Code skills add the judgment a script can't: real-vs-false-positive triage with a
+      confidence gate, and semantic passes for the flaw classes no rule engine can express.
+      Deep passes are <b>trigger-based, not per-push</b> — they run when the code changes in a way that warrants them.
+    </p>
+    <div class="skills rv">
+      <div class="skill">
+        <span class="name">/sec-audit</span><span class="cad one">one command</span>
+        <p>The orchestrator: runs the scan, triages, then only the deep passes that actually apply to the repo — signal-gated, and it says why before spending tokens.</p>
+      </div>
+      <div class="skill">
+        <span class="name">/sec-triage</span><span class="cad routine">routine</span>
+        <p>After every scan with findings: exclusions → reachability → confidence ≥ 0.7, with a CISA KEV / EPSS check. FP → allowlist, REAL → fix or follow-up registry.</p>
+      </div>
+      <div class="skill">
+        <span class="name">/sec-sast-deep</span><span class="cad">trigger</span>
+        <p>Semantic flaws semgrep's patterns can't see: horizontal authz / IDOR, missing-role checks, business logic, second-order injection — by following the call path.</p>
+      </div>
+      <div class="skill">
+        <span class="name">/sec-ai-review</span><span class="cad">trigger</span>
+        <p>OWASP LLM Top 10 for code that calls an LLM: prompt injection, insecure output handling, excessive agency, system-prompt disclosure, model supply chain.</p>
+      </div>
+      <div class="skill">
+        <span class="name">/sec-threat-model</span><span class="cad">trigger</span>
+        <p>STRIDE + data-flow mapping of the attack surface: what could go wrong by design, and what isn't defended — a living threat-model document.</p>
+      </div>
+    </div>
+
+    <div class="loop rv">
+      <pre><span class="f">── the finding loop ─────────────────────────────────────────────────────</span>
+every commit  <span class="f">──(pre-commit)──▶</span>  <span class="k">scan.sh staged</span>   <span class="f">+ deps if a manifest changed</span>
+before a PR   <span class="f">──(pre-push)────▶</span>  <span class="k">scan.sh all</span>
+finding       <span class="f">────────────────▶</span>  <span class="k">/sec-triage</span>  <span class="f">──▶</span>  findings-<span class="a">DATE</span>.md
+                                      <span class="f">├─</span> <span class="a">FP</span>   <span class="f">──▶</span> allowlist <span class="f">(.gitleaks.toml / nosemgrep)</span>
+                                      <span class="f">└─</span> <span class="r">REAL</span> <span class="f">──▶</span> fix now <span class="f">·or·</span> follow-up registry <span class="f">──▶ re-scan clean</span></pre>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <div class="eyebrow rv">03 · Comparison</div>
+    <h2 class="rv">Aikido · Semgrep · security-audit-kit</h2>
+    <p class="sec-sub rv">
+      Three different product shapes: Aikido is an all-in-one <b>SaaS platform</b>, Semgrep a <b>SAST-first
+      platform</b>, the kit a <b>portable local kit</b> with no server side. Some “missing” cells are deliberate
+      scope decisions — the kit's hard boundary is <b>scan + judge, never exploit or run in production</b>.
+    </p>
+    <div class="legend rv">
+      <span><b class="m y">✓</b> available</span>
+      <span><b class="m p">◐</b> partial</span>
+      <span><b class="m n">✗</b> not available</span>
+      <span><b class="m s">→</b> planned for the kit</span>
+      <span><b class="m d">—</b> out of scope by design</span>
+    </div>
+    <div class="tbl-scroll rv">
+      <table>
+        <thead><tr><th>Capability</th><th>Aikido</th><th>Semgrep</th><th>security-audit-kit</th></tr></thead>
+        <tbody>
+          <tr><td>SAST</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">semgrep pinned · stack-aware ruleset auto-selection</span></td></tr>
+          <tr><td>Deep semantic SAST (authz/IDOR, business logic)</td><td class="m p">◐ taint</td><td class="m p">◐ taint, Pro</td><td><span class="m y">✓</span><span class="note">sec-sast-deep — flaw classes rule engines can't express</span></td></tr>
+          <tr><td>Secrets detection</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">gitleaks — full history + sub-second staged mode</span></td></tr>
+          <tr><td>Dependency CVE scanning (SCA)</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">pip-audit + npm/pnpm/yarn + OSV-Scanner multi-ecosystem</span></td></tr>
+          <tr><td>Reachability analysis for SCA</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m s">→</span><span class="note">planned optional heavy dimension</span></td></tr>
+          <tr><td>Malicious package / typosquat detection</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">GuardDog (PyPI + npm)</span></td></tr>
+          <tr><td>SBOM generation</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">syft — CycloneDX + SPDX</span></td></tr>
+          <tr><td>License scanning</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">trivy license scanner</span></td></tr>
+          <tr><td>License policy gating</td><td class="m y">✓</td><td class="m n">✗</td><td class="m n">✗ under consideration</td></tr>
+          <tr><td>IaC misconfiguration</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">checkov (Terraform)</span></td></tr>
+          <tr><td>Container / filesystem scanning</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">trivy — vuln, secret, misconfig, license</span></td></tr>
+          <tr><td>CI/CD pipeline security (GitHub Actions)</td><td class="m p">◐</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">zizmor — template injection, poisoned pipelines</span></td></tr>
+          <tr><td>False-positive triage</td><td><span class="m y">✓</span><span class="note">AutoTriage (opaque)</span></td><td><span class="m n">✗</span><span class="note">registry noted as noisy</span></td><td><span class="m y">✓</span><span class="note">two-pass exploitability + confidence ≥ 0.7 + KEV/EPSS</span></td></tr>
+          <tr><td>Measured triage quality (precision/recall evals)</td><td><span class="m n">✗</span><span class="note">marketing claims only</span></td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">promptfoo eval harness, recall regression gates</span></td></tr>
+          <tr><td>Structured evidence per finding</td><td class="m y">✓ dashboard</td><td class="m p">◐</td><td><span class="m s">→</span><span class="note">evidence.json + JSONL chain, SARIF-mergeable</span></td></tr>
+          <tr><td>AutoFix</td><td><span class="m y">✓</span><span class="note">AI AutoFix PRs</span></td><td class="m p">◐ experimental</td><td><span class="m p">◐</span><span class="note">AI-assisted fixes via triage; → validated per-ecosystem fix commands</span></td></tr>
+          <tr><td>PoC / exploit validation</td><td><span class="m y">✓</span><span class="note">agentic pentesting (executes)</span></td><td class="m n">✗</td><td><span class="m s">→</span><span class="note">generate-only — the kit never executes exploits</span></td></tr>
+          <tr><td>AI/LLM app security review (OWASP LLM Top 10)</td><td class="m n">✗</td><td class="m p">◐</td><td><span class="m y">✓</span><span class="note">sec-ai-review skill</span></td></tr>
+          <tr><td>Threat modeling</td><td class="m n">✗</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">sec-threat-model — STRIDE + data flows</span></td></tr>
+          <tr><td>DAST</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m d">—</span><span class="note">rejected by design: no autonomous exploit execution</span></td></tr>
+          <tr><td>Cloud security posture (CSPM)</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m d">—</span><span class="note">repo-local kit; no cloud credentials</span></td></tr>
+          <tr><td>Runtime protection (in-app firewall)</td><td class="m y">✓ “Zen”</td><td class="m n">✗</td><td><span class="m d">—</span><span class="note">scan kit, not a runtime agent</span></td></tr>
+          <tr><td>Compliance dashboards (SOC 2 / ISO)</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m d">—</span><span class="note">SARIF + summary.json are the machine surface</span></td></tr>
+          <tr><td>IDE integration</td><td class="m y">✓ plugin</td><td class="m y">✓ plugin</td><td><span class="m p">◐</span><span class="note">SARIF output consumable by IDE SARIF viewers</span></td></tr>
+          <tr><td>Local / air-gapped operation</td><td class="m p">◐ SaaS core</td><td class="m p">◐</td><td><span class="m y">✓</span><span class="note">fully local; network only in opt-in dimensions</span></td></tr>
+          <tr><td>Supply-chain hygiene of the tool itself</td><td class="m d">unpublished</td><td class="m d">unpublished</td><td><span class="m y">✓</span><span class="note">digest-pinned tools · CHECKSUMS manifest · SHA-pinned bootstrap</span></td></tr>
+          <tr><td>Pricing</td><td>Freemium SaaS</td><td>Freemium</td><td class="m y">MIT, free</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="src rv">
+      Last updated 2026-07 · kit v1.11.1 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
+      Aikido and Semgrep are trademarks of their respective owners. Planned rows describe intended work, not commitments.
+      Maintained source: <a href="https://github.com/boraeresici/security-audit-kit/blob/main/docs/compare/aikido-semgrep.md">docs/compare/aikido-semgrep.md</a>
+    </p>
+
+    <div class="scope rv">
+      <div><h3><span class="m d">—</span>DAST / autonomous pentesting</h3><p>Executes attacks against a running target — explicitly rejected. The planned PoC mode is generate-only: it writes a proof-of-concept for a human to review, never runs it.</p></div>
+      <div><h3><span class="m d">—</span>CSPM</h3><p>Requires cloud credentials and an inventory service; a repo-vendored kit has neither. Use a dedicated tool (e.g. Prowler) alongside the kit.</p></div>
+      <div><h3><span class="m d">—</span>Runtime protection</h3><p>An agent living inside your production process is a different product category. The kit stops at the repo boundary.</p></div>
+      <div><h3><span class="m d">—</span>Compliance dashboards</h3><p>A SaaS surface. The kit emits SARIF and summary.json; whatever consumes them can build the dashboard.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="trust">
+  <div class="wrap">
+    <div class="eyebrow rv">04 · Trust</div>
+    <h2 class="rv">The kit audits itself</h2>
+    <p class="sec-sub rv">
+      A security tool must survive its own standards. The kit dogfoods its <code>secret</code> + <code>sast</code>
+      scans on its own repo in CI, and every install path is designed to be reviewed before it runs.
+    </p>
+    <div class="trust rv">
+      <div><h3><i>▚</i>No curl | bash</h3><p>The documented install is download → read → run. Piping a remote script into a shell is the exact anti-pattern the kit warns against.</p></div>
+      <div><h3><i>▚</i>Pinned everything</h3><p>Python tools by version, docker tools by immutable digest, the kit itself by tag + resolved SHA in a committed .kit-version — no drift vs CI.</p></div>
+      <div><h3><i>▚</i>Tag-repoint guard</h3><p>If a pinned ref suddenly resolves to a different commit, bootstrap refuses. Enforce further with --expect=&lt;sha&gt;.</p></div>
+      <div><h3><i>▚</i>CHECKSUMS manifest</h3><p>scan.sh verify checks every kit file against a committed sha256 manifest and flags rogue extra files under skills/.</p></div>
+      <div><h3><i>▚</i>Hard boundary</h3><p>Internal evidence only — the kit does not replace PCI DSS 11.3.2 ASV scans or 11.4 pentests. It catches what leaked into code, early.</p></div>
+      <div><h3><i>▚</i>MIT &amp; forkable</h3><p>Public, MIT-licensed, skills are readable AI instructions. The only official repo is boraeresici/security-audit-kit; review before running.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="why">
+  <div class="wrap">
+    <div class="eyebrow rv">05 · Why</div>
+    <h2 class="rv">The checks we run on our own work — released for everyone</h2>
+    <p class="sec-sub rv">
+      security-audit-kit didn't start as a product. It's the gate we run on our own development.
+    </p>
+    <div class="why-card rv">
+      <p class="lead">
+        Before anything we build ships, the same questions get asked: did a secret leak into history?
+        Did a dependency pick up a CVE? Is the infra config safe? We wanted those answers
+        <em style="font-style:normal;color:var(--green-ink)">locally and deterministically</em> —
+        not rented from a SaaS, not gated behind CI minutes.
+      </p>
+      <p>
+        We believe tooling this fundamental belongs to everyone. So the kit is distributed as
+        <b>free, open-source software</b> under MIT: vendor it into your repo, read every line before
+        you run it, fork it, adapt the skills to your own team. No accounts, no telemetry, no paywall
+        between you and your own security evidence.
+      </p>
+      <p>
+        It carries the same discipline it asks of you — pinned versions, checksummed files, an install
+        you're told to read first. If it makes one more project scan before it ships, it has done its job.
+      </p>
+      <div class="sig">Bora Eresici <span>·</span> <a href="https://studiobinary.co">studiobinary.co</a></div>
+    </div>
+  </div>
+</section>
+
+<div class="cta">
+  <div class="wrap">
+    <h2>Vendor it. Pin it. <em>Review everything.</em></h2>
+    <p>One bootstrap, pinned to a tag. Hooks, skills and config land in your repo — and stay under your review.</p>
+    <div class="hero-cta" style="justify-content:center">
+      <a class="btn" href="https://github.com/boraeresici/security-audit-kit">Get the kit on GitHub</a>
+      <a class="btn ghost" href="https://github.com/boraeresici/security-audit-kit/blob/main/docs/compare/aikido-semgrep.md">Read the full comparison</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>security-audit-kit v1.11.1</span>
+    <span><a href="https://github.com/boraeresici/security-audit-kit/blob/main/LICENSE">MIT</a></span>
+    <span><a href="https://github.com/boraeresici/security-audit-kit/blob/main/SECURITY.md">SECURITY.md</a></span>
+    <span class="right">built by <a href="https://studiobinary.co">studiobinary.co</a></span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll("[data-copy]").forEach(function(b){
+  b.addEventListener("click",function(){
+    navigator.clipboard.writeText(b.getAttribute("data-copy")).then(function(){
+      b.textContent="copied ✓";setTimeout(function(){b.textContent="copy"},1600);
+    });
+  });
+});
+var io=new IntersectionObserver(function(es){
+  es.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target)}});
+},{threshold:.12});
+document.querySelectorAll(".rv").forEach(function(el){io.observe(el)});
+(function(){
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var steps=document.querySelectorAll("#wiz-steps .step"),i=0;
+  setInterval(function(){
+    steps[i].classList.remove("active");steps[i].classList.add("done");
+    i=(i+1)%steps.length;
+    if(i===0) steps.forEach(function(s){s.classList.remove("done")});
+    steps[i].classList.add("active");
+  },2800);
+})();
+</script>
+</body>
+</html>
