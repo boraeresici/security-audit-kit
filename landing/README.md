@@ -7,18 +7,28 @@ subsets of IBM Plex Sans + IBM Plex Mono, ~70 KB total).
 ## Deploy (Cloudflare Pages, GitHub integration)
 
 - **Framework preset:** None
-- **Build command:** *(empty)*
+- **Build command:** `python3 landing/build.py`
 - **Build output directory:** `landing`
 - Production branch: `main` — every push to `main` redeploys automatically.
 
 `_headers` ships strict security headers (CSP, X-Frame-Options, nosniff) — CF Pages
 picks it up from the output directory automatically.
 
-## Keep in sync
+## Comparison table is generated
 
-The comparison table mirrors [docs/compare/aikido-semgrep.md](../docs/compare/aikido-semgrep.md).
-When that file or the kit version changes, update the table, the version strings
-(hero terminal, footer) and the "Last updated" line in the compare section.
+`build.py` regenerates the block between the `<!-- compare:start/end -->` markers in
+`index.html` from [docs/compare/aikido-semgrep.md](../docs/compare/aikido-semgrep.md)
+(the source of truth), and refreshes the kit version + "Last updated" strings from that
+doc's header. It runs on every CF Pages deploy, so the published table can never drift
+from the doc. If the doc's format changes in a way the parser can't read, the script
+exits non-zero and the deploy fails loudly instead of publishing a stale table.
+
+Run it locally after editing the compare doc to keep the committed `index.html` fresh
+(optional — the deploy regenerates it anyway):
+
+```bash
+python3 landing/build.py
+```
 
 This directory is a website, not part of the kit runtime — `scan.sh`, hooks and
 skills never read it.
