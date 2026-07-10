@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-07-10 · kit **v1.11.2**
+> **Last updated:** 2026-07-10 · kit **v1.12.0**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -82,38 +82,46 @@ corpus via promptfoo, then reports a confusion matrix + precision / recall / F1 
 REAL class. Aikido's AutoTriage and Semgrep's registry noise claims are marketing-only — no
 published precision/recall numbers.
 
-The corpus is split so the headline number is not self-graded. A **31-case dev split** (`cases.yaml`)
-is where the judgment prompt is tuned; a **30-case held-out split** (`cases.holdout.yaml`) is never
-read while tuning and produces the reportable score. Most REAL cases have an FP *twin* — the same
-vuln class differing by a single decisive property (a sanitizer, an allow-list, reachability, a safe
-API variant) — so the FP classes contain cases a competent model can actually get wrong.
+The corpus is split so the headline number is not self-graded. A **dev split** (`cases.yaml`) is
+where the judgment prompt is tuned; a **held-out split** (`cases.holdout.yaml`) is never read while
+tuning and produces the reportable score. Most REAL cases have an FP *twin* — the same vuln class
+differing by a single decisive property (a sanitizer, an allow-list, reachability, a safe API
+variant) — so the FP classes contain cases a competent model can actually get wrong.
+
+The judgment prompt (`triage_prompt.md`) mirrors the `sec-triage` skill and carries a **hard-evidence
+bar**: to call a finding REAL the model must name the sink (`file:line`), the untrusted source, and
+an unbroken path with no effective mitigation; a credited mitigation (parameterization, argv-no-shell,
+sanitizer, allow-list, path/scheme validation, authz guard, non-privileged trigger) forces FP. The
+default verdict is FP — a pattern match is not evidence of exploitability.
 
 | Backend | Split | Precision | Recall | F1 | Accuracy | Confusion |
 |---|---|---|---|---|---|---|
 | Anthropic Claude (default) | — | unpublished | unpublished | unpublished | unpublished | not yet measured — key authenticates but every inference call returns `credit balance is too low` (400) |
-| GLM-5.2 via NVIDIA NIM | dev (tuning) | 100% | 100% | 100% | 100% | TP=15 FP=0 FN=0 TN=16 |
-| GLM-5.2 via NVIDIA NIM | **held-out** | **83.3%** | **100%** | **90.9%** | **90%** | **TP=15 FP=3 FN=0 TN=12** |
+| GLM-5.2 via NVIDIA NIM | dev (tuning, 31) | 100% | 100% | 100% | 100% | TP=15 FP=0 FN=0 TN=16 |
+| GLM-5.2 via NVIDIA NIM | **held-out (36)** | **100%** | **100%** | **100%** | **100%** | **TP=18 FP=0 FN=0 TN=18** |
 
 > **NIM run (2026-07-10):** `z-ai/glm-5.2` on `integrate.api.nvidia.com`, both splits, 0 errors.
 > The default backend is still the shipped one (Claude); it stays unmeasured until the account has
 > API credit.
 >
-> **Read the held-out row, not the dev row.** The dev split is the surface the prompt was tuned
-> against, so its 100% is a training score, not a measurement — quoting it would be self-grading.
-> The held-out split, unseen during tuning, is the honest number: **precision 83.3%** (the model
-> over-flags), recall held at 100% (it missed no real issue).
+> **The held-out 100% is a Phase-A *before/after* result, read it as one.** Before the hard-evidence
+> bar, the same held-out cases scored **precision 83.3%** (3 false positives, recall already 100%):
+> GLM-5.2 over-flagged three `difficulty: hard` FP twins — an argv-list `subprocess` with no shell,
+> a `pull_request` (not `_target`) CI workflow, a zip extraction that validates member paths. The
+> evidence bar took those to **0 false positives with recall held at 100%** (no real finding dropped).
+> That is the measurement Phase A is judged on: FP rate down, recall not regressed.
 >
-> **What the corpus now resolves.** All three held-out misses are `difficulty: hard` FP *twins* —
-> safe code that pattern-matches to a vulnerability: an argv-list `subprocess` call with no shell
-> (`app/backup.py:30`), a `pull_request` (not `_target`) CI workflow (`.github/workflows/ci.yml:3`),
-> and a zip extraction that validates member paths (`app/unpack.py:24`). GLM-5.2 got every REAL
-> counterpart right but called these safe twins REAL. This is the resolving power the old 10-case
-> corpus lacked (it scored a saturated 10/10): the harness can now *see* a precision failure, which
-> is the precondition for measuring whether a prompt change (Phase A) actually reduces false
-> positives without dropping recall.
+> **Confirmatory vs. blind.** Those three fixed cases were seen while debugging the harness and the
+> prompt's mitigation list names their patterns, so on *them* the 100% is confirmatory, not blind.
+> To test whether the principle *generalizes*, six fresh held-out cases were added **after the prompt
+> was frozen**, in three vuln classes the prompt never names (LDAP, CRLF/response-splitting, XPath) —
+> each a REAL/FP twin (unescaped vs escaped, raw vs CR/LF-stripped, concatenated vs variable-bound).
+> GLM-5.2 got all six right on the first blind run. The source→sink+mitigation principle transfers to
+> classes it was not written against.
 >
-> **Still not a backend ranking.** 15 REAL in the held-out split ⇒ one flip moves recall 6.7pp;
-> these numbers are directional, not a basis for "model X beats Y" in a compare doc.
+> **Caveats.** The corpus is now saturated for GLM-5.2 again (100% ⇒ no resolving power left; the next
+> prompt iteration needs harder cases). It is one strong frontier model, not the shipped Claude
+> backend, and 18 REAL per split ⇒ one flip moves recall ~5.5pp — directional, not a backend ranking.
 
 Run a backend yourself (same corpus, same prompt, same grader — only the provider differs, so
 results are directly comparable):

@@ -459,3 +459,98 @@
       // generated at build time; displayed in the footer for support tickets
       export const BUILD_SHA = "9f3c2ab7d41e5680bc9a17f2e0d84c53ab6719fe";
   metadata: { label: FP, fp_class: not-a-secret, vuln_class: hardcoded-secret, split: holdout, difficulty: hard, source: synthetic }
+
+# ---- Phase-A blind-generalization additions (2026-07-10): vuln classes the evidence-bar prompt
+# does NOT enumerate by name (LDAP / CRLF / XPath). A blind read on whether the source→sink+mitigation
+# principle transfers to classes it was not written against. Added AFTER the prompt was frozen. ----
+
+- description: "REAL LDAP injection — user value concatenated into a search filter, unescaped"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/directory.py:14
+    finding_severity: ERROR
+    finding_message: "User input in an LDAP filter"
+    expected: REAL
+    code: |
+      import ldap
+      def find_user(request):
+          uid = request.args["uid"]          # untrusted; ) ( * | & alter the filter
+          conn = ldap.initialize(LDAP_URI)
+          return conn.search_s("ou=people,dc=x", ldap.SCOPE_SUBTREE, f"(uid={uid})")
+  metadata: { label: REAL, fp_class: "", vuln_class: ldap-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP LDAP twin — filter chars escaped before the query"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/directory.py:31
+    finding_severity: ERROR
+    finding_message: "User input in an LDAP filter"
+    expected: FP
+    code: |
+      import ldap
+      from ldap.filter import escape_filter_chars
+      def find_user(request):
+          uid = escape_filter_chars(request.args["uid"])   # ) ( * | & neutralized
+          conn = ldap.initialize(LDAP_URI)
+          return conn.search_s("ou=people,dc=x", ldap.SCOPE_SUBTREE, f"(uid={uid})")
+  metadata: { label: FP, fp_class: sanitized, vuln_class: ldap-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "REAL CRLF / response-splitting — user newline injected into a response header"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/download.py:9
+    finding_severity: ERROR
+    finding_message: "User input in an HTTP response header"
+    expected: REAL
+    code: |
+      def download(request, resp):
+          name = request.args["name"]        # "\r\nSet-Cookie: x=y" splits the response
+          resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+          return resp
+  metadata: { label: REAL, fp_class: "", vuln_class: crlf-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP CRLF twin — CR/LF stripped before the header is set"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/download.py:24
+    finding_severity: ERROR
+    finding_message: "User input in an HTTP response header"
+    expected: FP
+    code: |
+      def download(request, resp):
+          raw = request.args["name"]
+          name = raw.replace("\r", "").replace("\n", "")   # no CR/LF -> cannot split
+          resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+          return resp
+  metadata: { label: FP, fp_class: sanitized, vuln_class: crlf-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "REAL XPath injection — user value concatenated into an XPath expression"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/xmlq.py:12
+    finding_severity: ERROR
+    finding_message: "User input in an XPath query"
+    expected: REAL
+    code: |
+      from lxml import etree
+      def lookup(request, doc):
+          user = request.args["u"]           # "' or '1'='1" alters the expression
+          tree = etree.fromstring(doc)
+          return tree.xpath(f"//user[name='{user}']/ssn/text()")
+  metadata: { label: REAL, fp_class: "", vuln_class: xpath-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP XPath twin — value bound as a variable, not concatenated"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/xmlq.py:28
+    finding_severity: ERROR
+    finding_message: "User input in an XPath query"
+    expected: FP
+    code: |
+      from lxml import etree
+      def lookup(request, doc):
+          user = request.args["u"]
+          tree = etree.fromstring(doc)
+          # $u is bound; the value is data, never parsed as XPath syntax
+          return tree.xpath("//user[name=$u]/ssn/text()", u=user)
+  metadata: { label: FP, fp_class: safe-parameterized, vuln_class: xpath-injection, split: holdout, difficulty: hard, source: synthetic }

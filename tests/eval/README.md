@@ -72,15 +72,17 @@ Most REAL cases have an FP **twin**: same vuln class, differing by one decisive 
 allow-list, reachability, safe API variant), tagged `difficulty: hard`. Twins are what give the
 corpus resolving power — without them, every FP is obvious and the score saturates at 100%.
 
-> **Interpretation warning:** 15 REAL cases per split ⇒ one flip moves recall ~6.7pp. Scores are
+> **Interpretation warning:** 18 REAL cases per split ⇒ one flip moves recall ~5.5pp. Scores are
 > directional; do **not** rank backends off them (roadmap L1b/L1c).
 
-> **NIM result (2026-07-10):** GLM-5.2 (`z-ai/glm-5.2` via NIM), 0 errors on both splits.
-> Dev split: 31/31 (100% everything). **Held-out split: precision 83.3%, recall 100%, F1 90.9%,
-> accuracy 90% — TP=15, FP=3, FN=0, TN=12.** All three FP→REAL misses are `difficulty: hard` FP
-> twins (safe-argv subprocess, `pull_request` CI workflow, path-validated zip extraction): GLM got
-> every REAL counterpart right but over-flagged the safe twins. Report the held-out row, not the
-> dev row. See `docs/compare/aikido-semgrep.md`.
+> **NIM result (2026-07-10, after the Phase-A evidence bar):** GLM-5.2 (`z-ai/glm-5.2` via NIM),
+> 0 errors on both splits. Dev 31/31; **held-out (36): precision 100%, recall 100%, TP=18 FP=0 FN=0
+> TN=18.** This is a before/after: the pre-evidence-bar prompt scored held-out precision **83.3%**
+> (FP=3 — three `difficulty: hard` FP twins over-flagged), recall already 100%. The evidence bar took
+> FP 3→0 with recall held. Three of the fixed cases were seen during debugging (confirmatory), so six
+> fresh twins in classes the prompt never names (LDAP / CRLF / XPath) were added **after freezing the
+> prompt** as a blind check — GLM got all six right. Corpus is now saturated for GLM again (next
+> iteration needs harder cases). See `docs/compare/aikido-semgrep.md`.
 >
 > **The Claude default backend is still unmeasured.** The key authenticates, but every inference
 > call returns `credit balance is too low` (400).

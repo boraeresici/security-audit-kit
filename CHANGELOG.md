@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-07-10
+
+### Changed (Phase A — sharper judgment: `sec-triage` + `sec-sast-deep`)
+- **Hard-evidence bar for a REAL verdict.** Both skills now default to **FP** and require, to call a
+  finding REAL, that you name all three: the **sink** (`file:line`), the **untrusted source** (a
+  specific attacker-controlled input — not a constant/enum/framework-metadata/trusted-process
+  output), and an **unbroken path** with no effective mitigation. A pattern match is not evidence of
+  exploitability. An enumerated mitigation that actually covers the path (parameterization, argv +
+  no `shell=True`, escaping / safe API / sanitizer, allow-list / constant, path-root or scheme/host
+  validation, an authz decorator or ownership filter, a non-privileged trigger context) forces FP —
+  credited only when genuinely present, never invented, never ignored. Folds in the
+  claude-code-security-review FP-filtering patterns (C1). Credit seclab-taskflow-agent + claude-code-security-review.
+- **Consistency-validation pass** before writing the findings file: re-read the REAL/UNCERTAIN list
+  adversarially — every REAL must carry a concrete sink + named source; no double standard (same
+  sink+mitigation ⇒ same verdict); severity ranks, never decides. Failing findings are corrected
+  before the file is written.
+- **Context-slice hygiene + codified funnel** in `sec-triage`: read `summary.json` / the raw log
+  *through tools* per finding (never paste whole dumps); only `scan.sh` survivors enter triage.
+- The daily findings table now records the **untrusted source** alongside the sink, so each REAL
+  carries its evidence chain on the page.
+
+### Added (measured before/after — the Phase-A acceptance gate)
+- Re-measured the judgment prompt (`tests/eval/triage_prompt.md`, the eval mirror of the skills)
+  on GLM-5.2 via NIM. **Held-out FP rate 3 → 0 with recall held at 100%** (precision 83.3% → 100%);
+  dev split held at 31/31 (no recall regression). Three fixed cases were seen during earlier
+  debugging (confirmatory), so **six fresh held-out twins in classes the prompt never names (LDAP /
+  CRLF / XPath) were added after freezing the prompt** as a blind generalization check — GLM scored
+  6/6. Full held-out now 36 cases at precision/recall 100%. Documented in `docs/compare/aikido-semgrep.md`.
+
 ## [1.11.2] - 2026-07-10
 
 ### Changed (eval harness — corpus expansion + measurement hardening; still dev-only, not in the scan path)

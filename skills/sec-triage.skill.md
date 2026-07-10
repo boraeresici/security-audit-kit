@@ -23,6 +23,10 @@ high-signal**: raw scan -> exclusions + reachability filter -> confidence-scored
    neither exists, run `bash tools/security-audit-kit/scan.sh <scope>` — pre-PR=`all`,
    post-package=`fast`, single dimension=`secret|sast|deps|iac|container`. Tool->dimension:
    semgrep=SAST, gitleaks=secret, trivy=dep/OS/misconfig, checkov=IaC, pip-audit/js-audit=dep CVE.
+   **Context-slice hygiene:** read `summary.json` and the raw log *through tools* (grep/read the
+   finding's file:line, the per-dimension count) — pull the slice you need per finding; never paste
+   a whole `raw-<TODAY>.log` or `summary.json` dump into reasoning. The **funnel** starts here: only
+   `scan.sh` survivors enter triage — you are not re-scanning, you are judging what the tools flagged.
 
 2. **Load the exclusions.** READ `.security-exclusions.md` at the repo root first (if present;
    template ships as `exclusions.example.md`). It lists do-not-report classes and precedent
@@ -41,15 +45,50 @@ high-signal**: raw scan -> exclusions + reachability filter -> confidence-scored
    - **Obvious FP** — dev placeholder, test/doc path, fake sandbox value, tool mismatch
      (evidence: a `# noqa`/dev-only comment, a `tests/`/`docs/` path, a known example PAN) -> FP.
 
-   **Pass 2 — independent verification with a confidence score** (for what survives Pass 1).
-   Judge each finding *independently* as if trying to disprove it. Assign a confidence in
-   `[0,1]` that it is a **real, exploitable** issue:
-   - `≥0.9` certain exploit path · `0.8–0.9` known-bad pattern, clear sink ·
-     `0.7–0.8` conditional/needs a precondition · `<0.7` speculative.
+   **Pass 2 — independent verification against the evidence bar** (for what survives Pass 1).
+   Judge each finding *independently* as if trying to disprove it. The scanner already matched a
+   pattern — that is not evidence of exploitability. **Default to FP; a finding earns REAL only by
+   clearing the evidence bar.**
+
+   **Evidence bar — to call it REAL you must name all three (else FP):**
+   1. **Sink** — the dangerous operation at its `file:line` (SQL exec, shell call, deserialize,
+      file open, redirect, privileged mutation, …).
+   2. **Untrusted source** — the specific attacker-controlled input (request param/body/header,
+      uploaded file, webhook field, fork-authored PR). A server-side constant, an allow-listed
+      enum, framework-supplied metadata, or another trusted process's output is **not** untrusted.
+   3. **Unbroken path** — source reaches sink with **no effective mitigation on the way**.
+
+   **Mitigations that force FP** (credit one only if it actually covers *this* path — don't invent
+   one, don't ignore one that's present): parameterization/bound params; `subprocess` with an
+   **argv list and no `shell=True`**; auto-escaping / safe API / a sanitizer on the path
+   (`safe_load`, `literal_eval`, DOMPurify, entity resolution off, CSPRNG); allow-list / constant
+   controlling the dangerous part; validation that blocks the attack (path-root membership,
+   scheme/host check, field allow-list, int-coercion); an authz decorator or ownership/tenant
+   filter guarding the op (even if a pattern scanner didn't follow it); not reachable (dead/test/
+   doc/vendored/self-written data, or a trigger context without privilege — CI `pull_request` with
+   a read-only token, not `pull_request_target`).
+
+   **Then score confidence in `[0,1]`:**
+   - `≥0.9` certain exploit path · `0.8–0.9` known-bad pattern, clear sink, no mitigation ·
+     `0.7–0.8` conditional/needs a precondition · `<0.7` speculative or a mitigation may cover it.
    - **Gate: only findings with confidence ≥ 0.7 are reported as REAL/UNCERTAIN.** Below 0.7 go
      to the **Suppressed** list (with the score + one-line reason), NOT the main table.
-   - Bar to clear: *"would a security team confidently raise this in a PR review?"* If not, suppress.
+   - Bar to clear: *"would a security team confidently raise this in a PR review, given the
+     mitigations actually present in the code?"* A mitigation that covers the path → low confidence
+     → FP, regardless of how dangerous the bare pattern looks.
    - Still genuinely uncertain at ≥0.7 -> keep as UNCERTAIN (safe side), don't silently drop.
+
+   **Pass 3 — consistency validation (one sweep before you write anything).** Re-read your own
+   REAL/UNCERTAIN list as an adversary would:
+   - **Evidence completeness:** every REAL must carry a concrete sink `file:line` *and* a named
+     untrusted source. A REAL with no source named, or whose "source" is actually a constant/enum/
+     trusted-metadata, is not REAL — downgrade to FP (or UNCERTAIN if genuinely open).
+   - **No double standard:** if two findings share the same sink and mitigation, they must get the
+     same verdict; a mitigation you credited to suppress finding A must not be ignored for finding B.
+   - **Severity ≠ decision:** confirm you did not upgrade a finding to REAL because it was HIGH, nor
+     suppress a well-evidenced one because it was LOW. Severity ranks, it does not decide.
+   Findings that fail this sweep get corrected here — the written file reflects the post-validation
+   verdicts only.
 
 4. **Write the daily file:** `docs/security/scan-findings/findings-<TODAY>.md` (create if absent,
    template below). One row per reported finding: tool | file:line | severity | confidence |
@@ -91,11 +130,11 @@ high-signal**: raw scan -> exclusions + reachability filter -> confidence-scored
 
 ## Round 1 (<HH:MM>) — scope: <all|fast|...>
 
-| Tool | Location | Sev | Conf | Decision | Action |
-|------|----------|-----|------|----------|--------|
-| gitleaks | path/x:29 | HIGH | 0.95 | REAL | rotated + .env; .gitleaks.toml allow (dummy var) |
-| semgrep  | path/y:88 | ERROR | 0.85 | REAL | fix applied (sanitize) |
-| js-audit | pkg X 1.2 | HIGH | 0.80 | REAL | override -> 1.3; confirmed |
+| Tool | Sink (file:line) | Untrusted source | Sev | Conf | Decision | Action |
+|------|------------------|------------------|-----|------|----------|--------|
+| gitleaks | path/x:29 | live caller reads token | HIGH | 0.95 | REAL | rotated + .env; .gitleaks.toml allow (dummy var) |
+| semgrep  | path/y:88 | request.GET["id"] → f-string | ERROR | 0.85 | REAL | fix applied (sanitize) |
+| js-audit | pkg X 1.2 | vuln fn called on req body | HIGH | 0.80 | REAL | override -> 1.3; confirmed |
 
 ### Suppressed (Pass 1/2 — on record, not reported)
 | Tool | Location | Why | Conf |
