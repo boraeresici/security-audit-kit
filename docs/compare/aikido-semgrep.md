@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-07-06 · kit **v1.11.1**
+> **Last updated:** 2026-07-10 · kit **v1.11.2**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -73,6 +73,61 @@ The kit's hard boundary is **scan + judge, never exploit or run in production**:
 - **Runtime protection** is an agent living inside your production process — a different product category.
 - **Compliance dashboards** are a SaaS surface. The kit emits SARIF and `summary.json`; whatever
   consumes them can build the dashboard.
+
+## Measured triage quality — `sec-triage` eval harness
+
+The kit publishes a **measured** triage quality number, and the harness that produced it, in-repo.
+The eval harness (`tests/eval/`) grades the `sec-triage` REAL/FP judgment against a 61-case labeled
+corpus via promptfoo, then reports a confusion matrix + precision / recall / F1 / accuracy for the
+REAL class. Aikido's AutoTriage and Semgrep's registry noise claims are marketing-only — no
+published precision/recall numbers.
+
+The corpus is split so the headline number is not self-graded. A **31-case dev split** (`cases.yaml`)
+is where the judgment prompt is tuned; a **30-case held-out split** (`cases.holdout.yaml`) is never
+read while tuning and produces the reportable score. Most REAL cases have an FP *twin* — the same
+vuln class differing by a single decisive property (a sanitizer, an allow-list, reachability, a safe
+API variant) — so the FP classes contain cases a competent model can actually get wrong.
+
+| Backend | Split | Precision | Recall | F1 | Accuracy | Confusion |
+|---|---|---|---|---|---|---|
+| Anthropic Claude (default) | — | unpublished | unpublished | unpublished | unpublished | not yet measured — key authenticates but every inference call returns `credit balance is too low` (400) |
+| GLM-5.2 via NVIDIA NIM | dev (tuning) | 100% | 100% | 100% | 100% | TP=15 FP=0 FN=0 TN=16 |
+| GLM-5.2 via NVIDIA NIM | **held-out** | **83.3%** | **100%** | **90.9%** | **90%** | **TP=15 FP=3 FN=0 TN=12** |
+
+> **NIM run (2026-07-10):** `z-ai/glm-5.2` on `integrate.api.nvidia.com`, both splits, 0 errors.
+> The default backend is still the shipped one (Claude); it stays unmeasured until the account has
+> API credit.
+>
+> **Read the held-out row, not the dev row.** The dev split is the surface the prompt was tuned
+> against, so its 100% is a training score, not a measurement — quoting it would be self-grading.
+> The held-out split, unseen during tuning, is the honest number: **precision 83.3%** (the model
+> over-flags), recall held at 100% (it missed no real issue).
+>
+> **What the corpus now resolves.** All three held-out misses are `difficulty: hard` FP *twins* —
+> safe code that pattern-matches to a vulnerability: an argv-list `subprocess` call with no shell
+> (`app/backup.py:30`), a `pull_request` (not `_target`) CI workflow (`.github/workflows/ci.yml:3`),
+> and a zip extraction that validates member paths (`app/unpack.py:24`). GLM-5.2 got every REAL
+> counterpart right but called these safe twins REAL. This is the resolving power the old 10-case
+> corpus lacked (it scored a saturated 10/10): the harness can now *see* a precision failure, which
+> is the precondition for measuring whether a prompt change (Phase A) actually reduces false
+> positives without dropping recall.
+>
+> **Still not a backend ranking.** 15 REAL in the held-out split ⇒ one flip moves recall 6.7pp;
+> these numbers are directional, not a basis for "model X beats Y" in a compare doc.
+
+Run a backend yourself (same corpus, same prompt, same grader — only the provider differs, so
+results are directly comparable):
+
+```sh
+# NVIDIA NIM (GLM-5.2) — needs NVIDIA_API_KEY (build.nvidia.com API catalog).
+# EVAL_SPLIT defaults to the dev split; the reportable number is the held-out split.
+EVAL_CONFIG=promptfooconfig.nim.yaml EVAL_SPLIT=holdout bash tests/eval/run.sh
+# free-tier endpoints rate-limit at the default concurrency 4 — drop it if you see provider errors:
+EVAL_CONFIG=promptfooconfig.nim.yaml EVAL_SPLIT=holdout EVAL_CONCURRENCY=2 bash tests/eval/run.sh
+# regression gates (exit 1 if unmet):
+EVAL_CONFIG=promptfooconfig.nim.yaml EVAL_SPLIT=holdout \
+  EVAL_MIN_RECALL=1.0 EVAL_MIN_PRECISION=0.8 bash tests/eval/run.sh
+```
 
 ## Maintaining this table
 

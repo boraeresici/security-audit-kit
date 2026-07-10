@@ -34,11 +34,30 @@ function predictedOf(r) {
   return m ? m[1].toUpperCase() : null;
 }
 
+// A case where the request never reached the model (auth, billing, network, bad model id) carries
+// NO information about judgment quality. promptfoo marks these failureReason=2 with no
+// response.output — as opposed to failureReason=1, a real answer that failed the assertion.
+// Scoring them as misses turns "the provider is down" into "the model scored 0%", which reads as a
+// catastrophic regression. Refuse to report instead; a missing number is honest, a wrong one isn't.
+const isProviderError = r => r?.failureReason === 2 || (!!r?.error && !r?.response?.output);
+const providerErrors = results.filter(isProviderError);
+if (providerErrors.length) {
+  console.error(`\n[score] ${providerErrors.length}/${results.length} cases never reached the model (provider error).`);
+  console.error(`[score] first error: ${String(providerErrors[0].error || "").slice(0, 160)}`);
+  if (!process.env.EVAL_ALLOW_PARTIAL) {
+    console.error(`[score] refusing to report precision/recall — a failed provider is not a bad model.`);
+    console.error(`[score] fix the provider, or set EVAL_ALLOW_PARTIAL=1 to score only the cases that ran.`);
+    process.exit(2);
+  }
+  console.error(`[score] EVAL_ALLOW_PARTIAL=1 — scoring only the ${results.length - providerErrors.length} cases that ran.\n`);
+}
+
 let tp = 0, fp = 0, fn = 0, tn = 0, unknown = 0;
 const rows = [];
 for (const r of results) {
   const expected = String(r?.vars?.expected || "").toUpperCase();
   if (expected !== "REAL" && expected !== "FP") continue;
+  if (isProviderError(r)) continue;   // never charge an infrastructure failure to the model
   const pred = predictedOf(r);
   if (pred !== "REAL" && pred !== "FP") {
     unknown++;
@@ -56,13 +75,20 @@ for (const r of results) {
 }
 
 const total = tp + fp + fn + tn;
+// Zero scored cases must never render as a score: the empty-denominator guards below default
+// precision/recall to 1, so an all-errored run would print a perfect 100% and exit 0.
+if (total === 0) {
+  console.error(`[score] no case reached the model — nothing to score. This is not a 100%.`);
+  process.exit(2);
+}
 const precision = tp + fp ? tp / (tp + fp) : 1;
 const recall = tp + fn ? tp / (tp + fn) : 1;
 const f1 = precision + recall ? (2 * precision * recall) / (precision + recall) : 0;
 const accuracy = total ? (tp + tn) / total : 0;
 const pct = x => (100 * x).toFixed(1) + "%";
 
-console.log(`\n== sec-triage eval — ${total} labeled cases (positive class = REAL) ==`);
+const skipped = providerErrors.length ? ` — ${providerErrors.length} skipped (provider error)` : "";
+console.log(`\n== sec-triage eval — ${total} labeled cases (positive class = REAL)${skipped} ==`);
 console.log(`  confusion:  TP=${tp}  FP=${fp}  FN=${fn}  TN=${tn}${unknown ? `  (unparseable=${unknown})` : ""}`);
 console.log(`  precision:  ${pct(precision)}   (of findings called REAL, how many truly are)`);
 console.log(`  recall:     ${pct(recall)}   (of true REAL findings, how many were caught)`);

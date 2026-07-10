@@ -1,0 +1,461 @@
+# Labeled triage corpus — HELD-OUT SPLIT (dev-only harness; see README.md).
+#
+# ┌──────────────────────────────────────────────────────────────────────────────────────────┐
+# │ DO NOT READ THIS FILE WHILE TUNING THE JUDGMENT PROMPT.                                   │
+# │                                                                                          │
+# │ These cases exist to produce an UNBIASED score. The moment a prompt is edited in response │
+# │ to a failure here, this file becomes a second tuning split and the number it produces     │
+# │ stops meaning anything. If a holdout case reveals a genuine prompt gap: fix the prompt    │
+# │ against a NEW dev case that captures the same rule, then re-measure here.                 │
+# │                                                                                          │
+# │ Grow this file by ADDING cases. Never edit or delete a case because a model failed it —   │
+# │ that is how a test set is quietly rewritten into a training set.                          │
+# └──────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# Same schema and the same twin-pair design as cases.yaml. Vuln-class domains deliberately overlap
+# with the dev split: if every unseen DOMAIN lived only here, a low holdout score would conflate
+# "unseen case" with "unseen domain" and overstate the generalization gap.
+#
+# Run:  EVAL_SPLIT=holdout bash tests/eval/run.sh
+
+# ================= REAL — should be caught (verdict = REAL) =================
+
+- description: "REAL sqli — ORM raw() with a concatenated request value"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/reports.py:23
+    finding_severity: ERROR
+    finding_message: "Raw SQL built by string concatenation"
+    expected: REAL
+    code: |
+      def report(request):
+          org = request.GET["org"]                     # untrusted
+          # .raw() does not parameterize a concatenated string
+          return list(Sale.objects.raw("SELECT * FROM sales WHERE org = '" + org + "'"))
+  metadata: { label: REAL, vuln_class: sql-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL command-injection — subprocess with shell=True on a request value"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/backup.py:12
+    finding_severity: ERROR
+    finding_message: "subprocess call with shell=True"
+    expected: REAL
+    code: |
+      import subprocess
+      def archive(request):
+          target = request.form["dir"]                 # untrusted
+          subprocess.run(f"tar czf /tmp/b.tgz {target}", shell=True, check=True)
+  metadata: { label: REAL, vuln_class: command-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL stored xss — user HTML marked safe and rendered"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/templates/profile.py:8
+    finding_severity: ERROR
+    finding_message: "Autoescaping bypassed with Markup()/|safe"
+    expected: REAL
+    code: |
+      from markupsafe import Markup
+      def bio(user):
+          # user.bio is attacker-authored; Markup() disables escaping
+          return Markup("<div class='bio'>" + user.bio + "</div>")
+  metadata: { label: REAL, vuln_class: xss, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL unsafe yaml — full loader on an uploaded document"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/config_import.py:9
+    finding_severity: ERROR
+    finding_message: "yaml.load without SafeLoader"
+    expected: REAL
+    code: |
+      import yaml
+      def load_config(request):
+          # full loader constructs arbitrary python objects -> RCE
+          return yaml.load(request.files["cfg"].read(), Loader=yaml.Loader)
+  metadata: { label: REAL, vuln_class: deserialization, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL open redirect — Location taken straight from a query parameter"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/auth.py:102
+    finding_severity: WARNING
+    finding_message: "Redirect to a user-controlled location"
+    expected: REAL
+    code: |
+      from flask import redirect
+      def post_login(request):
+          # ?next=https://evil.example/phish — absolute URLs accepted
+          return redirect(request.args.get("next", "/"))
+  metadata: { label: REAL, vuln_class: open-redirect, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "REAL vertical authz — admin-only action with no role check"
+  vars:
+    finding_tool: sec-sast-deep
+    finding_location: app/admin.py:17
+    finding_severity: HIGH
+    finding_message: "Privileged operation without a role/permission check"
+    expected: REAL
+    code: |
+      @router.post("/admin/users/{uid}/promote")
+      def promote(uid: int, request):
+          # authenticated, but any logged-in user reaches this
+          User.objects.filter(id=uid).update(is_admin=True)
+  metadata: { label: REAL, vuln_class: missing-authz, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL insecure randomness — password reset token from random.random"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/reset.py:6
+    finding_severity: ERROR
+    finding_message: "Use of non-cryptographic random for a security token"
+    expected: REAL
+    code: |
+      import random
+      def make_reset_token():
+          # Mersenne Twister is predictable from prior outputs -> account takeover
+          return "%030x" % random.getrandbits(120)
+  metadata: { label: REAL, vuln_class: weak-crypto, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "REAL reachable dependency CVE — vulnerable parser invoked on user input"
+  vars:
+    finding_tool: osv-scanner
+    finding_location: requirements.txt:8
+    finding_severity: HIGH
+    finding_message: "GHSA-xxxx: parselib < 2.1.0 — RCE in parselib.parse() on crafted input"
+    expected: REAL
+    code: |
+      # requirements.txt pins parselib==2.0.3 (vulnerable range)
+      # app/ingest.py:14 — the vulnerable entry point is called with untrusted bytes:
+      import parselib
+      def ingest(request):
+          return parselib.parse(request.body)
+  metadata: { label: REAL, vuln_class: dependency-cve, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "REAL IaC — security group opens SSH to the whole internet"
+  vars:
+    finding_tool: checkov
+    finding_location: infra/network.tf:22
+    finding_severity: HIGH
+    finding_message: "CKV_AWS_24: security group allows ingress from 0.0.0.0/0 on port 22"
+    expected: REAL
+    code: |
+      # infra/network.tf — applied to the prod VPC
+      resource "aws_security_group_rule" "ssh" {
+        type        = "ingress"
+        from_port   = 22
+        to_port     = 22
+        cidr_blocks = ["0.0.0.0/0"]
+      }
+  metadata: { label: REAL, vuln_class: iac-misconfig, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL CI — pull_request_target checks out the PR head and runs its code"
+  vars:
+    finding_tool: zizmor
+    finding_location: .github/workflows/pr.yml:5
+    finding_severity: HIGH
+    finding_message: "dangerous-triggers: pull_request_target with a checkout of untrusted head"
+    expected: REAL
+    code: |
+      on: pull_request_target          # runs with write token + repo secrets
+      jobs:
+        test:
+          steps:
+            - uses: actions/checkout@v4
+              with: { ref: "${{ github.event.pull_request.head.sha }}" }
+            - run: npm ci && npm test   # fork's package.json scripts execute
+  metadata: { label: REAL, vuln_class: ci-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL nosql injection — user object reaches a $where clause"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/search.py:11
+    finding_severity: ERROR
+    finding_message: "User input in a MongoDB $where expression"
+    expected: REAL
+    code: |
+      def search(request):
+          expr = request.args["q"]      # untrusted, evaluated as JS by the server
+          return db.users.find({"$where": f"this.name == '{expr}'"})
+  metadata: { label: REAL, vuln_class: nosql-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL dom xss — raw user HTML into dangerouslySetInnerHTML"
+  vars:
+    finding_tool: semgrep
+    finding_location: web/src/Comment.jsx:14
+    finding_severity: ERROR
+    finding_message: "dangerouslySetInnerHTML with unsanitized value"
+    expected: REAL
+    code: |
+      export function Comment({ comment }) {
+        // comment.html comes from the API, authored by any user
+        return <div dangerouslySetInnerHTML={ { __html: comment.html } } />;
+      }
+  metadata: { label: REAL, vuln_class: xss, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL zip slip — archive members extracted without path validation"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/unpack.py:7
+    finding_severity: ERROR
+    finding_message: "Archive extraction without member path validation (zip slip)"
+    expected: REAL
+    code: |
+      import zipfile
+      def unpack(request):
+          # a member named ../../etc/cron.d/x escapes the destination
+          with zipfile.ZipFile(request.files["z"]) as z:
+              z.extractall("/srv/uploads")
+  metadata: { label: REAL, vuln_class: path-traversal, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "REAL code injection — eval of a user-supplied expression"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/calc.py:5
+    finding_severity: ERROR
+    finding_message: "eval() on user input"
+    expected: REAL
+    code: |
+      def calc(request):
+          # "__import__('os').system('id')" evaluates happily
+          return {"result": eval(request.args["expr"])}
+  metadata: { label: REAL, vuln_class: code-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "REAL insecure output handling — LLM output executed as code"
+  vars:
+    finding_tool: sec-ai-review
+    finding_location: app/assistant.py:33
+    finding_severity: HIGH
+    finding_message: "LLM02: model output passed to an interpreter"
+    expected: REAL
+    code: |
+      def run_analysis(question):
+          code = llm.complete(system="Write pandas code.", user=question)
+          # a prompt-injected or merely wrong completion runs with app privileges
+          return exec(code, {"df": load_dataframe()})
+  metadata: { label: REAL, vuln_class: insecure-output-handling, split: holdout, difficulty: easy, source: synthetic }
+
+# ================= FALSE POSITIVE — should be suppressed (verdict = FP) =================
+
+- description: "FP sqli twin — ORM raw() with bound parameters"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/reports.py:41
+    finding_severity: ERROR
+    finding_message: "Raw SQL detected"
+    expected: FP
+    code: |
+      def report(request):
+          org = request.GET["org"]
+          # params= binds; the driver escapes org
+          return list(Sale.objects.raw("SELECT * FROM sales WHERE org = %s", params=[org]))
+  metadata: { label: FP, fp_class: safe-parameterized, vuln_class: sql-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "FP command-injection twin — argument list, no shell, user value is an argv element"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/backup.py:30
+    finding_severity: ERROR
+    finding_message: "subprocess call with user input"
+    expected: FP
+    code: |
+      import subprocess
+      def archive(request):
+          target = request.form["dir"]
+          # no shell: target is one argv element, never re-parsed for metacharacters
+          subprocess.run(["tar", "czf", "/tmp/b.tgz", "--", target], check=True)
+  metadata: { label: FP, fp_class: safe-parameterized, vuln_class: command-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP xss twin — autoescaping left on, no |safe"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/templates/profile.py:22
+    finding_severity: ERROR
+    finding_message: "User data rendered into HTML"
+    expected: FP
+    code: |
+      from flask import render_template
+      def bio(user):
+          # Jinja autoescape is on; user.bio is escaped on render
+          return render_template("profile.html", bio=user.bio)
+  metadata: { label: FP, fp_class: sanitized, vuln_class: xss, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "FP yaml twin — safe_load cannot construct arbitrary objects"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/config_import.py:25
+    finding_severity: ERROR
+    finding_message: "yaml load of user-supplied document"
+    expected: FP
+    code: |
+      import yaml
+      def load_config(request):
+          # safe_load builds only plain scalars/lists/dicts
+          return yaml.safe_load(request.files["cfg"].read())
+  metadata: { label: FP, fp_class: sanitized, vuln_class: deserialization, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "FP open-redirect twin — relative path forced, absolute URLs rejected"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/auth.py:118
+    finding_severity: WARNING
+    finding_message: "Redirect to a user-controlled location"
+    expected: FP
+    code: |
+      from flask import redirect
+      from urllib.parse import urlparse
+      def post_login(request):
+          nxt = request.args.get("next", "/")
+          # netloc/scheme present -> off-site; fall back to "/"
+          p = urlparse(nxt)
+          return redirect(nxt if not p.scheme and not p.netloc else "/")
+  metadata: { label: FP, fp_class: sanitized, vuln_class: open-redirect, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP authz twin — role enforced by a decorator the pattern scanner did not follow"
+  vars:
+    finding_tool: sec-sast-deep
+    finding_location: app/admin.py:44
+    finding_severity: HIGH
+    finding_message: "Privileged operation without a role/permission check"
+    expected: FP
+    code: |
+      @router.post("/admin/users/{uid}/demote")
+      @requires_role("admin")          # rejects non-admins before the handler runs
+      def demote(uid: int, request):
+          User.objects.filter(id=uid).update(is_admin=False)
+  metadata: { label: FP, fp_class: check-present, vuln_class: missing-authz, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP randomness twin — secrets module used for the security token"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/reset.py:19
+    finding_severity: ERROR
+    finding_message: "Token generation detected"
+    expected: FP
+    code: |
+      import secrets
+      def make_reset_token():
+          # CSPRNG, 256 bits
+          return secrets.token_urlsafe(32)
+  metadata: { label: FP, fp_class: safe-parameterized, vuln_class: weak-crypto, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "FP dependency CVE twin — vulnerable function is never called"
+  vars:
+    finding_tool: osv-scanner
+    finding_location: requirements.txt:19
+    finding_severity: HIGH
+    finding_message: "GHSA-yyyy: parselib < 2.1.0 — RCE in parselib.parse() on crafted input"
+    expected: FP
+    code: |
+      # parselib==2.0.3 is installed as a transitive dep of a build-time linter.
+      # The vulnerable symbol parselib.parse() has no call site in this repo:
+      #   $ rg -n 'parselib' app/  ->  (no matches)
+      # Nothing untrusted can reach it; the fix is a version bump, not an incident.
+  metadata: { label: FP, fp_class: not-reachable, vuln_class: dependency-cve, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP IaC twin — ingress restricted to the VPC CIDR, not the internet"
+  vars:
+    finding_tool: checkov
+    finding_location: infra/network.tf:44
+    finding_severity: HIGH
+    finding_message: "Security group allows ingress on port 22"
+    expected: FP
+    code: |
+      resource "aws_security_group_rule" "ssh_internal" {
+        type        = "ingress"
+        from_port   = 22
+        to_port     = 22
+        cidr_blocks = ["10.0.0.0/16"]     # private VPC range, not 0.0.0.0/0
+      }
+  metadata: { label: FP, fp_class: sanitized, vuln_class: iac-misconfig, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP CI twin — pull_request trigger, no secrets, default checkout"
+  vars:
+    finding_tool: zizmor
+    finding_location: .github/workflows/ci.yml:3
+    finding_severity: HIGH
+    finding_message: "workflow checks out code and runs it"
+    expected: FP
+    code: |
+      on: pull_request                 # read-only token, no repo secrets exposed to forks
+      jobs:
+        test:
+          steps:
+            - uses: actions/checkout@v4   # checks out the merge ref, not an attacker branch
+            - run: npm ci && npm test
+  metadata: { label: FP, fp_class: not-reachable, vuln_class: ci-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP nosql twin — value bound with $eq, no expression evaluation"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/search.py:28
+    finding_severity: ERROR
+    finding_message: "User input in a MongoDB query"
+    expected: FP
+    code: |
+      def search(request):
+          q = request.args["q"]
+          # $eq forces q to be compared as a value, never parsed as an operator or JS
+          return db.users.find({"name": {"$eq": q}})
+  metadata: { label: FP, fp_class: safe-parameterized, vuln_class: nosql-injection, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "FP dom-xss twin — HTML sanitized before injection"
+  vars:
+    finding_tool: semgrep
+    finding_location: web/src/Comment.jsx:31
+    finding_severity: ERROR
+    finding_message: "dangerouslySetInnerHTML detected"
+    expected: FP
+    code: |
+      import DOMPurify from "dompurify";
+      export function Comment({ comment }) {
+        const clean = DOMPurify.sanitize(comment.html);   // scripts/handlers stripped
+        return <div dangerouslySetInnerHTML={ { __html: clean } } />;
+      }
+  metadata: { label: FP, fp_class: sanitized, vuln_class: xss, split: holdout, difficulty: easy, source: synthetic }
+
+- description: "FP zip-slip twin — member paths validated against the destination root"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/unpack.py:24
+    finding_severity: ERROR
+    finding_message: "Archive extraction detected"
+    expected: FP
+    code: |
+      import os, zipfile
+      DEST = "/srv/uploads"
+      def unpack(request):
+          with zipfile.ZipFile(request.files["z"]) as z:
+              for m in z.namelist():
+                  target = os.path.realpath(os.path.join(DEST, m))
+                  if not target.startswith(DEST + os.sep):
+                      raise ValueError("path escape")   # ../ members rejected
+                  z.extract(m, DEST)
+  metadata: { label: FP, fp_class: sanitized, vuln_class: path-traversal, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP code-injection twin — literal_eval parses data, never executes it"
+  vars:
+    finding_tool: semgrep
+    finding_location: app/calc.py:18
+    finding_severity: ERROR
+    finding_message: "Dynamic evaluation of user input"
+    expected: FP
+    code: |
+      import ast
+      def parse_literal(request):
+          # literal_eval accepts only literals; __import__(...) raises ValueError
+          return {"value": ast.literal_eval(request.args["expr"])}
+  metadata: { label: FP, fp_class: sanitized, vuln_class: code-injection, split: holdout, difficulty: hard, source: synthetic }
+
+- description: "FP high-entropy non-secret — a git commit sha, not a credential"
+  vars:
+    finding_tool: gitleaks
+    finding_location: web/src/build-info.js:2
+    finding_severity: HIGH
+    finding_message: "High entropy string detected (possible secret)"
+    expected: FP
+    code: |
+      // generated at build time; displayed in the footer for support tickets
+      export const BUILD_SHA = "9f3c2ab7d41e5680bc9a17f2e0d84c53ab6719fe";
+  metadata: { label: FP, fp_class: not-a-secret, vuln_class: hardcoded-secret, split: holdout, difficulty: hard, source: synthetic }

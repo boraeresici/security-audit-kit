@@ -19,13 +19,10 @@ providers:
 defaultTest:
   assert:
     - type: javascript
-      value: |
-        let out = String(output).trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
-        let verdict = null;
-        try { verdict = JSON.parse(out).verdict; }
-        catch (e) { const m = out.match(/\b(REAL|FP)\b/i); verdict = m ? m[1].toUpperCase() : null; }
-        const expected = String(context.vars.expected || '').toUpperCase();
-        const pass = verdict === expected;
-        return { pass, score: pass ? 1 : 0, reason: `predicted=${verdict} expected=${expected}` };
+      value: file://grade.mjs   # shared by every backend config — keep scores comparable
 
-tests: file://cases.yaml
+# Both splits are loaded; run.sh selects one via --filter-metadata split=<dev|holdout>.
+# Default runs score the dev split. cases.holdout.yaml must not be read while tuning the prompt.
+tests:
+  - file://cases.yaml
+  - file://cases.holdout.yaml

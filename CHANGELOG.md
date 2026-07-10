@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.2] - 2026-07-10
+
+### Changed (eval harness — corpus expansion + measurement hardening; still dev-only, not in the scan path)
+- **Corpus grown 10 → 61 cases, split dev / held-out.** `cases.yaml` is now a **31-case dev (tuning)
+  split** and `cases.holdout.yaml` a **30-case held-out split** that produces the reportable number
+  and must not be read while tuning the prompt. Coverage spans **21 vuln classes** (sqli, command/
+  code injection, path traversal, SSRF, deserialization, SSTI, XSS, XXE, weak-crypto, broken-auth,
+  mass-assignment, IaC misconfig, CI injection, prompt-injection / insecure-output-handling,
+  dependency-CVE, NoSQL, open-redirect, …) and **11 FP classes**. Most REAL cases have an FP **twin**
+  (same class, one decisive difference: sanitizer / allow-list / reachability / safe API variant),
+  tagged `difficulty: hard` — this is what gives the corpus resolving power the old 10-case set lacked.
+- **Split enforced mechanically.** Every config loads both files; `run.sh` selects one via
+  `--filter-metadata split=<dev|holdout>` (new `EVAL_SPLIT`, default `dev`; held-out writes
+  `output.holdout.json`).
+- **`score.mjs` no longer charges provider errors to the model.** A case that never reached the model
+  (auth/billing/network — promptfoo `failureReason=2`) is excluded; an all-errored run now **refuses
+  to report and exits 2** instead of printing a plausible-looking `0%`. New `EVAL_ALLOW_PARTIAL=1`
+  scores only the cases that ran. Exit codes: 0 ok / 1 regression gate unmet / 2 no usable data.
+- **Shared grader.** All configs point at one `grade.mjs` (`file://`) so a scoring change can never
+  land on some backends and not others (keeps cross-backend scores comparable). New `EVAL_CONCURRENCY`
+  knob (default 4) to dodge free-tier rate limits.
+- **New backend variants** (OpenAI-compatible, key-gated, same corpus/prompt/grader): GLM-5.2 via
+  NVIDIA NIM (`promptfooconfig.nim.yaml`), GLM-5.2 via Z.ai (`.glm.yaml`), Mistral Large 3 (`.mistral.yaml`).
+
+### Added
+- **First held-out measurement** (GLM-5.2 via NIM, 2026-07-10): dev split 31/31; **held-out split
+  precision 83.3%, recall 100%, F1 90.9%, accuracy 90%** (TP=15, FP=3, FN=0, TN=12). All three misses
+  are `difficulty: hard` FP twins the model over-flagged — the harness can now *see* a precision failure,
+  the precondition for measuring Phase-A prompt changes. Documented in `docs/compare/aikido-semgrep.md`
+  ("Measured triage quality"). The default backend (Claude) stays unmeasured pending API credit.
+
+### Fixed
+- **Nunjucks templating collision in fixtures.** promptfoo renders case code through Nunjucks, so a
+  JSX `dangerouslySetInnerHTML={{ __html: … }}` brace-pair with a colon was a template syntax error.
+  Fixtures now avoid literal `{{ }}` except valid GitHub Actions `${{ … }}` expressions.
+
 ## [1.11.1] - 2026-07-03
 
 ### Added (eval harness — dev-only skill-quality regression; not in the scan path)

@@ -12,12 +12,24 @@
 # Regression gates (optional):  EVAL_MIN_RECALL=0.9 EVAL_MIN_PRECISION=0.8 bash tests/eval/run.sh
 # Alternate backend on the SAME corpus (Tier-L comparison), e.g. GLM-5.2:
 #   EVAL_CONFIG=promptfooconfig.glm.yaml EVAL_OUT=output.glm.json bash tests/eval/run.sh
+# NVIDIA NIM (GLM-5.2, OpenAI-compatible endpoint; needs NVIDIA_API_KEY):
+#   EVAL_CONFIG=promptfooconfig.nim.yaml EVAL_OUT=output.nim.json bash tests/eval/run.sh
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
 PROMPTFOO_VER="0.121.17"   # pinned (no drift)
 CONFIG="${EVAL_CONFIG:-promptfooconfig.yaml}"
-OUT="${EVAL_OUT:-output.json}"
+# Split selection: the corpus carries `metadata.split: dev|holdout` and both files are loaded by
+# every config, so we pick one at run time with --filter-metadata. Default is the dev (tuning)
+# split; the headline number comes from `EVAL_SPLIT=holdout`, which must not be looked at while
+# iterating the prompt. Output file defaults per split so a dev run never clobbers a holdout result.
+SPLIT="${EVAL_SPLIT:-dev}"
+case "$SPLIT" in dev|holdout) ;; *) echo "[eval] ERROR: EVAL_SPLIT must be dev|holdout, got: $SPLIT"; exit 2;; esac
+# Default output name is derived from the backend + split so distinct runs never clobber each other
+# (e.g. promptfooconfig.nim.yaml + holdout -> output.nim.holdout.json; the base config -> output.json).
+# EVAL_OUT still overrides. Tag = the config's middle segment, empty for the base promptfooconfig.yaml.
+TAG="$(basename "$CONFIG" .yaml)"; TAG="${TAG#promptfooconfig}"; TAG="${TAG#.}"
+OUT="${EVAL_OUT:-output${TAG:+.$TAG}$([ "$SPLIT" = holdout ] && echo .holdout).json}"
 have(){ command -v "$1" >/dev/null 2>&1; }
 
 have npx || { echo "[eval] SKIP: node/npx not installed (dev-only harness)"; exit 0; }
@@ -58,6 +70,10 @@ pass=()
 for a in "$@"; do [ "$a" = "#" ] && break; pass+=("$a"); done
 
 rm -f "$OUT"   # never let score.mjs read a stale result from a previous run
-echo "[eval] promptfoo@$PROMPTFOO_VER — grading tests/eval/cases.yaml via $CONFIG"
-npx -y "promptfoo@$PROMPTFOO_VER" eval -c "$CONFIG" -o "$OUT" --no-progress-bar ${pass[@]+"${pass[@]}"} || true
+# Concurrency: free-tier endpoints (NIM / z.ai) rate-limit at the default 4, which shows up as
+# provider errors, not a bad score (score.mjs excludes them). Override with EVAL_CONCURRENCY.
+CONC="${EVAL_CONCURRENCY:-4}"
+echo "[eval] promptfoo@$PROMPTFOO_VER — grading $SPLIT split via $CONFIG -> $OUT (concurrency $CONC)"
+npx -y "promptfoo@$PROMPTFOO_VER" eval -c "$CONFIG" -o "$OUT" --no-progress-bar \
+  --filter-metadata "split=$SPLIT" -j "$CONC" ${pass[@]+"${pass[@]}"} || true
 node score.mjs "$OUT"
