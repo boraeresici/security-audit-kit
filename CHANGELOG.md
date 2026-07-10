@@ -24,6 +24,11 @@ All notable changes to this project are documented here. The format is based on
   *through tools* per finding (never paste whole dumps); only `scan.sh` survivors enter triage.
 - The daily findings table now records the **untrusted source** alongside the sink, so each REAL
   carries its evidence chain on the page.
+- **`sec-audit` gains an opt-in whole-repo blueprint** — a 3-stage deep mode (threat-model the repo
+  → per-component name the vuln classes worth auditing → audit each at the hard-evidence bar, with a
+  cross-set consistency sweep), distinct from the routine scan+triage default. Most token-costly
+  path; announced, scoped, and targeted (not file-by-file, not exhaustive — carries a "not audited +
+  why" note). Credit seclab-taskflow-agent's threat-model→plan→audit shape.
 
 ### Added (measured before/after — the Phase-A acceptance gate)
 - Re-measured the judgment prompt (`tests/eval/triage_prompt.md`, the eval mirror of the skills)
