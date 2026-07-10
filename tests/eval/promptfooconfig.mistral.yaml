@@ -1,0 +1,31 @@
+# Mistral La Plateforme backend variant of the eval — Tier-L candidate comparison (see
+# promptfooconfig.yaml for the Claude baseline; same prompt, same corpus, same grader —
+# only the provider differs, so results are directly comparable).
+#
+# Run:   EVAL_CONFIG=promptfooconfig.mistral.yaml EVAL_OUT=output.mistral.json bash run.sh
+# Needs: MISTRAL_API_KEY (api.mistral.ai). Model id verified against GET /v1/models (2026-07).
+#
+# Declared as an OpenAI-compatible provider rather than promptfoo's native `mistral:` id on
+# purpose: run.sh's clean-skip guard only recognises an anthropic id or a declared key-env-var
+# line, so a native id would hard-fail instead of skipping when the key is absent.
+description: "sec-triage REAL/FP judgment eval — Mistral Large 3 backend"
+
+prompts:
+  - file://triage_prompt.md
+
+providers:
+  - id: openai:chat:mistral-large-2512   # pinned, not -latest; bump deliberately
+    config:
+      apiBaseUrl: https://api.mistral.ai/v1
+      apiKeyEnvar: MISTRAL_API_KEY
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://grade.mjs   # shared by every backend config — keep scores comparable
+
+# Both splits are loaded; run.sh selects one via --filter-metadata split=<dev|holdout>.
+# Default runs score the dev split. cases.holdout.yaml must not be read while tuning the prompt.
+tests:
+  - file://cases.yaml
+  - file://cases.holdout.yaml

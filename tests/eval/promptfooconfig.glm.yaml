@@ -1,0 +1,28 @@
+# GLM backend variant of the eval — Tier-L candidate comparison (see promptfooconfig.yaml
+# for the Claude baseline; same prompt, same corpus, same assert — only the provider differs,
+# so results are directly comparable).
+#
+# Run:   EVAL_CONFIG=promptfooconfig.glm.yaml EVAL_OUT=output.glm.json bash run.sh
+# Needs: ZAI_API_KEY (z.ai API platform). Model id + OpenAI-compatible endpoint per
+#        docs.z.ai (verified 2026-07). Keep the model pinned; bump deliberately.
+description: "sec-triage REAL/FP judgment eval — GLM-5.2 backend"
+
+prompts:
+  - file://triage_prompt.md
+
+providers:
+  - id: openai:chat:glm-5.2
+    config:
+      apiBaseUrl: https://api.z.ai/api/paas/v4
+      apiKeyEnvar: ZAI_API_KEY
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://grade.mjs   # shared by every backend config — keep scores comparable
+
+# Both splits are loaded; run.sh selects one via --filter-metadata split=<dev|holdout>.
+# Default runs score the dev split. cases.holdout.yaml must not be read while tuning the prompt.
+tests:
+  - file://cases.yaml
+  - file://cases.holdout.yaml

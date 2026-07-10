@@ -129,13 +129,22 @@ lives elsewhere. Run this alongside the 4 classes.
 1. **Phase 2 — compare (recon):** with Phase 1's baseline in hand, produce a *candidate* list per
    class — each candidate is a **deviation** from the known-correct pattern (endpoint/function +
    why it deviates). If there are many candidates, fan out with Explore/subagents.
-2. **Phase 3 — assess (verify):** for each candidate READ the call path (file:line) and apply two gates:
-   - **Reachability:** can untrusted input actually reach this sink? If not -> FP (not reachable).
-   - **Flaw vs. correct pattern:** is protection missing/avoidable, or is this one of the "not a
-     flaw" cases above? Justify against the baseline.
+2. **Phase 3 — assess (verify):** for each candidate READ the call path (file:line) and clear the
+   **evidence bar** — the default is FP; a candidate earns REAL only by naming all three:
+   - **Sink** — the dangerous operation at its `file:line` (the unscoped query, the auth-less
+     mutation, the wrapper-hidden exec, the cross-tenant fetch).
+   - **Untrusted source** — the specific attacker-controlled input, and the actor's authority for
+     an authz flaw (who reaches it, owning what). A server-side constant / trusted actor is not one.
+   - **Unbroken path** — source reaches sink with **no effective mitigation**. Credit a mitigation
+     only if it actually covers this path: a tenant/owner filter or role decorator (even one a
+     pattern scanner didn't follow), a server-side recompute, an FSM/idempotency guard,
+     parameterization, an allow-list — any of the "Not a flaw" patterns above. Missing → REAL.
    Then assign a **confidence in `[0,1]`** that it is a real, exploitable flaw. Report only
-   `≥0.7` (bar: "would a security team raise this in PR review?"); `<0.7` goes to **Suppressed**
-   with the score + reason. Genuinely uncertain at ≥0.7 -> keep as UNCERTAIN (safe side).
+   `≥0.7` (bar: "would a security team raise this in PR review, given the guards actually present?");
+   `<0.7` goes to **Suppressed** with the score + reason. Genuinely uncertain at ≥0.7 -> UNCERTAIN.
+   - **Consistency validation (one sweep before recording):** every REAL must carry a concrete sink
+     `file:line` + a named untrusted source/actor; a REAL whose "source" is trusted, or that ignores
+     a guard you credited elsewhere for the same pattern, is downgraded. Severity ranks, never decides.
 3. **Record** — append a `## Round N — sec-sast-deep` section to the same
    `docs/security/scan-findings/findings-<TODAY>.md` (do NOT overwrite). Per finding:
    location | class | severity | confidence | REAL/UNCERTAIN | action. Add a **Suppressed**
