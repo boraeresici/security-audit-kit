@@ -189,8 +189,14 @@ bash tools/security-audit-kit/bootstrap.sh v1.1.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
 git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.1.0'e yukselt"
 ```
-Commit'lenen `.kit-version` (ref + SHA) takimin hangi pinli surumu kullandiginin
-ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir.
+Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
+ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
+DOSYALARA baglar: `scan.sh verify` bunu yeniden hesaplar ve **pin, vendor'daki dosyalarin ait
+olmadigi bir surumu iddia ediyorsa hata verir** — git tarafindan izlenmeyen bir `.kit-version`,
+vendor agacini eski bir surume geri alan bir checkout'tan sag cikarsa takim kullanmadigi bir
+surumu kullandigini sanir. Eski bootstrap ile yazilmis pinlerde ozet yoktur; verify bu durumda
+tag'i vendor'daki `CHANGELOG` ile karsilastirir. Uyusmazlikta `bootstrap.sh <tag> --expect=<sha>`
+ile yeniden vendor et.
 
 ## Gereksinimler (hangisi yoksa o boyut atlanir)
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinli image, kurulum yok)

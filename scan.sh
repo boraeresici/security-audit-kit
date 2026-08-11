@@ -385,8 +385,42 @@ scan_checksums(){
   say checksums "wrote ${CHECKSUMS_FILE#"$ROOT"/} ($(grep -c '' "$CHECKSUMS_FILE") files)"
 }
 
+# Cross-check the PIN against the vendored CONTENT.
+# CHECKSUMS alone only proves the tree is SELF-consistent: `.kit-version` is not tracked by the
+# consumer's git, so a `git checkout` of the vendored dir restores older files AND their matching
+# CHECKSUMS while the newer pin file survives — verify passes, and the team believes it runs a
+# release it does not. Observed in the wild (pin said v1.10.0, files were v1.9.1, 9 files apart).
+# Two checks, best available first:
+#   (1) digest binding — bootstrap records sha256(CHECKSUMS) as a 3rd field; recompute it here.
+#   (2) label check — for a legacy 2-field pin, the pinned tag must match the newest version in
+#       the vendored CHANGELOG. Coarser, but it needs nothing the old vendor didn't already write.
+# A branch/SHA pin (`main`, a raw sha) has no version label to compare, so (2) stays quiet.
+kit_pin_check(){
+  local pin="$KIT_DIR/.kit-version" ref want got top reff
+  [ -f "$pin" ] || return 0
+  ref="$(awk 'NR==1{print $1}' "$pin")"
+  want="$(awk 'NR==1{print $3}' "$pin")"
+  if [ -n "${want:-}" ]; then
+    got="$(sha256_of "$CHECKSUMS_FILE")"
+    [ "$got" = "$want" ] && return 0
+    printf 'PIN       .kit-version pins %s, but CHECKSUMS hashes to %s (pin recorded %s) -> the vendored files are NOT that release. Re-run: bootstrap.sh %s\n' \
+      "$ref" "${got:0:12}" "${want:0:12}" "$ref"
+    return 1
+  fi
+  case "$ref" in v[0-9]*|[0-9]*) ;; *) return 0 ;; esac
+  [ -f "$KIT_DIR/CHANGELOG.md" ] || return 0
+  top="$(awk -F'[][]' '/^## \[/{print $2; exit}' "$KIT_DIR/CHANGELOG.md")"
+  [ -n "${top:-}" ] || return 0
+  reff="${ref#v}"; reff="${reff%%-rc.*}"
+  [ "$reff" = "$top" ] && return 0
+  printf 'PIN       .kit-version pins %s, but the vendored CHANGELOG stops at %s -> the pin does not match the files. Re-run: bootstrap.sh %s\n' \
+    "$ref" "$top" "$ref"
+  return 1
+}
+
 # Verify the kit's files against CHECKSUMS: MODIFIED / MISSING listed files, plus EXTRA
-# files under skills/ (a rogue skill dropped into a vendored copy). Exit non-zero on any.
+# files under skills/ (a rogue skill dropped into a vendored copy), plus the pin cross-check
+# above. Exit non-zero on any.
 scan_verify(){
   [ -f "$CHECKSUMS_FILE" ] || { warn verify "no CHECKSUMS manifest (run: scan.sh checksums)"; return 1; }
   have_sha || { warn verify "no sha256 tool (shasum/sha256sum/openssl)"; return 1; }
@@ -405,6 +439,7 @@ scan_verify(){
 $(cd "$KIT_DIR" && find skills -type f)
 EOF
   fi
+  kit_pin_check >> "$issues" || true
   if [ -s "$issues" ]; then
     printf '\033[31m[scan:verify] integrity FAILED:\033[0m\n'; cat "$issues"; rm -f "$issues"; return 1
   fi

@@ -113,6 +113,24 @@ if [ -f tools/security-audit-kit/CHECKSUMS ]; then
   $SCAN verify >/dev/null 2>&1 && no "verify: rogue skill NOT detected" || ok "verify: rogue skill detected"
   rm -f tools/security-audit-kit/skills/evil.skill.md
   $SCAN verify >/dev/null 2>&1 && ok "verify: passes again after cleanup" || no "verify: should pass after cleanup"
+  # Pin cross-check: a .kit-version that claims a release the vendored files aren't must FAIL,
+  # even though CHECKSUMS itself still matches (the real-world case: an untracked pin file
+  # outliving a checkout that reverted the vendored tree to an older release).
+  KV=tools/security-audit-kit/.kit-version
+  [ -f "$KV" ] && cp "$KV" "$KV.bak"
+  # NOTE: capture first — `verify` exits non-zero here, and under `pipefail` a pipeline into grep
+  # would inherit that failure and mask the assertion.
+  printf 'v0.0.1 %s %s\n' "$(printf '0%.0s' $(seq 40))" "$(printf 'f%.0s' $(seq 64))" > "$KV"
+  VOUT="$($SCAN verify 2>&1)"
+  printf '%s' "$VOUT" | grep -q '^PIN ' && ok "verify: pin/content mismatch detected (digest)" || no "verify: pin digest mismatch NOT detected"
+  # Legacy 2-field pin (no digest): falls back to comparing the tag against the CHANGELOG.
+  printf 'v0.0.1 %s\n' "$(printf '0%.0s' $(seq 40))" > "$KV"
+  VOUT="$($SCAN verify 2>&1)"
+  printf '%s' "$VOUT" | grep -q '^PIN ' && ok "verify: pin/content mismatch detected (legacy label)" || no "verify: legacy pin mismatch NOT detected"
+  # A branch pin has no version label to compare -> must stay quiet, not false-positive.
+  printf 'main %s\n' "$(printf '0%.0s' $(seq 40))" > "$KV"
+  $SCAN verify >/dev/null 2>&1 && ok "verify: branch pin does not false-positive" || no "verify: branch pin should pass"
+  rm -f "$KV"; [ -f "$KV.bak" ] && mv "$KV.bak" "$KV"
 else
   skip "verify tests (no CHECKSUMS in working tree yet)"
 fi

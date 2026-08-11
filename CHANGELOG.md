@@ -70,7 +70,24 @@ All notable changes to this project are documented here. The format is based on
   the precondition for measuring Phase-A prompt changes. Documented in `docs/compare/aikido-semgrep.md`
   ("Measured triage quality"). The default backend (Claude) stays unmeasured pending API credit.
 
+### Added (integrity — Tier S: the pin now binds to the content)
+- **`.kit-version` gains a third field: sha256 of the vendored `CHECKSUMS`**, written by
+  `bootstrap.sh`. `scan.sh verify` recomputes it and **fails when the pin claims a release the
+  vendored files aren't**. CHECKSUMS alone only proved the tree was *self-consistent*: because
+  `.kit-version` is untracked in most consumers, a `git checkout` of the vendored directory
+  restores older files together with their matching manifest while the newer pin file survives —
+  verify passed, and the team believed it ran a release it didn't. Found in a real consumer repo
+  (pin said v1.10.0, the files were v1.9.1 — 9 files apart, including `scan.sh` and two skills).
+- **Fallback for pins written by an older bootstrap** (two fields, no digest): the pinned tag is
+  compared against the newest version in the vendored `CHANGELOG`, so existing consumers get the
+  check without re-vendoring first. A branch/SHA pin (`main`, a raw commit) has no version label
+  and is left alone.
+- e2e coverage for all three paths (digest mismatch, legacy label mismatch, branch pin no-op).
+
 ### Fixed
+- **`RELEASING.md` documented a `bootstrap.sh` invocation that cannot work** — `--ref <tag>` is
+  rejected by the arg parser (`unknown flag`, exit 2). The correct form is a positional ref plus
+  `--expect=<sha>`.
 - **The vendored kit no longer defines the target repo's stack.** Adding the landing page put a
   `landing/build.py` in the kit, and `detect_semgrep_configs` scans `git ls-files` — so any consumer
   vendoring the kit got `--config p/python` appended to *every* semgrep run, even a pure JS/Go repo

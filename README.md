@@ -186,8 +186,13 @@ bash tools/security-audit-kit/bootstrap.sh v1.1.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
 git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.1.0"
 ```
-The committed `.kit-version` (ref + SHA) is the team's shared record of which pinned
-version is in use, and what `--check` compares against next time.
+The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
+pinned version is in use, and what `--check` compares against next time. The third field binds the
+pin to the files: `scan.sh verify` recomputes it and **fails if the pin claims a release the
+vendored files aren't** — the case where an untracked `.kit-version` outlives a checkout that
+reverted the vendored tree, leaving the team convinced they run a version they don't. A pin written
+by an older bootstrap has no digest; verify then falls back to comparing the tag against the
+vendored `CHANGELOG`. Re-run `bootstrap.sh <tag> --expect=<sha>` to resolve a mismatch.
 
 ## Requirements (a missing one only skips that dimension)
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)

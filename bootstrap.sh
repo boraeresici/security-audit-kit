@@ -117,9 +117,23 @@ else
 fi
 ok "vendored: $DEST_REL/ (pin $KIT_REF @ ${SHA:0:12})"
 
-# Evidence trail: which version was vendored (can be committed).
-printf '%s %s\n' "$KIT_REF" "$SHA" > "$ROOT/$DEST_REL/.kit-version"
+# Evidence trail: which version was vendored (can be committed). The 3rd field binds the pin to
+# the CONTENT: sha256 of the vendored CHECKSUMS manifest. Without it, `.kit-version` (untracked in
+# most consumers) can outlive a checkout that reverted the vendored files to an older release and
+# claim a version that isn't on disk — `scan.sh verify` recomputes this and refuses.
+CK_DIGEST=""
+CK_FILE="$ROOT/$DEST_REL/CHECKSUMS"
+if [ -f "$CK_FILE" ]; then
+  if have shasum; then CK_DIGEST="$(shasum -a 256 "$CK_FILE" | awk '{print $1}')"
+  elif have sha256sum; then CK_DIGEST="$(sha256sum "$CK_FILE" | awk '{print $1}')"
+  elif have openssl; then CK_DIGEST="$(openssl dgst -sha256 "$CK_FILE" | awk '{print $NF}')"
+  fi
+fi
+printf '%s %s%s\n' "$KIT_REF" "$SHA" "${CK_DIGEST:+ $CK_DIGEST}" > "$ROOT/$DEST_REL/.kit-version"
 ok ".kit-version written (commit it -> team-shared pinned version)"
+if [ -z "$CK_DIGEST" ]; then
+  warn "no sha256 tool -> pin written without a content digest (verify falls back to the CHANGELOG label check)"
+fi
 
 echo "== delegating to install.sh =="
 bash "$ROOT/$DEST_REL/install.sh"

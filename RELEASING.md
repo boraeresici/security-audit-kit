@@ -1,7 +1,8 @@
 # Releasing security-audit-kit
 
 This kit is **vendored into other repos** and consumers **pin to a release tag** (recorded in their
-`.kit-version` as `ref` + resolved `SHA`, enforced by `bootstrap.sh --expect`). That gives us a simple,
+`.kit-version` as `ref` + resolved `SHA` + a content digest, enforced by `bootstrap.sh --expect=<sha>`
+and re-checked by `scan.sh verify`). That gives us a simple,
 low-friction release model:
 
 > **Consumers only ever get a *blessed* release tag — never `main` HEAD. So `main` can move freely;
@@ -55,7 +56,7 @@ gh release create ${VER}-rc.1 --prerelease \
 In **≥1 real consumer project** (ideally 2–3 across stacks), pin to the RC and exercise it:
 ```sh
 # in the consumer repo — point the vendored kit at the RC tag + verify the exact SHA
-bash tools/security-audit-kit/bootstrap.sh --ref ${VER}-rc.1 --expect <rc_sha>
+bash tools/security-audit-kit/bootstrap.sh ${VER}-rc.1 --expect=<rc_sha>
 bash tools/security-audit-kit/scan.sh all
 bash tools/security-audit-kit/scan.sh doctor
 # run at least one skill pass (e.g. /sec-audit) if the change touches the AI layer
@@ -86,7 +87,7 @@ gh release create ${VER} --latest \
 `--latest` blesses it as the stable release consumers pick up.
 
 ### 7. Consumers update on their own schedule
-Downstream repos bump their `.kit-version` (`ref` + new `SHA`) / re-run `bootstrap.sh --ref ${VER} --expect <sha>`
+Downstream repos bump their `.kit-version` (`ref` + new `SHA`) / re-run `bootstrap.sh ${VER} --expect=<sha>`
 when they choose. Nothing is forced on them.
 
 ---
