@@ -4,7 +4,10 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.12.0] - 2026-07-10
+## [1.12.0] - 2026-08-11
+
+> Includes the **1.11.2** eval-harness work, which landed on `main` but was never released as its
+> own tag — it ships here instead of as a retroactive release.
 
 ### Changed (Phase A — sharper judgment: `sec-triage` + `sec-sast-deep`)
 - **Hard-evidence bar for a REAL verdict.** Both skills now default to **FP** and require, to call a
@@ -38,8 +41,6 @@ All notable changes to this project are documented here. The format is based on
   CRLF / XPath) were added after freezing the prompt** as a blind generalization check — GLM scored
   6/6. Full held-out now 36 cases at precision/recall 100%. Documented in `docs/compare/aikido-semgrep.md`.
 
-## [1.11.2] - 2026-07-10
-
 ### Changed (eval harness — corpus expansion + measurement hardening; still dev-only, not in the scan path)
 - **Corpus grown 10 → 61 cases, split dev / held-out.** `cases.yaml` is now a **31-case dev (tuning)
   split** and `cases.holdout.yaml` a **30-case held-out split** that produces the reportable number
@@ -62,7 +63,7 @@ All notable changes to this project are documented here. The format is based on
 - **New backend variants** (OpenAI-compatible, key-gated, same corpus/prompt/grader): GLM-5.2 via
   NVIDIA NIM (`promptfooconfig.nim.yaml`), GLM-5.2 via Z.ai (`.glm.yaml`), Mistral Large 3 (`.mistral.yaml`).
 
-### Added
+### Added (eval harness — first held-out measurement)
 - **First held-out measurement** (GLM-5.2 via NIM, 2026-07-10): dev split 31/31; **held-out split
   precision 83.3%, recall 100%, F1 90.9%, accuracy 90%** (TP=15, FP=3, FN=0, TN=12). All three misses
   are `difficulty: hard` FP twins the model over-flagged — the harness can now *see* a precision failure,
@@ -70,6 +71,17 @@ All notable changes to this project are documented here. The format is based on
   ("Measured triage quality"). The default backend (Claude) stays unmeasured pending API credit.
 
 ### Fixed
+- **The vendored kit no longer defines the target repo's stack.** Adding the landing page put a
+  `landing/build.py` in the kit, and `detect_semgrep_configs` scans `git ls-files` — so any consumer
+  vendoring the kit got `--config p/python` appended to *every* semgrep run, even a pure JS/Go repo
+  (slower scans, extra false-positive surface). The kit's own directory is now excluded from stack
+  detection whenever it lives inside, but is not equal to, the repo root; a self-scan of the kit is
+  unaffected. Caught by `tests/e2e.sh` ("cfg: python pack on non-python repo").
+- **`tests/eval/run.sh` can no longer be forced into a live, costed run by a local `.env.local`.**
+  The env-file loader sourced the file unconditionally, overriding provider keys the caller had
+  deliberately blanked — which is exactly how `tests/e2e.sh` guarantees a test run never calls a
+  paid API. On a dev box holding a valid key, `bash tests/e2e.sh` would have quietly executed 31
+  billed API calls. Caller-set variables now win, including ones set to an empty value on purpose.
 - **Nunjucks templating collision in fixtures.** promptfoo renders case code through Nunjucks, so a
   JSX `dangerouslySetInnerHTML={{ __html: … }}` brace-pair with a colon was a template syntax error.
   Fixtures now avoid literal `{{ }}` except valid GitHub Actions `${{ … }}` expressions.

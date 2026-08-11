@@ -42,11 +42,24 @@ have node || { echo "[eval] SKIP: node not installed"; exit 0; }
 # as shell (KEY=value lines only, no quotes needed) — keep it trivial and never commit it.
 for envf in ./.env.local ./.env ../../.env.local ../../.env; do
   if [ -f "$envf" ]; then
+    # A variable the CALLER set wins over the file — including one deliberately set to EMPTY.
+    # e2e blanks the provider keys precisely so a test run can never turn into a live, costed
+    # eval; sourcing the file unconditionally would defeat that guard on any dev box that has
+    # an .env.local. Snapshot the caller's values, source, then restore them.
+    _preset=""
+    while IFS='=' read -r _k _; do
+      case "$_k" in ''|\#*|*[!A-Za-z0-9_]*) continue ;; esac
+      if eval "[ -n \"\${$_k+x}\" ]"; then
+        eval "_PRESET_$_k=\"\$$_k\""
+        _preset="$_preset $_k"
+      fi
+    done < "$envf"
     set -a
     # shellcheck disable=SC1090,SC1091
     . "$envf"
     set +a
-    echo "[eval] loaded provider keys from $envf"
+    for _k in $_preset; do eval "export $_k=\"\$_PRESET_$_k\""; done
+    echo "[eval] loaded provider keys from $envf${_preset:+ (kept caller-set:$_preset)}"
     break
   fi
 done

@@ -73,6 +73,14 @@ ZIZMOR_ARGS="${ZIZMOR_ARGS:-}"
 detect_semgrep_configs(){
   local cfg="--config p/owasp-top-ten --config p/secrets"
   local files; files="$(git ls-files 2>/dev/null | grep -v node_modules)"
+  # The VENDORED kit's own files must not define the target repo's stack: the kit ships
+  # landing/build.py + python tooling, which would pull p/python into every consumer, even a
+  # pure JS/Go repo. Only strip when the kit lives inside the target repo (self-scan, where
+  # KIT_DIR == ROOT, must keep seeing its own files).
+  case "$KIT_DIR" in
+    "$ROOT") ;;
+    "$ROOT"/*) files="$(printf '%s\n' "$files" | awk -v p="${KIT_DIR#"$ROOT"/}/" 'index($0,p)!=1')" ;;
+  esac
   # Dependency-manifest contents (small files only) — used to detect frameworks by package name.
   local manifests mtext=""
   manifests="$(printf '%s\n' "$files" | grep -E '(^|/)(requirements[^/]*\.txt|pyproject\.toml|Pipfile|package\.json|composer\.json|Gemfile)$')"
