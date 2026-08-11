@@ -23,7 +23,9 @@ Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 toolchain olan boyut otomatik atlanir.
 
 Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
-gercek/FP karari -> fix/allowlist), **`sec-sast-deep`** (semgrep'in pattern'le goremedigi
+gercek/FP karari -> fix/allowlist; **sert kanit cubugu**: bir bulguya GERCEK demek icin sink
+`file:line`, guvenilmeyen kaynak ve kesintisiz yol adiyla belirtilmeli — varsayilan karar FP),
+**`sec-sast-deep`** (semgrep'in pattern'le goremedigi
 *semantik* kod aciklari: yatay authz/IDOR, dikey authz/eksik-rol, business-logic,
 semantik/stack-ozel injection — cagri-yolu izleyerek), **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
 prompt injection, guvensiz cikti islemesi, asiri yetki) ve **`sec-threat-model`** (STRIDE +
@@ -56,7 +58,7 @@ flowchart TD
 
     subgraph JUDGE["judgment in Claude — skills"]
       direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>exclusions, reachability, confidence >= 0.7"]
+      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7"]
       DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
       AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
       TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
@@ -89,13 +91,13 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.0.0
-bash bootstrap.sh v1.0.0 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.0.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.12.0
+bash bootstrap.sh v1.12.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.12.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.0.0`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.12.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
@@ -128,7 +130,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.6.0          # bir tag'e pinle
+  rev: v1.12.0          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -173,9 +175,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    (clone yok):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.0.0
-   # latest tag       : v1.1.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.1.0
+   # vendored version : v1.11.1
+   # latest tag       : v1.12.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.12.0
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
    `make` hedefine baglanabilir.
@@ -185,9 +187,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.1.0   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.12.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.1.0'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.12.0'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
@@ -200,7 +202,7 @@ ile yeniden vendor et.
 
 ## Gereksinimler (hangisi yoksa o boyut atlanir)
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinli image, kurulum yok)
-- **uvx veya pipx** — semgrep / checkov / pip-audit (kurulum yok, on-demand)
+- **uvx veya pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (kurulum yok, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (projede hangisi varsa)
 
 Hicbir tool'u kalici kurmana gerek yok. Her surum pinli — Python araclari

@@ -289,7 +289,7 @@ footer .right{margin-left:auto}
           <li class="step">
             <span class="node">4</span>
             <h4>Triage in Claude</h4>
-            <span class="cmd">/sec-triage → findings-2026-07-10.md</span>
+            <span class="cmd">/sec-triage → findings-2026-08-11.md</span>
             <small>FP → allowlist · REAL → fix or follow-up registry → re-scan clean.</small>
           </li>
         </ol>
@@ -432,7 +432,7 @@ finding       <span class="f">────────────────�
           <tr><td>IaC misconfiguration</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">checkov (Terraform)</span></td></tr>
           <tr><td>Container / filesystem scanning</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">trivy (vuln, secret, misconfig, license)</span></td></tr>
           <tr><td>CI/CD pipeline security (GitHub Actions)</td><td class="m p">◐</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">zizmor — template injection, poisoned pipelines, token over-permission</span></td></tr>
-          <tr><td>False-positive triage</td><td><span class="m y">✓</span><span class="note">AutoTriage (opaque)</span></td><td><span class="m n">✗</span><span class="note">registry noted as noisy</span></td><td><span class="m y">✓</span><span class="note">sec-triage: two-pass exploitability + confidence gate (≥ 0.7) + CISA KEV/EPSS check; → hard evidence bar (REAL must cite sink file:line + untrusted entry)</span></td></tr>
+          <tr><td>False-positive triage</td><td><span class="m y">✓</span><span class="note">AutoTriage (opaque)</span></td><td><span class="m n">✗</span><span class="note">registry noted as noisy</span></td><td><span class="m y">✓</span><span class="note">sec-triage: hard-evidence bar (REAL must name the sink file:line, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check</span></td></tr>
           <tr><td>Measured triage quality (precision/recall evals)</td><td><span class="m n">✗</span><span class="note">marketing claims only</span></td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">promptfoo eval harness with recall regression gates (tests/eval/)</span></td></tr>
           <tr><td>Structured evidence per finding</td><td class="m y">✓ dashboard</td><td class="m p">◐</td><td><span class="m s">→</span><span class="note">planned: evidence.json + JSONL artifact chain, SARIF-mergeable</span></td></tr>
           <tr><td>AutoFix</td><td><span class="m y">✓</span><span class="note">AI AutoFix PRs (all plans)</span></td><td>Experimental</td><td><span class="m p">◐</span><span class="note">AI-assisted fixes via triage (show diff, re-scan); → validated per-ecosystem fix commands + parent-aware transitive remediation</span></td></tr>
@@ -446,14 +446,14 @@ finding       <span class="f">────────────────�
           <tr><td>IDE integration</td><td class="m y">✓ plugin</td><td class="m y">✓ plugin</td><td><span class="m p">◐</span><span class="note">SARIF output (SARIF=1) consumable by IDE SARIF viewers</span></td></tr>
           <tr><td>Local / air-gapped operation</td><td class="m p">◐ SaaS core</td><td><span class="m p">◐</span><span class="note">no Windows local</span></td><td><span class="m y">✓</span><span class="note">fully local; network only in opt-in dimensions (e.g. GuardDog)</span></td></tr>
           <tr><td>Platform support</td><td>Any (SaaS); local scanner limited</td><td>Linux/macOS local (no Windows)</td><td>Linux + macOS native; → Windows via WSL2 (documented + verified path; Git Bash partial)</td></tr>
-          <tr><td>Supply-chain hygiene of the tool itself</td><td class="m d">unpublished</td><td class="m d">unpublished</td><td><span class="m y">✓</span><span class="note">digest-pinned tools, CHECKSUMS integrity manifest, SHA-pinned bootstrap with tag-repoint guard</span></td></tr>
+          <tr><td>Supply-chain hygiene of the tool itself</td><td class="m d">unpublished</td><td class="m d">unpublished</td><td><span class="m y">✓</span><span class="note">digest-pinned tools, CHECKSUMS integrity manifest, SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — verify fails if .kit-version claims a release the vendored files aren't</span></td></tr>
           <tr><td>Pricing</td><td>Freemium SaaS</td><td>Freemium</td><td class="m y">MIT, free</td></tr>
           <!-- compare:end -->
         </tbody>
       </table>
     </div>
     <p class="src rv">
-      Last updated 2026-07 · kit v1.12.0 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
+      Last updated 2026-08 · kit v1.12.0 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
       Aikido and Semgrep are trademarks of their respective owners. Planned rows describe intended work, not commitments.
       Maintained source: <a href="https://github.com/boraeresici/security-audit-kit/blob/main/docs/compare/aikido-semgrep.md">docs/compare/aikido-semgrep.md</a>
     </p>

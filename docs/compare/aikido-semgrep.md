@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-07-10 · kit **v1.12.0**
+> **Last updated:** 2026-08-11 · kit **v1.12.0**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -45,7 +45,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | IaC misconfiguration | ✓ | ✗ | ✓ checkov (Terraform) |
 | Container / filesystem scanning | ✓ | ✗ | ✓ trivy (vuln, secret, misconfig, license) |
 | CI/CD pipeline security (GitHub Actions) | Partial | ✗ | ✓ zizmor — template injection, poisoned pipelines, token over-permission |
-| False-positive triage | ✓ AutoTriage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: two-pass exploitability + confidence gate (≥ 0.7) + CISA KEV/EPSS check; 🔜 hard evidence bar (REAL must cite sink `file:line` + untrusted entry) |
+| False-positive triage | ✓ AutoTriage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check |
 | Measured triage quality (precision/recall evals) | ✗ (marketing claims only) | ✗ | ✓ promptfoo eval harness with recall regression gates (`tests/eval/`) |
 | Structured evidence per finding | ✓ (dashboard) | Partial | 🔜 planned: `evidence.json` + JSONL artifact chain, SARIF-mergeable |
 | AutoFix | ✓ AI AutoFix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan); 🔜 validated per-ecosystem fix commands + parent-aware transitive remediation |
@@ -59,7 +59,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers |
 | Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ fully local; network only in opt-in dimensions (e.g. GuardDog) |
 | Platform support | Any (SaaS); local scanner limited | Linux/macOS local (no Windows) | Linux + macOS native; 🔜 Windows via WSL2 (documented + verified path; Git Bash partial) |
-| Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest, SHA-pinned bootstrap with tag-repoint guard |
+| Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest, SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
 | Pricing | Freemium SaaS | Freemium | MIT, free |
 
 ## Why some rows are "—" (out of scope by design)

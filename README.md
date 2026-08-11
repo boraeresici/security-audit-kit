@@ -23,7 +23,9 @@ Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE
 dimension whose toolchain is missing is skipped automatically.
 
 On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
-scan -> real/false-positive decision -> fix/allowlist), **`sec-sast-deep`** (*semantic*
+scan -> real/false-positive decision -> fix/allowlist, at a **hard-evidence bar**: calling a
+finding REAL requires naming the sink `file:line`, the untrusted source and an unbroken path —
+the default verdict is FP), **`sec-sast-deep`** (*semantic*
 code flaws semgrep's patterns miss: horizontal authz/IDOR, vertical authz/missing-role,
 business logic, semantic/stack-specific injection — by following the call path), **`sec-ai-review`** (AI/LLM risks per the
 OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency), and
@@ -56,7 +58,7 @@ flowchart TD
 
     subgraph JUDGE["judgment in Claude — skills"]
       direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>exclusions, reachability, confidence >= 0.7"]
+      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7"]
       DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
       AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
       TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
@@ -88,13 +90,13 @@ re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, revie
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.0.0
-bash bootstrap.sh v1.0.0 --scan          # also run a full scan after install
-bash bootstrap.sh v1.0.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.12.0
+bash bootstrap.sh v1.12.0 --scan          # also run a full scan after install
+bash bootstrap.sh v1.12.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.0.0`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.12.0`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
@@ -127,7 +129,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.6.0          # pin a tag
+  rev: v1.12.0          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -170,9 +172,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
    against the newest semver tag in the kit repo via `git ls-remote` (no clone):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.0.0
-   # latest tag       : v1.1.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.1.0
+   # vendored version : v1.11.1
+   # latest tag       : v1.12.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.12.0
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
    periodic check or a `make` target.
@@ -182,9 +184,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.1.0   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.12.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.1.0"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.12.0"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
@@ -196,7 +198,7 @@ vendored `CHANGELOG`. Re-run `bootstrap.sh <tag> --expect=<sha>` to resolve a mi
 
 ## Requirements (a missing one only skips that dimension)
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)
-- **uvx or pipx** — semgrep / checkov / pip-audit (no install, on-demand)
+- **uvx or pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (no install, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (whichever the project uses)
 
 You don't need to permanently install any tool. Every version is pinned — Python tools

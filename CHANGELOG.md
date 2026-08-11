@@ -84,6 +84,15 @@ All notable changes to this project are documented here. The format is based on
   and is left alone.
 - e2e coverage for all three paths (digest mismatch, legacy label mismatch, branch pin no-op).
 
+### Changed (docs kept in step with the release)
+- READMEs (en/tr): install / `--check` / bump examples now pin **v1.12.0** instead of the
+  long-stale v1.0.0–v1.6.0; the `uvx or pipx` requirement line finally lists **guarddog + zizmor**
+  (shipped in v1.11.0); the lifecycle diagram's triage node shows the evidence bar; the `sec-triage`
+  summary states the bar and the FP default.
+- `docs/compare/aikido-semgrep.md`: the false-positive-triage row flips **🔜 → shipped** (the
+  evidence bar is in), the tool's own supply-chain row records the pin-to-content binding, header
+  re-dated. `landing/index.html` regenerated from it via `landing/build.py`.
+
 ### Fixed
 - **`RELEASING.md` documented a `bootstrap.sh` invocation that cannot work** — `--ref <tag>` is
   rejected by the arg parser (`unknown flag`, exit 2). The correct form is a positional ref plus
