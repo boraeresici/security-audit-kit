@@ -218,10 +218,19 @@ bash tools/security-audit-kit/scan.sh guarddog   # optional: malicious/typosquat
 bash tools/security-audit-kit/scan.sh zizmor     # optional: GitHub Actions security (zizmor; offline)
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
+bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 ```
 
-Every run writes a machine-readable `docs/security/scan-findings/summary.json`. Set
-`SARIF=1` to also emit per-tool SARIF (for GitHub code scanning / IDE) into `.../sarif/`.
+Every run writes a machine-readable `docs/security/scan-findings/summary.json` (did the scan pass,
+per dimension). Set `SARIF=1` to also emit per-tool SARIF (for GitHub code scanning / IDE) into
+`.../sarif/` — and, alongside it, **`evidence.json`**: every finding from every dimension in **one
+shape**, with severity normalized to `critical|high|medium|low|info` and the tool's own value kept
+verbatim next to it. It exists because the tools disagree: osv-scanner labels a CVSS 9.1 advisory
+`warning`, semgrep says `ERROR`, gitleaks has no severity at all — so "sort by how bad it is" is
+impossible over raw output. Fields, per-tool mapping tables and the guarantees (deterministic and
+diffable, deduplicated, repo-relative paths, never invents a score) are specified in
+[docs/schema/evidence.md](docs/schema/evidence.md). Needs `python3`; without it the step is skipped,
+never failed.
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus

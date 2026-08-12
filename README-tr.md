@@ -222,10 +222,19 @@ bash tools/security-audit-kit/scan.sh guarddog   # opsiyonel: kotu niyetli/typos
 bash tools/security-audit-kit/scan.sh zizmor     # opsiyonel: GitHub Actions guvenligi (zizmor; offline)
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
+bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
 ```
 
-Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar. `SARIF=1`
-ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin) -> `.../sarif/`.
+Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar (tarama gecti mi,
+boyut basina). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
+-> `.../sarif/`; yani sira **`evidence.json`**: her boyuttan her bulgu **tek bir bicimde**,
+severity `critical|high|medium|low|info` olarak normalize edilmis ve aracin kendi degeri yaninda
+aynen korunmus halde. Var olma sebebi araclarin uyusmamasi: osv-scanner CVSS 9.1'lik bir advisory'ye
+`warning` der, semgrep `ERROR` der, gitleaks'te severity hic yoktur — ham ciktida "ciddiyete gore
+sirala" bu yuzden mumkun degildir. Alanlar, arac-basina esleme tablolari ve garantiler
+(deterministik + diff'lenebilir, mukerrer temizligi, repo-goreli path, asla skor uydurmaz)
+[docs/schema/evidence.md](docs/schema/evidence.md) icinde tanimli. `python3` gerekir; yoksa adim
+atlanir, hata verilmez.
 
 Otomatik tetik (install sonrasi):
 - **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica

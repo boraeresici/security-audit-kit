@@ -142,6 +142,52 @@ else
   skip "verify tests (no CHECKSUMS in working tree yet)"
 fi
 
+echo "-- evidence.json (normalized per-finding record; schema: docs/schema/evidence.md) --"
+if have python3; then
+  EVD="$TARGET/docs/security/scan-findings/evidence.json"
+  ESAR="$TARGET/docs/security/scan-findings/sarif"
+  mkdir -p "$ESAR"
+  # A hand-written SARIF exercising every mapping branch without needing the tools: a numeric
+  # CVSS (osv), a level-only rule (semgrep), a container-mount path, and a duplicate result.
+  cat > "$ESAR/osv.sarif" <<'SARIF'
+{"runs":[{"tool":{"driver":{"name":"osv-scanner","rules":[
+  {"id":"CVE-1","properties":{"security-severity":"9.1"}},
+  {"id":"CVE-2","properties":{"security-severity":"4.2"}}]}},
+ "results":[
+  {"ruleId":"CVE-1","level":"warning","message":{"text":"crit dep"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"file:///repo/requirements.txt"},"region":{"startLine":2}}}]},
+  {"ruleId":"CVE-1","level":"warning","message":{"text":"crit dep"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"file:///repo/requirements.txt"},"region":{"startLine":2}}}]},
+  {"ruleId":"CVE-2","level":"warning","message":{"text":"med dep"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"file:///repo/requirements.txt"},"region":{"startLine":3}}}]}]}]}
+SARIF
+  printf '{"command":"osv","exit_code":1,"raw_log":"r.log","dimensions":[{"name":"osv","exit_code":1,"status":"fail"}]}\n' \
+    > "$TARGET/docs/security/scan-findings/summary.json"
+  $SCAN evidence >/dev/null 2>&1
+  python3 - "$EVD" <<'PY' && ok "evidence: severity normalized, CVSS passed through, dupes dropped, paths repo-relative" || no "evidence: schema/mapping wrong"
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["schema"] == "security-audit-kit/evidence@1", d["schema"]
+f = {x["rule_id"]: x for x in d["findings"]}
+assert len(d["findings"]) == 2, f"dupe not dropped: {len(d['findings'])}"          # 3 results -> 2
+assert f["CVE-1"]["severity"] == "critical", f["CVE-1"]["severity"]                # 9.1 beats level=warning
+assert f["CVE-2"]["severity"] == "medium", f["CVE-2"]["severity"]                  # 4.2
+assert f["CVE-1"]["cvss"] == 9.1                                                   # osv = real CVSS
+assert f["CVE-1"]["file"] == "requirements.txt", f["CVE-1"]["file"]                # /repo/ stripped
+assert f["CVE-1"]["decision"] is None and f["CVE-1"]["confidence"] is None         # undecided until triage
+assert d["counts"]["by_severity"]["critical"] == 1
+assert d["counts"]["by_decision"]["undecided"] == 2
+assert any("duplicate" in w for w in d["warnings"]), d["warnings"]
+PY
+  # Deterministic: same input, byte-identical output (the file is diffable by design).
+  cp "$EVD" "$EVD.first"; $SCAN evidence >/dev/null 2>&1
+  cmp -s "$EVD" "$EVD.first" && ok "evidence: rebuild is byte-identical" || no "evidence: output not deterministic"
+  # Scope: a dimension that did NOT run must not contribute leftover SARIF findings.
+  printf '{"command":"secret","exit_code":0,"raw_log":"r.log","dimensions":[{"name":"secret","exit_code":0,"status":"pass"}]}\n' \
+    > "$TARGET/docs/security/scan-findings/summary.json"
+  $SCAN evidence >/dev/null 2>&1
+  python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d['counts']['total']==0 else 1)" "$EVD" \
+    && ok "evidence: stale SARIF from another scope excluded" || no "evidence: stale findings leaked in"
+  rm -f "$EVD.first" "$ESAR/osv.sarif"
+else skip "evidence.json tests (no python3)"; fi
+
 echo "-- py-deps venv selection (this repo's .venv wins over an unrelated active one) --"
 # Built OUTSIDE $TARGET on purpose: a requirements.txt inside the target repo would become a
 # lockfile for the later osv/guarddog assertions.

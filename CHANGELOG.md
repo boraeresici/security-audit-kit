@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - unreleased
+
+### Added (T3.1a — `evidence.json`, the normalized per-finding record)
+- **One shape for every dimension.** `evidence.json` (written next to `summary.json` when `SARIF=1`,
+  rebuildable with `scan.sh evidence`) carries each finding as `id / dimension / tool / rule_id /
+  file / line / message / severity / severity_source / cvss / decision / confidence / evidence`.
+  `summary.json` says whether the scan passed; this says *what was found, where, and how bad*.
+- **Severity is normalized, never invented.** `severity` is one of `critical|high|medium|low|info`,
+  derived numeric-first (a rule's `security-severity`, CVSS bands) then from the SARIF level, then a
+  documented per-tool default; `severity_source` keeps the tool's own value verbatim so the
+  derivation stays auditable. This is the point of the record: osv-scanner marks *every* result
+  `warning` regardless of a CVSS 9.1, semgrep says `ERROR`, gitleaks has no severity at all — so
+  ranking findings across tools is impossible on raw output. `cvss` is passed through **only** where
+  a tool supplied a CVSS-derived score (trivy, osv-scanner); semgrep's rule metadata bands the
+  severity but never populates it, and judgment findings never get one.
+- **Guarantees:** deterministic and diffable (sorted, no timestamp — two runs over unchanged code
+  are byte-identical); deduplicated by identity (osv-scanner repeats an advisory per affected
+  version); repo-relative paths (the docker `/repo` mount is stripped); scoped to the dimensions
+  this run actually executed, so a `secret`-only scan cannot resurface yesterday's `sast` findings;
+  nothing is dropped — an unmappable value becomes `info` plus a `warnings` entry.
+- **Spec:** [`docs/schema/evidence.md`](docs/schema/evidence.md) — field table, per-tool mapping
+  tables, versioned `schema` string, and the known gap (checkov/guarddog/pip-audit/js-audit emit no
+  SARIF today, so they contribute dimension status but no per-finding rows).
+- Requires `python3`; missing it skips the step with a notice, never fails the scan (`lib/evidence.py`,
+  stdlib only, no network). This is the object the planned `kit.sarif` emitter (T3.1b) and the
+  single-file HTML report (T3.1c) will both render from.
+
 ## [1.12.0] - 2026-08-11
 
 > Includes the **1.11.2** eval-harness work, which landed on `main` but was never released as its

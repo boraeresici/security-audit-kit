@@ -20,6 +20,7 @@
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
 #   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
 #   checksums (Re)generate the CHECKSUMS manifest             (maintainer)
+#   evidence  Rebuild evidence.json from the SARIF on disk    (normalized findings; no scan)
 #
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
@@ -454,6 +455,20 @@ EOF
   rm -f "$issues"; say verify "integrity OK ($(grep -c '' "$CHECKSUMS_FILE") files match CHECKSUMS)"; return 0
 }
 
+# ---- evidence.json: the normalized per-finding record (spec: docs/schema/evidence.md) ----
+# One shape for every dimension — the object the planned renderers (kit.sarif, HTML report) read,
+# so neither has to know a tool's native output. Optional by design: it needs python3 and SARIF
+# output, and a missing prerequisite is a notice, never a scan failure (same contract as every
+# other optional piece of the kit).
+scan_evidence(){
+  have python3 || { warn evidence "no python3 -> evidence.json skipped"; return 0; }
+  [ -f "$KIT_DIR/lib/evidence.py" ] || { warn evidence "lib/evidence.py missing -> skipped"; return 0; }
+  [ -d "$SARIF_DIR" ] || { warn evidence "no SARIF output yet (re-run with SARIF=1) -> evidence.json skipped"; return 0; }
+  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE" \
+    || warn evidence "builder failed -> evidence.json not updated"
+  return 0
+}
+
 SARIF="${SARIF:-0}"
 
 [ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
@@ -480,7 +495,7 @@ run_scans(){
     zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|evidence)"; return 2 ;;
   esac
   return $rc
 }
@@ -494,10 +509,14 @@ LOG_DIR="$ROOT/docs/security/scan-findings"
 LOG="$LOG_DIR/raw-$TODAY.log"
 SUMMARY="$LOG_DIR/summary.json"
 SARIF_DIR="$LOG_DIR/sarif"
+EVIDENCE="$LOG_DIR/evidence.json"
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE"' EXIT
 mkdir -p "$LOG_DIR"
 [ "$SARIF" = "1" ] && mkdir -p "$SARIF_DIR"
+# Rebuild the record from the SARIF already on disk, without re-scanning.
+[ "$CMD" = "evidence" ] && { scan_evidence; exit $?; }
+
 printf '\n===== %s  scan.sh %s =====\n' "$(date +%FT%T)" "$CMD" >> "$LOG"
 
 run_scans "$CMD" 2>&1 | tee -a "$LOG"
@@ -523,8 +542,11 @@ rc=${PIPESTATUS[0]}
   printf '\n  ]\n}\n'
 } > "$SUMMARY"
 
+[ "$SARIF" = "1" ] && scan_evidence
+
 printf '\n\033[36m── raw report: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}" "${SUMMARY#"$ROOT"/}"
 [ "$SARIF" = "1" ] && printf '\033[36m── SARIF: %s/\033[0m\n' "${SARIF_DIR#"$ROOT"/}"
+[ -f "$EVIDENCE" ] && printf '\033[36m── evidence: %s (normalized findings; schema: docs/schema/evidence.md)\033[0m\n' "${EVIDENCE#"$ROOT"/}"
 printf '\033[36m── NEXT STEP — for triage + findings-%s.md, in Claude Code:  /sec-triage\033[0m\n' "$TODAY"
 [ "$rc" -ne 0 ] && printf '\033[31m── HARD finding (rc=%s): commit/push is blocked; allowlist if FP, fix if real.\033[0m\n' "$rc"
 exit "$rc"
