@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format is based on
 
 ## [1.13.0] - unreleased
 
+### Added (T3.1b — `kit.sarif`: the judgment layer reaches Code Scanning)
+- **The skills' findings now land where the scanners' already are.** An IDOR `sec-sast-deep` traced
+  through the call path, or a prompt-injection sink `sec-ai-review` found, lived only in
+  `findings-<date>.md` — invisible to GitHub Code Scanning, to IDE SARIF viewers, to everything.
+  `lib/kit_sarif.py` renders them as SARIF 2.1.0 (`sarif/kit.sarif`, driver `SecurityAuditKit`, rule
+  ids `SAK-<skill>-<class>`). The self-audit workflow already uploads the whole `sarif/` directory,
+  so nothing needed wiring — and GitHub validates the document on every push.
+- **Scanner findings are not re-reported.** A semgrep hit is already in `semgrep.sarif`; a second
+  copy under a kit rule id would double every alert. Their triage decisions are recorded in
+  `evidence.json` instead.
+- **Suppressed findings are emitted as suppressed** (`kind: external`, justification = the triage
+  note) — on record, not silently absent. Documented caveat: SARIF suppressions are scoped to their
+  own run, so this cannot dismiss another tool's alert.
+- **An empty run is never written.** Zero judgment findings almost always means no judgment pass
+  ran, not that the findings are gone — and uploading an empty run closes every open kit alert. With
+  nothing to report, the previous `kit.sarif` is left untouched.
+- No `security-severity` property on judgment rules: that number reads as a CVSS score and we have
+  not measured one. Ranking rides on the SARIF `level`. Results carry a stable
+  `partialFingerprints.sakFindingId` so a re-scan updates an alert instead of creating a new one.
+- **Decisions get in by parsing the findings file** (`scan.sh evidence --findings`), because the
+  skills should write **one** artifact — the one a human reads — not a markdown report plus a JSON
+  sidecar that drifts from it. Tables are read **by header name**, so a skill may reorder or add
+  columns; `### Suppressed` sections mark their rows suppressed, `### Kit issues` is skipped, and a
+  triage row about a scanner finding fills that finding in rather than becoming a duplicate. The
+  contract is now stated in `sec-triage`, `sec-sast-deep` and `sec-ai-review`.
+- `decision` gains `uncertain` (the skills' third verdict) alongside `real` / `fp` / `suppressed`.
+
 ### Added (T3.1a — `evidence.json`, the normalized per-finding record)
 - **One shape for every dimension.** `evidence.json` (written next to `summary.json` when `SARIF=1`,
   rebuildable with `scan.sh evidence`) carries each finding as `id / dimension / tool / rule_id /

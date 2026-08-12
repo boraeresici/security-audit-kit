@@ -185,7 +185,70 @@ PY
   $SCAN evidence >/dev/null 2>&1
   python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d['counts']['total']==0 else 1)" "$EVD" \
     && ok "evidence: stale SARIF from another scope excluded" || no "evidence: stale findings leaked in"
-  rm -f "$EVD.first" "$ESAR/osv.sarif"
+  # kit.sarif: the judgment layer's findings, rendered as SARIF 2.1.0 for Code Scanning.
+  KSAR="$ESAR/kit.sarif"
+  cat > "$TARGET/docs/security/scan-findings/findings-$(date +%F).md" <<'MD'
+# Security Scan Findings — test
+
+## Round 1 (10:00) — scope: osv
+
+| Tool | Sink (file:line) | Untrusted source | Sev | Conf | Decision | Action |
+|------|------------------|------------------|-----|------|----------|--------|
+| osv-scanner | requirements.txt:2 | vuln fn called on request body | HIGH | 0.9 | REAL | bumped |
+
+## Round 2 — sec-sast-deep
+
+| Sink (file:line) | Class | Untrusted source | Sev | Conf | Decision | Action |
+|---|---|---|---|---|---|---|
+| app/api.py:88 | horizontal-authz/IDOR | path param account_id | HIGH | 0.85 | REAL | ownership filter |
+
+### Suppressed
+| Sink (file:line) | Class | Why | Conf |
+|---|---|---|---|
+| app/admin.py:9 | vertical-authz | @require_admin present | 0.4 |
+
+### Kit issues (report only — never edit the vendored kit)
+| Kit file:line | Observed | Expected | Effect on this scan |
+|---|---|---|---|
+| scan.sh:1 | example | example | none |
+MD
+  cat > "$ESAR/osv.sarif" <<'SARIF'
+{"runs":[{"tool":{"driver":{"name":"osv-scanner","rules":[{"id":"CVE-1","properties":{"security-severity":"9.1"}}]}},
+ "results":[{"ruleId":"CVE-1","level":"warning","message":{"text":"crit dep"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"file:///repo/requirements.txt"},"region":{"startLine":2}}}]}]}]}
+SARIF
+  printf '{"command":"osv","exit_code":1,"raw_log":"r.log","dimensions":[{"name":"osv","exit_code":1,"status":"fail"}]}\n' \
+    > "$TARGET/docs/security/scan-findings/summary.json"
+  $SCAN evidence >/dev/null 2>&1
+  python3 - "$EVD" "$KSAR" <<'PY' && ok "kit.sarif: judgment findings emitted as valid SARIF 2.1.0, scanner rows merged not duplicated" || no "kit.sarif: wrong shape"
+import json, sys
+ev = json.load(open(sys.argv[1]))
+sarif = json.load(open(sys.argv[2]))
+# The triage row is ABOUT the osv finding -> it fills that finding in, it does not add a second one.
+osv = [f for f in ev["findings"] if f["dimension"] == "osv"]
+assert len(osv) == 1 and osv[0]["decision"] == "real" and osv[0]["confidence"] == 0.9, osv
+# Deep-pass findings have no scanner counterpart -> they become judgment findings.
+judgment = [f for f in ev["findings"] if f["dimension"] == "judgment"]
+assert len(judgment) == 2, [f["rule_id"] for f in judgment]           # 1 REAL + 1 suppressed
+assert not any("kit issue" in (f["message"] or "").lower() for f in judgment)   # Kit issues skipped
+assert sarif["version"] == "2.1.0" and "$schema" in sarif
+run = sarif["runs"][0]
+assert run["tool"]["driver"]["name"] == "SecurityAuditKit"
+rules, results = run["tool"]["driver"]["rules"], run["results"]
+assert len(results) == 2, len(results)                                # scanner findings NOT re-reported
+for r in results:                                                     # SARIF invariants
+    assert rules[r["ruleIndex"]]["id"] == r["ruleId"]
+    assert r["level"] in ("error", "warning", "note", "none")
+    assert r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert r["partialFingerprints"]["sakFindingId"]
+supp = [r for r in results if "suppressions" in r]
+assert len(supp) == 1 and supp[0]["suppressions"][0]["kind"] == "external"
+assert supp[0]["suppressions"][0]["justification"]                    # on record, with a reason
+PY
+  # No judgment pass -> refuse to emit an empty run (uploading one closes every open kit alert).
+  rm -f "$TARGET/docs/security/scan-findings/findings-$(date +%F).md"
+  cp "$KSAR" "$KSAR.prev"; $SCAN evidence >/dev/null 2>&1
+  cmp -s "$KSAR" "$KSAR.prev" && ok "kit.sarif: empty run refused (stale alerts not closed)" || no "kit.sarif: emitted an empty run"
+  rm -f "$EVD.first" "$KSAR" "$KSAR.prev" "$ESAR/osv.sarif"
 else skip "evidence.json tests (no python3)"; fi
 
 echo "-- py-deps venv selection (this repo's .venv wins over an unrelated active one) --"

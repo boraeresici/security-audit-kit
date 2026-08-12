@@ -165,3 +165,11 @@ the vendored copy. The only files you write are the project's own: the findings 
 ```
 Omit the **Kit issues** section when there are none. When there are, the fix path is upstream +
 a pin bump — the vendored copy stays untouched.
+
+**These tables are a machine contract too.** `scan.sh evidence` parses this file to fill in
+`evidence.json` and to emit `sarif/kit.sarif` for GitHub Code Scanning. It reads columns **by header
+name** (`Sink (file:line)` / `Location`, `Tool`, `Untrusted source`, `Sev`, `Conf`, `Decision`,
+`Action`, `Why`, `Class`), so you may reorder or add columns — but keep the header names, keep one
+`file:line` per row, and keep `### Suppressed` as its own heading (everything under it is recorded
+as suppressed, with its reason). Rows without a parseable location are dropped. Spec:
+`docs/schema/evidence.md`.

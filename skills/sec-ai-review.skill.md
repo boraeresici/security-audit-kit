@@ -121,6 +121,18 @@ Assess whether prompt-handling code is hardened against the named jailbreak/inje
 - **FP** → mark it in the findings file with a rationale (no allowlist file — judgment, not a
   pattern).
 
+**Record findings in a table, one row per finding** — the same machine contract `sec-triage` uses:
+`scan.sh evidence` parses this file into `evidence.json` and emits `sarif/kit.sarif` so these
+findings reach GitHub Code Scanning (they have no other SARIF home). Columns are matched **by header
+name**, so the shape is yours as long as the names hold:
+
+| Sink (file:line) | Class | Untrusted source | Sev | Conf | Decision | Action |
+|---|---|---|---|---|---|---|
+
+Put what the gates dropped under its own `### Suppressed` heading (same table, `Why` instead of
+`Decision`) — everything under it is recorded as suppressed, with its reason. One `file:line` per
+row; rows without a parseable location are dropped. Spec: `docs/schema/evidence.md`.
+
 ## Boundaries (HARD)
 - Produces **internal evidence**; does NOT replace an external AI red-team / pentest.
 - LLM defenses are **probabilistic** — a clean review is "nothing found this round", not a

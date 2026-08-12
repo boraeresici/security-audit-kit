@@ -236,6 +236,13 @@ sirala" bu yuzden mumkun degildir. Alanlar, arac-basina esleme tablolari ve gara
 [docs/schema/evidence.md](docs/schema/evidence.md) icinde tanimli. `python3` gerekir; yoksa adim
 atlanir, hata verilmez.
 
+Bir yargi pasi `findings-<tarih>.md` yazdiktan sonra ayni adim bu kararlari da icine katar ve
+**`sarif/kit.sarif`** uretir — skill'lerin kendi bulgulari (cagri yolu izlenerek bulunmus bir IDOR,
+bir prompt-injection sink'i) SARIF 2.1.0 olarak, yani herhangi bir tarayici alarmi gibi GitHub Code
+Scanning'e ulasir. Tarayici bulgulari tekrar raporlanmaz (kendi SARIF'leri zaten var); bastirilmis
+bulgular ise kaybolmaz, triyaj gerekcesiyle **bastirilmis olarak** yazilir. Mevcut self-audit
+workflow'u `sarif/` dizininin tamamini yukledigi icin ek bir baglanti gerekmez.
+
 Otomatik tetik (install sonrasi):
 - **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica
   bagimlilik manifesti stage edilirse `scan.sh deps` (ikisi de HARD).

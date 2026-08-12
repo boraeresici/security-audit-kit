@@ -232,6 +232,13 @@ diffable, deduplicated, repo-relative paths, never invents a score) are specifie
 [docs/schema/evidence.md](docs/schema/evidence.md). Needs `python3`; without it the step is skipped,
 never failed.
 
+Once a judgment pass has written `findings-<date>.md`, the same step folds those decisions in and
+emits **`sarif/kit.sarif`** — the skills' own findings (an IDOR traced through the call path, a
+prompt-injection sink) as SARIF 2.1.0, so they reach GitHub Code Scanning like any scanner alert.
+Scanner findings are not re-reported (their own SARIF already covers them); suppressed findings are
+emitted *as suppressed*, with the triage reason, rather than vanishing. The existing self-audit
+workflow uploads the whole `sarif/` directory, so nothing needs wiring.
+
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus
   `scan.sh deps` when a dependency manifest is staged (both HARD).

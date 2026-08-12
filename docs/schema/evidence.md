@@ -72,7 +72,7 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 | `severity` | enum | Normalized: `critical` · `high` · `medium` · `low` · `info`. |
 | `severity_source` | string | The tool's own value, verbatim, e.g. `semgrep:level=error`, `trivy:security-severity=8.8`. |
 | `cvss` | float\|null | Passthrough **only** where the tool supplied a CVSS-derived score. |
-| `decision` | enum\|null | `real` · `fp` · `suppressed` · `null` (not yet judged). Written by the judgment layer, not the scan. |
+| `decision` | enum\|null | `real` · `fp` · `uncertain` · `suppressed` · `null` (not yet judged). Written by the judgment layer, not the scan. |
 | `confidence` | float\|null | 0–1, from the triage confidence gate. |
 | `evidence` | object\|null | The claim → location chain: `{"sink": "path:line", "source": "…", "note": "…"}`. |
 
@@ -106,6 +106,46 @@ Numeric first, then the SARIF level, then a tool-specific default:
 today, so they appear in `scan.dimensions` with a pass/fail status but contribute no `findings`
 entries. Their findings still reach a human through `raw-<date>.log` and triage. Closing this gap
 means adding SARIF output per tool — tracked separately, not part of this schema.
+
+## The judgment half — how decisions get in
+
+The skills write **one** artifact: `findings-<date>.md`, the file a human reads. They are never
+asked to also emit JSON — two sources of truth drift, and the markdown is the one people review. So
+`scan.sh evidence` parses that file (`--findings`) and folds it in:
+
+- **Tables are read by header name, not column position.** `Sink (file:line)` / `Location`, `Tool`,
+  `Untrusted source`, `Sev`, `Conf`, `Decision`, `Action`, `Why`, `Class` / `OWASP` / `Rule` are
+  recognised; unknown columns are ignored and a row without a parseable location is skipped with a
+  warning. Reordering or adding a column breaks nothing.
+- **Section headings set the context.** `## Round N — sec-sast-deep` sets the origin skill; a
+  `### Suppressed` heading marks everything under it `decision: suppressed`; a `### Kit issues`
+  section is skipped entirely — those are bugs in the kit, not findings about your repo.
+- **A triage row about a scanner finding fills that finding in** (matched on file + line, with the
+  tool name as a tiebreak) rather than becoming a second entry. A deep-pass finding has no scanner
+  counterpart, so it becomes a new finding with `dimension: "judgment"` and `tool: "<skill>"`.
+
+Keep the table shape when editing the skills: it is a machine contract as well as a report.
+
+## `kit.sarif` — the judgment findings in Code Scanning
+
+`lib/kit_sarif.py` renders `evidence.json` into `sarif/kit.sarif` (SARIF 2.1.0, driver
+`SecurityAuditKit`, rule ids `SAK-<skill>-<class>`), so the skills' findings land on the same review
+surface as the scanners'. The existing self-audit workflow uploads the whole `sarif/` directory, so
+nothing needed changing there — and GitHub's upload step validates the document on every push.
+
+- **Scanner findings are not re-reported.** A semgrep hit is already in `semgrep.sarif`; emitting it
+  again under a kit rule id would double every alert. Their triage decisions live in `evidence.json`
+  (and in the HTML report), not in a second SARIF run.
+- **Suppressed findings are emitted as suppressed** (`kind: external`, justification = the triage
+  note) — on record, not silently absent. Caveat: SARIF suppressions apply **within a run**, so this
+  cannot dismiss another tool's alert from another run; GitHub scopes suppression per run.
+- **No `security-severity` property.** That number is read as a CVSS score; a judgment finding has
+  none. Ranking rides on the SARIF `level` instead.
+- **An empty run is never written.** Zero judgment findings usually means no judgment pass ran, not
+  that the findings are gone — and an empty upload closes every open kit alert. With nothing to
+  report the previous `kit.sarif` is left untouched.
+- Results carry `partialFingerprints.sakFindingId` (the evidence `id`), so re-running a scan updates
+  an alert instead of creating a new one.
 
 ## Compatibility
 

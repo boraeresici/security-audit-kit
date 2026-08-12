@@ -464,8 +464,17 @@ scan_evidence(){
   have python3 || { warn evidence "no python3 -> evidence.json skipped"; return 0; }
   [ -f "$KIT_DIR/lib/evidence.py" ] || { warn evidence "lib/evidence.py missing -> skipped"; return 0; }
   [ -d "$SARIF_DIR" ] || { warn evidence "no SARIF output yet (re-run with SARIF=1) -> evidence.json skipped"; return 0; }
-  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE" \
-    || warn evidence "builder failed -> evidence.json not updated"
+  # The judgment layer's decisions live in the findings file a human reads; fold them in when it
+  # exists so evidence.json carries both halves (what the tools found, what we decided).
+  local fargs=""
+  [ -f "$FINDINGS_MD" ] && fargs="--findings $FINDINGS_MD"
+  # shellcheck disable=SC2086
+  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE" $fargs \
+    || { warn evidence "builder failed -> evidence.json not updated"; return 0; }
+  # The skills' own findings have no other SARIF home -> put them on the same review surface.
+  [ -f "$KIT_DIR/lib/kit_sarif.py" ] || return 0
+  python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif" \
+    || warn evidence "kit.sarif not emitted"
   return 0
 }
 
@@ -510,6 +519,7 @@ LOG="$LOG_DIR/raw-$TODAY.log"
 SUMMARY="$LOG_DIR/summary.json"
 SARIF_DIR="$LOG_DIR/sarif"
 EVIDENCE="$LOG_DIR/evidence.json"
+FINDINGS_MD="$LOG_DIR/findings-$TODAY.md"
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE"' EXIT
 mkdir -p "$LOG_DIR"
