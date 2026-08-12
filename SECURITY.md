@@ -51,8 +51,11 @@ The single canonical repository is:
 ### Integrity verification (shipped)
 The kit ships a `CHECKSUMS` manifest (SHA-256 of every kit file). Run
 `bash tools/security-audit-kit/scan.sh verify` to confirm the vendored copy matches it — this
-detects a tampered file or a **rogue skill** dropped into a vendored copy. `install.sh` also
-runs it (advisory). Maintainers regenerate it with `scan.sh checksums`, and CI fails if it is
+detects a tampered file or a **rogue skill** dropped into a vendored copy. The **pre-push hook runs
+it before the scan**, so an edited vendored copy blocks the push instead of quietly changing what
+the gate accepts — including the realistic case of a well-meaning AI assistant patching `scan.sh`
+while triaging findings. The vendored kit is read-only: fix bugs upstream and bump the pin.
+`install.sh` also runs it (advisory). Maintainers regenerate it with `scan.sh checksums`, and CI fails if it is
 stale. **Note:** the manifest lives in the same repo, so it proves *integrity vs. upstream*, not
 that upstream itself is honest — pair it with pinning a reviewed SHA. Transparency-logged signed
 releases (cosign) may follow if adoption warrants.

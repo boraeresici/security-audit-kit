@@ -10,6 +10,13 @@ deterministic scan + the judgment skills (`sec-triage`, `sec-sast-deep`, `sec-ai
 `sec-threat-model`) and produces **one** consolidated `findings-<TODAY>.md`. You run it; you
 read the final report.
 
+**Hard boundary — never edit the kit itself.** `tools/security-audit-kit/` is **read-only** for
+every pass this skill drives: never edit `scan.sh`, the hooks, the skills or `CHECKSUMS`, not even
+to fix a genuine bug. `scan.sh verify` (run by the pre-push hook) fails for the whole team
+afterwards, and the next `bootstrap.sh` discards the edit without warning. Kit bugs go in the
+consolidated findings file under **Kit issues** (behaviour, expected behaviour, file:line); the fix
+belongs upstream, in a release, behind a bumped pin.
+
 **Cost discipline (important):** the deep passes are token-costly and are NOT run every time.
 Default = scan + triage only. A deep pass runs **only** when a clear signal in the repo calls
 for it (below), or when you explicitly ask (`deep` / "run everything"). Always announce which

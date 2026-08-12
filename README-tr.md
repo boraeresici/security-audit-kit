@@ -230,8 +230,15 @@ ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin) -> `.../sari
 Otomatik tetik (install sonrasi):
 - **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica
   bagimlilik manifesti stage edilirse `scan.sh deps` (ikisi de HARD).
-- **pre-push** — `scan.sh all` (HARD). PR'dan hemen once.
+- **pre-push** — once `scan.sh verify` (butunluk, saniye-alti), sonra `scan.sh all` (ikisi de HARD).
+  PR'dan hemen once. Verify once kosar: bir taramanin exit kodu, ancak onu ureten kit pinledigin
+  kit ise anlamlidir.
 - Bypass (acil): `SKIP_SECURITY=1 git commit` / `git push --no-verify`.
+
+> **Vendor'daki kit salt-okunurdur.** `tools/security-audit-kit/` elle duzenlenmez — ne sen, ne bir
+> takim arkadasin, ne de triyaj sirasinda tarayiciyi "duzelten" bir AI asistani. Duzenleme bir
+> sonraki `bootstrap.sh` ile kaybolur, o ana kadar da pre-push herkesi bloklar. Gercek bir bug mi
+> buldun? Upstream'e bildir ve pini bump et. Kitin kendi skill'leri bunu sert kural olarak tasir.
 
 ## Bulgu dongusu (uctan uca)
 

@@ -59,7 +59,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers |
 | Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ fully local; network only in opt-in dimensions (e.g. GuardDog) |
 | Platform support | Any (SaaS); local scanner limited | Linux/macOS local (no Windows) | Linux + macOS native; 🔜 Windows via WSL2 (documented + verified path; Git Bash partial) |
-| Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest, SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
+| Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest enforced by the pre-push hook (an edited vendored copy blocks the push), SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
 | Pricing | Freemium SaaS | Freemium | MIT, free |
 
 ## Why some rows are "—" (out of scope by design)

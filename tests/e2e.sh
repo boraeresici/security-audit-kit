@@ -131,9 +131,33 @@ if [ -f tools/security-audit-kit/CHECKSUMS ]; then
   printf 'main %s\n' "$(printf '0%.0s' $(seq 40))" > "$KV"
   $SCAN verify >/dev/null 2>&1 && ok "verify: branch pin does not false-positive" || no "verify: branch pin should pass"
   rm -f "$KV"; [ -f "$KV.bak" ] && mv "$KV.bak" "$KV"
+  # pre-push runs verify BEFORE the scan: a hand-edited vendored kit must block the push, and
+  # SKIP_SECURITY must still bypass. (Tampering used to be invisible until someone ran verify.)
+  printf '\n# tampered by e2e\n' >> tools/security-audit-kit/scan.sh
+  bash tools/security-audit-kit/hooks/pre-push >/dev/null 2>&1 && no "pre-push: tampered kit NOT blocked" || ok "pre-push: tampered kit blocked by verify"
+  SKIP_SECURITY=1 bash tools/security-audit-kit/hooks/pre-push >/dev/null 2>&1 && ok "pre-push: SKIP_SECURITY bypass" || no "pre-push: bypass failed"
+  perl -0pi -e 's/\n# tampered by e2e\n$//' tools/security-audit-kit/scan.sh
+  $SCAN verify >/dev/null 2>&1 && ok "verify: passes after untampering" || no "verify: untamper restore failed"
 else
   skip "verify tests (no CHECKSUMS in working tree yet)"
 fi
+
+echo "-- py-deps venv selection (this repo's .venv wins over an unrelated active one) --"
+# Built OUTSIDE $TARGET on purpose: a requirements.txt inside the target repo would become a
+# lockfile for the later osv/guarddog assertions.
+VP="$(mktemp -d)"
+mkdir -p "$VP/repo/.venv/bin" "$VP/foreign/bin"
+printf '#!/bin/sh\nexit 0\n' > "$VP/repo/.venv/bin/python"; chmod +x "$VP/repo/.venv/bin/python"
+printf '#!/bin/sh\nexit 0\n' > "$VP/foreign/bin/python";    chmod +x "$VP/foreign/bin/python"
+echo 'requests==2.31.0' > "$VP/repo/requirements.txt"
+( cd "$VP/repo" && git init -q . && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  # An unrelated venv is active: the repo's own .venv must still be the one audited.
+  DOUT="$(VIRTUAL_ENV="$VP/foreign" bash "$KIT_SRC/scan.sh" deps 2>&1 || true)"
+  printf '%s' "$DOUT" | grep -q 'env \.venv' \
+    && ok "py-deps: repo .venv wins over active VIRTUAL_ENV" || no "py-deps: wrong venv selected"
+  printf '%s' "$DOUT" | grep -q 'is not this repo.s venv' \
+    && ok "py-deps: mismatch warned" || no "py-deps: mismatch not warned" )
+cd "$TARGET" || exit 1
 
 echo "-- secret (gitleaks) + pre-commit gate --"
 if docker_ok; then

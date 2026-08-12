@@ -14,6 +14,13 @@ of the **call path**, not a pattern. This skill deep-scans those 4 classes with 
 > recon->verify->merge structure). Adapted to the kit's `sec-triage` flow and narrowed to the 4
 > most critical classes — no code or text is copied from it.
 
+## Hard boundary — never edit the kit itself
+`tools/security-audit-kit/` is **read-only**: never edit `scan.sh`, the hooks, the skills or
+`CHECKSUMS`, not even to fix a genuine bug. `scan.sh verify` (run by the pre-push hook) fails for
+the whole team afterwards, and the next `bootstrap.sh` discards the edit without warning. Record
+kit bugs in the findings file under **Kit issues** (behaviour, expected behaviour, file:line) — the
+fix belongs upstream, in a release, behind a bumped pin.
+
 ## When
 - **Before a cutover** (phase exit / version bump) — semgrep is clean but authz is not "deep".
 - **After a new authz surface** — a new REST/GraphQL endpoint, a new admin/cross-tenant

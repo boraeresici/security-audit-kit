@@ -226,8 +226,15 @@ Every run writes a machine-readable `docs/security/scan-findings/summary.json`. 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus
   `scan.sh deps` when a dependency manifest is staged (both HARD).
-- **pre-push** — runs `scan.sh all` (HARD). Right before a PR.
+- **pre-push** — runs `scan.sh verify` (integrity, sub-second) and then `scan.sh all` (both HARD).
+  Right before a PR. Verify runs first because a scan is only worth its exit code if the kit that
+  produced it is the one you pinned.
 - Bypass (emergency): `SKIP_SECURITY=1 git commit` / `git push --no-verify`.
+
+> **The vendored kit is read-only.** Don't hand-edit `tools/security-audit-kit/` — not you, not a
+> teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next
+> `bootstrap.sh`, and until then pre-push blocks for everyone. Found a real bug? Report it upstream
+> and bump the pin. The kit's own skills carry this as a hard rule.
 
 ## Finding loop (end to end)
 

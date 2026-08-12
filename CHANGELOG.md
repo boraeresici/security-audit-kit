@@ -70,6 +70,19 @@ All notable changes to this project are documented here. The format is based on
   the precondition for measuring Phase-A prompt changes. Documented in `docs/compare/aikido-semgrep.md`
   ("Measured triage quality"). The default backend (Claude) stays unmeasured pending API credit.
 
+### Added (integrity — the tamper gate is now automatic)
+- **`pre-push` runs `scan.sh verify` before the scan.** The manifest existed but sat on no automatic
+  path in a consumer: a hand-edited vendored kit was invisible until someone happened to run
+  `verify`. Now an edited copy blocks the push, with instructions to restore it via `bootstrap.sh`
+  and to report kit bugs upstream. Sub-second; `SKIP_SECURITY=1` / `--no-verify` still bypass.
+  Prompted by a real case — an AI assistant triaging findings in a consumer repo patched the
+  vendored `scan.sh` in place (a correct fix, in the wrong layer: lost on the next bootstrap,
+  and a per-repo fork of the deterministic scan layer in the meantime).
+- **All five skills carry a hard read-only boundary** for `tools/security-audit-kit/`: never edit
+  `scan.sh`, hooks, skills or `CHECKSUMS`, not even to fix a genuine bug. Kit bugs are recorded in
+  the findings file under a new **Kit issues** section (observed / expected / effect), and the fix
+  goes upstream behind a bumped pin.
+
 ### Added (integrity — Tier S: the pin now binds to the content)
 - **`.kit-version` gains a third field: sha256 of the vendored `CHECKSUMS`**, written by
   `bootstrap.sh`. `scan.sh verify` recomputes it and **fails when the pin claims a release the
@@ -94,6 +107,12 @@ All notable changes to this project are documented here. The format is based on
   re-dated. `landing/index.html` regenerated from it via `landing/build.py`.
 
 ### Fixed
+- **`py-deps` audited the wrong environment when another venv was active.** `scan_py_deps` preferred
+  `$VIRTUAL_ENV` over the repo's own `.venv`, so a scan started from another project's shell audited
+  *that* project and reported a py-deps result saying nothing about this repo — a silently wrong
+  answer from a gate. The repo's `.venv` now wins; an active venv is used only when the repo has
+  none, and a mismatch is warned about. (Diagnosed by the same consumer-repo triage session
+  mentioned above; the fix lands here rather than in that repo's vendored copy.)
 - **`RELEASING.md` documented a `bootstrap.sh` invocation that cannot work** — `--ref <tag>` is
   rejected by the arg parser (`unknown flag`, exit 2). The correct form is a positional ref plus
   `--expect=<sha>`.

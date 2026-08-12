@@ -9,6 +9,20 @@ Turns the output of a CI-independent local security scan into something **action
 high-signal**: raw scan -> exclusions + reachability filter -> confidence-scored verification
 -> triaged record -> fix/allowlist. Works in any project.
 
+## Hard boundary — never edit the kit itself
+`tools/security-audit-kit/` (and any copy of it under `.claude/skills/`) is **read-only**. Do not
+edit `scan.sh`, the hooks, the skills or `CHECKSUMS` — not to fix a bug, not to silence a noisy
+dimension, not "just this once". The kit is the instrument that judges this repo; an instrument
+edited by the thing being judged proves nothing, and `scan.sh verify` (run by the pre-push hook)
+will fail for everyone on the team afterwards. Local edits are also **lost without warning** on the
+next `bootstrap.sh`, so the fix evaporates while people believe it is in place.
+
+Found a real bug in the kit? Say so in the findings file under **Kit issues**: what it does, what it
+should do, the file and line. The fix belongs upstream, in a release, behind a bumped pin — never in
+the vendored copy. The only files you write are the project's own: the findings file, allowlists
+(`.gitleaks.toml`, `nosemgrep`, `.pip-audit-ignore`), `.security-exclusions.md`,
+`.security-audit.conf`, and the code being fixed.
+
 ## When
 - When the `git push` pre-push hook is blocked (the full scan produced findings).
 - After installing a new package (`scan.sh fast` / `deps`).
@@ -142,5 +156,12 @@ high-signal**: raw scan -> exclusions + reachability filter -> confidence-scored
 | semgrep | tests/foo:12 | exclusion: test-only file | — |
 | semgrep | lib/z:5 | not reachable from untrusted input | 0.4 |
 
+### Kit issues (report only — never edit the vendored kit)
+| Kit file:line | Observed | Expected | Effect on this scan |
+|---|---|---|---|
+| scan.sh:140 | prefers $VIRTUAL_ENV over the repo's .venv | repo .venv wins | py-deps audited an unrelated project |
+
 **Summary:** N real / U uncertain / M FP / S suppressed. Opened follow-ups: ... Allowlist: ...
 ```
+Omit the **Kit issues** section when there are none. When there are, the fix path is upstream +
+a pin bump — the vendored copy stays untouched.

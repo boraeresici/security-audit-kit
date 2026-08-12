@@ -5,6 +5,19 @@ set -euo pipefail
 [ "${SKIP_SECURITY:-0}" = "1" ] && { echo "[pre-push] SKIP_SECURITY=1"; exit 0; }
 
 ROOT="$(git rev-parse --show-toplevel)"
+
+# Integrity FIRST: the scan below is only trustworthy if the kit that runs it is the one you
+# pinned. A vendored copy edited in place — by a teammate, a tool, or an AI agent "fixing" the
+# scanner mid-triage — silently changes what the gate accepts. Sub-second (sha256 of ~60 small
+# files), and the same bypasses apply.
+if ! bash "$ROOT/tools/security-audit-kit/scan.sh" verify; then
+  echo "[pre-push] BLOCKED: the vendored kit does not match its manifest."
+  echo "[pre-push] Do NOT hand-edit tools/security-audit-kit/ — restore it with:"
+  echo "[pre-push]   bash tools/security-audit-kit/bootstrap.sh <pinned-tag>"
+  echo "[pre-push] Real bug in the kit? Report it upstream and bump the pin. Emergency: git push --no-verify"
+  exit 1
+fi
+
 echo "[pre-push] scan.sh all (full) — please wait..."
 if ! bash "$ROOT/tools/security-audit-kit/scan.sh" all; then
   echo "[pre-push] BLOCKED. Triage: /sec-triage in Claude. Emergency: git push --no-verify"

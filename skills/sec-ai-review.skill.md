@@ -15,6 +15,13 @@ does not replace them.
 > checklist source) and the **OWASP Top 10 for LLM Applications**. This skill adapts those ideas
 > to the kit's `sec-triage` output flow — no code or text is copied from those sources.
 
+## Hard boundary — never edit the kit itself
+`tools/security-audit-kit/` is **read-only**: never edit `scan.sh`, the hooks, the skills or
+`CHECKSUMS`, not even to fix a genuine bug. `scan.sh verify` (run by the pre-push hook) fails for
+the whole team afterwards, and the next `bootstrap.sh` discards the edit without warning. Record
+kit bugs in the findings file under **Kit issues** (behaviour, expected behaviour, file:line) — the
+fix belongs upstream, in a release, behind a bumped pin.
+
 ## When
 - The codebase **calls an LLM** (chat/completion/embeddings), exposes **tools/function
   calling**, runs an **agent**, or does **RAG** over external/user content.

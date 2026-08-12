@@ -135,10 +135,18 @@ scan_py_deps(){
   git ls-files | grep -qE 'pyproject\.toml|requirements.*\.txt|uv\.lock|Pipfile' || { warn deps "no Python project"; return 0; }
   local flags=""
   [ -f .pip-audit-ignore ] && flags="$(awk '/^[^#]/{printf " --ignore-vuln %s",$1}' .pip-audit-ignore)"
-  # Audit the PROJECT's environment, not uvx's ephemeral one. pip-audit defaults to the running
-  # interpreter (empty under uvx) -> point it at an active venv, else the repo's .venv.
-  local venv="${VIRTUAL_ENV:-}"
-  [ -z "$venv" ] && [ -x "$ROOT/.venv/bin/python" ] && venv="$ROOT/.venv"
+  # Audit THIS repo's environment — not uvx's ephemeral one, and not whatever venv the caller
+  # happens to have active. pip-audit defaults to the running interpreter (empty under uvx), so we
+  # point it somewhere explicitly, and the repo's own .venv WINS: preferring $VIRTUAL_ENV means a
+  # scan started from another project's shell audits THAT project and reports a green (or red)
+  # py-deps saying nothing about this repo — a silently wrong answer, the worst kind for a gate.
+  local venv=""
+  [ -x "$ROOT/.venv/bin/python" ] && venv="$ROOT/.venv"
+  if [ -z "$venv" ] && [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+    venv="$VIRTUAL_ENV"   # no repo venv -> an active one still beats uvx's interpreter
+  elif [ -n "$venv" ] && [ -n "${VIRTUAL_ENV:-}" ] && [ "$VIRTUAL_ENV" != "$venv" ]; then
+    warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not this repo's venv -> auditing ${venv#"$ROOT"/}"
+  fi
   if [ -n "$venv" ] && [ -x "$venv/bin/python" ]; then
     export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
     say deps "pip-audit --strict (==$PIP_AUDIT_VER, env ${venv#"$ROOT"/})"

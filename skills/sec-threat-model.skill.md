@@ -12,6 +12,13 @@ it reads the architecture, it does not run anything.
 
 > Methodology: STRIDE (Microsoft) + data-flow diagrams + (optional) attack trees.
 
+## Hard boundary — never edit the kit itself
+`tools/security-audit-kit/` is **read-only**: never edit `scan.sh`, the hooks, the skills or
+`CHECKSUMS`, not even to fix a genuine bug. `scan.sh verify` (run by the pre-push hook) fails for
+the whole team afterwards, and the next `bootstrap.sh` discards the edit without warning. Record
+kit bugs in the findings file under **Kit issues** (behaviour, expected behaviour, file:line) — the
+fix belongs upstream, in a release, behind a bumped pin.
+
 ## When
 - A new subsystem / service / trust boundary (new external integration, new data store, new actor/role).
 - Before a cutover / a security design review / a threat-model refresh.
