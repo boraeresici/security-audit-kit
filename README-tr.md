@@ -68,7 +68,7 @@ flowchart TD
       TM -. appends .-> F
     end
 
-    F -->|FP / excluded| AL["allowlist (.gitleaks.toml / nosemgrep)<br/>or .security-exclusions.md"]
+    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md"]
     F -->|REAL| FX["fix now, OR promote to<br/>security-followups registry"]
     FX --> S
 ```
@@ -270,9 +270,36 @@ Otomatik tetik (install sonrasi):
 her commit  --(pre-commit)-->  scan.sh staged  (+ manifest degistiyse deps)
 PR oncesi   --(pre-push)----->  scan.sh all
 bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-YYYY-MM-DD.md
-                                          |- FP    -> allowlist (.gitleaks.toml / nosemgrep / .pip-audit-ignore)
+                                          |- FP    -> raporlayan HER yolu allowlist'le
+                                          |           (.gitleaks.toml / nosemgrep /
+                                          |            .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
                                           |- GERCEK -> fix VEYA takip-listesi entry
 ```
+
+### Bir bulguyu bastirirken: raporlayan her yolu kapat
+
+Allowlist **arac** basinadir; triyaj karari ise **bulgu** hakkindadir — ve bazi boyutlar tasarim
+geregi ortusur. Bir bagimlilik CVE'sini ayni lockfile'dan **pip-audit, osv-scanner ve trivy**
+birlikte okur ve farkli id'lerle raporlar (`PYSEC-…`, `CVE-…`, `GHSA-…` tek bir advisory'nin
+alias'laridir). Tek yerde susturursan digerinden cozulmemis HIGH olarak geri doner — ve `SARIF=1`
+ile Code Scanning'e kararin izi olmadan duser, cunku `kit.sarif` baska bir aracin run'ini dismiss
+edemez.
+
+| Bulgu | Raporlayan | Bastirma nereye yazilir |
+|---|---|---|
+| sir | `secret`, `staged` | satirda `# gitleaks:allow` ya da dar bir `.gitleaks.toml` kurali |
+| SAST | `sast`, `changed` | `# nosemgrep: <rule-id>` + gerekce |
+| **bagimlilik CVE** | **`py-deps` + `osv` + `container`** | **`.pip-audit-ignore` + `osv-scanner.toml` + `.trivyignore.yaml`** |
+| IaC | `iac` | `#checkov:skip=<CHECK_ID>:<gerekce>` |
+| CI workflow | `zizmor` | `# zizmor: ignore[<rule>]` |
+| tekrar eden *yargi* FP'si | AI katmani | `.security-exclusions.md` |
+
+`scan.sh doctor` bu dosyalardan hangilerinin repoda oldugunu listeler; yarim uygulanmis bir bastirma
+boylece gorunur olur. Iki aliskanlik bunu durust tutar: girdileri yazdiktan sonra **ilgili boyutlari
+yeniden kos** (kosmadigin bastirma bir hipotezdir) ve **her erteleme icin bir son tarih yaz** —
+`osv-scanner.toml` icinde `ignoreUntil`, digerlerinde `# expires YYYY-MM-DD — <ver> ile duzeldi`
+yorumu. Elle senkron tutulan allowlist'ler curur: duzeltme gelince girdi *hepsinden* silinmeli,
+unutulan biri o paketteki gelecek gercek bir CVE'yi sessizce bastirir.
 
 ## Derin (semantik) SAST — `/sec-sast-deep`
 

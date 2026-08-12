@@ -20,8 +20,8 @@ next `bootstrap.sh`, so the fix evaporates while people believe it is in place.
 Found a real bug in the kit? Say so in the findings file under **Kit issues**: what it does, what it
 should do, the file and line. The fix belongs upstream, in a release, behind a bumped pin — never in
 the vendored copy. The only files you write are the project's own: the findings file, allowlists
-(`.gitleaks.toml`, `nosemgrep`, `.pip-audit-ignore`), `.security-exclusions.md`,
-`.security-audit.conf`, and the code being fixed.
+(`.gitleaks.toml`, `nosemgrep` comments, `.pip-audit-ignore`, `osv-scanner.toml`,
+`.trivyignore.yaml`), `.security-exclusions.md`, `.security-audit.conf`, and the code being fixed.
 
 ## When
 - When the `git push` pre-push hook is blocked (the full scan produced findings).
@@ -110,11 +110,41 @@ the vendored copy. The only files you write are the project's own: the findings 
    and why (auditability — so a dropped finding is a decision on record, not a silent omission).
    A second round the same day -> append `## Round N (HH:MM)`, do NOT overwrite.
 
-5. **Close FPs (allowlist)** — for tool-level FPs you want the scanner to stop re-flagging:
-   gitleaks -> a narrow `.gitleaks.toml` entry or `# gitleaks:allow` on the line. semgrep ->
-   `# nosemgrep: <rule-id>` + rationale. pip-audit -> `GHSA-xxxx  # rationale` in `.pip-audit-ignore`.
-   Rule: ONLY a proven fake/dev value; never a real secret. (Recurring judgment FPs belong in
-   `.security-exclusions.md`, not an allowlist.)
+5. **Close FPs (allowlist) — write the decision to EVERY path that can report the finding.**
+   Your decision is about a *finding*; a suppression is applied per *tool*. Several dimensions
+   overlap by design, so one entry does not settle it: an accepted, documented risk silenced in one
+   path comes back as an unresolved HIGH in another — and with `SARIF=1` it reaches GitHub Code
+   Scanning carrying no trace of your reasoning (`kit.sarif` cannot dismiss another tool's run).
+
+   | Finding type | Dimension(s) that can report it | Where the suppression goes |
+   |---|---|---|
+   | secret | `secret`, `staged` | `# gitleaks:allow` on the line, or a narrow `.gitleaks.toml` rule |
+   | SAST | `sast`, `changed` | `# nosemgrep: <rule-id>` + rationale, on the line |
+   | **dependency CVE** | **`py-deps` + `osv` + `container`** | **`.pip-audit-ignore` AND `osv-scanner.toml` AND `.trivyignore.yaml`** |
+   | IaC | `iac` | `#checkov:skip=<CHECK_ID>:<reason>` on the resource |
+   | CI workflow | `zizmor` | `# zizmor: ignore[<rule>]` on the line |
+   | recurring *judgment* FP (not a tool rule) | — | `.security-exclusions.md` |
+
+   **Dependency CVEs are the trap.** pip-audit, osv-scanner and trivy read the same lockfiles and
+   report the same advisory under **different ids** — `PYSEC-…`, `CVE-…`, `GHSA-…` are aliases of
+   one vulnerability. Use the id each tool prints. `osv-scanner.toml` is alias-aware (one entry
+   covers the aliases and it prints why it filtered); the others are not. Write the entry for every
+   dimension the project actually runs — and check whether it runs them: `osv` and `guarddog` are
+   standalone, `container` is in `all`.
+
+   **Verification is the only proof.** After writing the entries, re-run *those dimensions*
+   (`scan.sh py-deps`, `scan.sh osv`, `scan.sh container`) and confirm each is clean. A suppression
+   you did not re-run is a hypothesis.
+
+   **Give every deferral an exit.** Record the fixing version and an expiry in the entry
+   (`ignoreUntil` in `osv-scanner.toml`; a `# expires YYYY-MM-DD — fixed in <ver>` comment in the
+   others). Hand-synced allowlists decay: when the fix lands the entry must be deleted from *all*
+   of them, and a forgotten one silently suppresses a future, real CVE in that package.
+
+   Rule: ONLY a proven fake/dev value or a judged-and-documented accepted risk; never a real secret
+   or a confirmed exploit. (Recurring judgment FPs belong in `.security-exclusions.md`, not an
+   allowlist.) Every entry carries its rationale inline — a suppression without a reason is
+   indistinguishable from an accident.
 
 6. **Process real findings:**
    - High-confidence + small -> apply the patch (rotate secret + .env; dep bump/override;
@@ -127,7 +157,9 @@ the vendored copy. The only files you write are the project's own: the findings 
      now. A not-in-KEV, low-EPSS CVE with no available patch is safer to defer with a follow-up.
      (On-demand lookup only — the kit does not vendor these feeds; they must stay fresh.)
 
-7. **Summary:** counts of REAL / UNCERTAIN / FP / suppressed; which allowlists; which fixes; which
+7. **Summary:** counts of REAL / UNCERTAIN / FP / suppressed; which allowlists (name every file you
+   wrote to, and for a dependency CVE state explicitly which of the three paths are now covered and
+   which dimensions you re-ran to prove it); which fixes; which
    entries opened. If the pre-push was blocked: after FP allowlist + real fix, `scan.sh all` must
    pass clean again -> then push.
 

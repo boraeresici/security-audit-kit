@@ -68,7 +68,7 @@ flowchart TD
       TM -. appends .-> F
     end
 
-    F -->|FP / excluded| AL["allowlist (.gitleaks.toml / nosemgrep)<br/>or .security-exclusions.md"]
+    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md"]
     F -->|REAL| FX["fix now, OR promote to<br/>security-followups registry"]
     FX --> S
 ```
@@ -266,9 +266,36 @@ Automatic triggers (after install):
 every commit --(pre-commit)-->  scan.sh staged  (+ deps if a manifest changed)
 before a PR  --(pre-push)----->  scan.sh all
 finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-YYYY-MM-DD.md
-                                           |- FP   -> allowlist (.gitleaks.toml / nosemgrep / .pip-audit-ignore)
+                                           |- FP   -> allowlist EVERY reporting path
+                                           |          (.gitleaks.toml / nosemgrep /
+                                           |           .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
                                            |- REAL -> fix OR follow-up registry entry
 ```
+
+### Suppressing a finding: cover every path that reports it
+
+An allowlist is per **tool**; a triage decision is about a **finding** — and several dimensions
+overlap by design. A dependency CVE is read out of the same lockfile by **pip-audit, osv-scanner and
+trivy**, which report it under different ids (`PYSEC-…`, `CVE-…`, `GHSA-…` are aliases of one
+advisory). Silence it in one place and it returns as an unresolved HIGH from another — and with
+`SARIF=1` it reaches Code Scanning carrying no trace of the decision, because `kit.sarif` cannot
+dismiss another tool's run.
+
+| Finding | Reported by | Suppression goes in |
+|---|---|---|
+| secret | `secret`, `staged` | `# gitleaks:allow` on the line, or a narrow `.gitleaks.toml` rule |
+| SAST | `sast`, `changed` | `# nosemgrep: <rule-id>` + rationale |
+| **dependency CVE** | **`py-deps` + `osv` + `container`** | **`.pip-audit-ignore` + `osv-scanner.toml` + `.trivyignore.yaml`** |
+| IaC | `iac` | `#checkov:skip=<CHECK_ID>:<reason>` |
+| CI workflow | `zizmor` | `# zizmor: ignore[<rule>]` |
+| recurring *judgment* FP | the AI layer | `.security-exclusions.md` |
+
+`scan.sh doctor` lists which of these files exist in your repo, so a half-applied suppression is
+visible. Two habits keep it honest: **re-run the affected dimensions** after writing the entries (a
+suppression you did not re-run is a hypothesis), and **give every deferral an expiry** —
+`ignoreUntil` in `osv-scanner.toml`, an `# expires YYYY-MM-DD — fixed in <ver>` comment elsewhere.
+Hand-synced allowlists decay: when the fix lands the entry must go from *all* of them, and a
+forgotten one silently suppresses a future, real CVE in that package.
 
 ## Deep (semantic) SAST — `/sec-sast-deep`
 

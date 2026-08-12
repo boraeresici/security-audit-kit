@@ -50,6 +50,18 @@ done
 echo "-- doctor --"
 $SCAN doctor >/dev/null 2>&1 && ok "doctor ran" || no "doctor failed"
 
+echo "-- allowlist surface (doctor lists every suppression path) --"
+# A dependency CVE is reported by py-deps + osv + container, so a suppression written to one file
+# leaves the others firing. doctor has to make a half-applied suppression visible.
+ADOC="$($SCAN doctor 2>/dev/null)"
+printf '%s' "$ADOC" | grep -q 'allowlists (a suppression must cover every path' \
+  && ok "doctor: allowlist section present" || no "doctor: allowlist section missing"
+for f in .gitleaks.toml .pip-audit-ignore osv-scanner.toml .trivyignore.yaml .security-exclusions.md; do
+  printf '%s' "$ADOC" | grep -q -- "$f" || { no "doctor: $f not listed"; break; }
+done
+printf '%s' "$ADOC" | grep -q 'osv-scanner.toml' && printf '%s' "$ADOC" | grep -q '.trivyignore.yaml' \
+  && ok "doctor: the two paths triage used to forget are listed" || no "doctor: osv/trivy paths missing"
+
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
 DOC="$($SCAN doctor 2>/dev/null)"

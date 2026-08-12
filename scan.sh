@@ -366,6 +366,17 @@ scan_doctor(){
   git ls-files 2>/dev/null | grep -q  'package\.json'                                        && echo "  javascript" || true
   git ls-files 2>/dev/null | grep -q  '\.tf$'                                                && echo "  terraform"  || true
   git ls-files 2>/dev/null | grep -qE '^\.github/workflows/.*\.(yml|yaml)$'                   && echo "  github-actions (zizmor)" || true
+
+  # Allowlists are per-TOOL while a triage decision is per-FINDING, and the dependency-CVE
+  # dimensions overlap: pip-audit, osv-scanner and trivy read the same lockfiles and report the
+  # same advisory under different ids. Listing which files exist makes a half-applied suppression
+  # visible — otherwise an accepted risk silenced in one path returns as a HIGH in another.
+  printf '\nallowlists (a suppression must cover every path that reports the finding):\n'
+  for f in .gitleaks.toml .pip-audit-ignore osv-scanner.toml .trivyignore.yaml .security-exclusions.md; do
+    [ -f "$ROOT/$f" ] && printf '  ok  %-24s\n' "$f" || printf '  --  %-24s (absent)\n' "$f"
+  done
+  printf '  note: dependency CVEs are reported by py-deps + osv + container — an entry in one\n'
+  printf '        does not silence the others; semgrep/checkov/zizmor use inline comments.\n'
 }
 
 # ---- integrity: CHECKSUMS manifest + verify (Tier S Layer 2) ----

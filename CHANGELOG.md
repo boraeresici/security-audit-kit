@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-08-12
+
+### Fixed (suppression fan-out — a triage decision must stick on every path that reports the finding)
+- **The allowlist model was per-tool while a triage decision is per-finding.** A dependency CVE is
+  read out of the same lockfile by **pip-audit, osv-scanner and trivy** — three dimensions that
+  overlap by design and report the advisory under different ids (`PYSEC-…`, `CVE-…`, `GHSA-…` are
+  aliases of one vulnerability). `sec-triage` named only `.gitleaks.toml`, `nosemgrep` and
+  `.pip-audit-ignore`, so an accepted, documented risk silenced in one path **came back as an
+  unresolved HIGH from another** — and with `SARIF=1` now reaches GitHub Code Scanning carrying no
+  trace of the decision, since `kit.sarif` cannot dismiss another tool's run. Found while
+  dogfooding v1.13.0 in a real consumer: an accepted CVE (unreachable sink, not in KEV, EPSS
+  0.0018, fix needs a major bump) reappeared at CVSS 8.2 through the `osv` path.
+- `sec-triage` step 5 is now a **map of every suppression path** (`.gitleaks.toml` / `nosemgrep` /
+  `.pip-audit-ignore` + `osv-scanner.toml` + `.trivyignore.yaml` / checkov + zizmor inline comments
+  / `.security-exclusions.md`), with the dependency-CVE fan-out called out explicitly, the alias
+  problem named, a **re-run requirement** ("a suppression you did not re-run is a hypothesis"), and
+  an **expiry requirement** (`ignoreUntil`, or an `# expires … — fixed in <ver>` comment) so a
+  deferral cannot silently outlive its fix and mask a future real CVE.
+- `scan.sh doctor` gained an **allowlists** section listing which of those files exist in the repo,
+  so a half-applied suppression is visible instead of implied. `osv-scanner.toml` needs no kit flag
+  — osv-scanner discovers it at the repo root, is alias-aware, and prints why it filtered a finding
+  rather than dropping it silently.
+- READMEs (en/tr): the suppression map, the re-run and expiry habits, and the corrected flow
+  diagrams (the old ones implied one allowlist entry closed a finding).
+
 ## [1.13.0] - 2026-08-12
 
 ### Added (T3.1c — `report-<date>.html`: one file, offline, printable)
