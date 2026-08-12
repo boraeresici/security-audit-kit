@@ -91,13 +91,13 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.12.0
-bash bootstrap.sh v1.12.0 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.12.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.13.0
+bash bootstrap.sh v1.13.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.13.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.12.0`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.13.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
@@ -130,7 +130,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.12.0          # bir tag'e pinle
+  rev: v1.13.0          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -175,9 +175,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    (clone yok):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.11.1
-   # latest tag       : v1.12.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.12.0
+   # vendored version : v1.12.0
+   # latest tag       : v1.13.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.13.0
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
    `make` hedefine baglanabilir.
@@ -187,9 +187,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.12.0   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.13.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.12.0'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.13.0'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
@@ -204,6 +204,8 @@ ile yeniden vendor et.
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinli image, kurulum yok)
 - **uvx veya pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (kurulum yok, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (projede hangisi varsa)
+- **python3** *(opsiyonel)* — `evidence.json`, `kit.sarif` ve HTML rapor; yalniz stdlib, kurulacak
+  paket yok. Yoksa tarama aynen calisir, sadece bu ciktilar uretilmez.
 
 Hicbir tool'u kalici kurmana gerek yok. Her surum pinli — Python araclari
 (semgrep/checkov/pip-audit) surumle, docker araclari (gitleaks/trivy/syft) **immutable

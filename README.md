@@ -90,13 +90,13 @@ re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, revie
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.12.0
-bash bootstrap.sh v1.12.0 --scan          # also run a full scan after install
-bash bootstrap.sh v1.12.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.13.0
+bash bootstrap.sh v1.13.0 --scan          # also run a full scan after install
+bash bootstrap.sh v1.13.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.12.0`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.13.0`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
@@ -129,7 +129,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.12.0          # pin a tag
+  rev: v1.13.0          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -172,9 +172,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
    against the newest semver tag in the kit repo via `git ls-remote` (no clone):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.11.1
-   # latest tag       : v1.12.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.12.0
+   # vendored version : v1.12.0
+   # latest tag       : v1.13.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.13.0
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
    periodic check or a `make` target.
@@ -184,9 +184,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.12.0   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.13.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.12.0"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.13.0"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
@@ -200,6 +200,8 @@ vendored `CHANGELOG`. Re-run `bootstrap.sh <tag> --expect=<sha>` to resolve a mi
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)
 - **uvx or pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (no install, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (whichever the project uses)
+- **python3** *(optional)* — `evidence.json`, `kit.sarif` and the HTML report; stdlib only, no
+  packages to install. Without it the scan runs exactly as before, minus those artifacts.
 
 You don't need to permanently install any tool. Every version is pinned — Python tools
 (semgrep/checkov/pip-audit) by version, docker tools (gitleaks/trivy/syft) by **immutable

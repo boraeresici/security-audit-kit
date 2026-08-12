@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-08-11 · kit **v1.12.0**
+> **Last updated:** 2026-08-12 · kit **v1.13.0**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -47,7 +47,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | CI/CD pipeline security (GitHub Actions) | Partial | ✗ | ✓ zizmor — template injection, poisoned pipelines, token over-permission |
 | False-positive triage | ✓ AutoTriage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check |
 | Measured triage quality (precision/recall evals) | ✗ (marketing claims only) | ✗ | ✓ promptfoo eval harness with recall regression gates (`tests/eval/`) |
-| Structured evidence per finding | ✓ (dashboard) | Partial | 🔜 planned: `evidence.json` + JSONL artifact chain, SARIF-mergeable |
+| Structured evidence per finding | ✓ (dashboard) | Partial | ✓ `evidence.json` — every finding in one shape, severity normalized across tools (source value kept verbatim), CVSS only where a tool supplied one; deterministic and diffable |
 | AutoFix | ✓ AI AutoFix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan); 🔜 validated per-ecosystem fix commands + parent-aware transitive remediation |
 | PoC / exploit validation | ✓ agentic pentesting (executes) | ✗ | 🔜 planned: **generate-only** PoC mode — the kit never executes exploits |
 | AI/LLM app security review (OWASP LLM Top 10) | ✗ | Partial | ✓ `sec-ai-review` skill |
@@ -55,8 +55,8 @@ These are three different product shapes, so some "missing" cells are deliberate
 | DAST | ✓ | ✗ | — rejected by design (no autonomous exploit execution) |
 | Cloud security posture (CSPM) | ✓ | ✗ | — out of scope (repo-local kit; no cloud credentials) |
 | Runtime protection (in-app firewall) | ✓ "Zen" | ✗ | — out of scope (scan kit, not a runtime agent) |
-| Compliance dashboards (SOC 2 / ISO) | ✓ | ✗ | — out of scope; SARIF + `summary.json` are the machine-readable surface |
-| IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers |
+| Compliance dashboards (SOC 2 / ISO) | ✓ | ✗ | — out of scope as a SaaS surface; the kit emits SARIF + `evidence.json` + a printable single-file HTML report you can attach to an audit |
+| IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers, including the judgment findings (`kit.sarif`) |
 | Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ fully local; network only in opt-in dimensions (e.g. GuardDog) |
 | Platform support | Any (SaaS); local scanner limited | Linux/macOS local (no Windows) | Linux + macOS native; 🔜 Windows via WSL2 (documented + verified path; Git Bash partial) |
 | Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest enforced by the pre-push hook (an edited vendored copy blocks the push), SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
@@ -71,7 +71,7 @@ The kit's hard boundary is **scan + judge, never exploit or run in production**:
 - **CSPM** requires cloud credentials and an inventory service; a repo-vendored kit has neither.
   Use a dedicated tool (e.g. Prowler) alongside the kit.
 - **Runtime protection** is an agent living inside your production process — a different product category.
-- **Compliance dashboards** are a SaaS surface. The kit emits SARIF and `summary.json`; whatever
+- **Compliance dashboards** are a SaaS surface. The kit emits SARIF, `evidence.json` and a printable HTML report; whatever
   consumes them can build the dashboard.
 
 ## Measured triage quality — `sec-triage` eval harness
