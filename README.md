@@ -219,6 +219,7 @@ bash tools/security-audit-kit/scan.sh zizmor     # optional: GitHub Actions secu
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
+bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
 ```
 
 Every run writes a machine-readable `docs/security/scan-findings/summary.json` (did the scan pass,
@@ -238,6 +239,11 @@ prompt-injection sink) as SARIF 2.1.0, so they reach GitHub Code Scanning like a
 Scanner findings are not re-reported (their own SARIF already covers them); suppressed findings are
 emitted *as suppressed*, with the triage reason, rather than vanishing. The existing self-audit
 workflow uploads the whole `sarif/` directory, so nothing needs wiring.
+
+For a human audience, `REPORT=html` (or `scan.sh report`) renders the same record as **one
+self-contained `report-<date>.html`** — no server, no JS, no external fetch, so it opens offline and
+prints straight to PDF. It shows what SARIF can't: the triage decision on each scanner finding, and
+the suppressed ones on record.
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus

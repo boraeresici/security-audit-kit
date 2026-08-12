@@ -21,9 +21,11 @@
 #   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
 #   checksums (Re)generate the CHECKSUMS manifest             (maintainer)
 #   evidence  Rebuild evidence.json from the SARIF on disk    (normalized findings; no scan)
+#   report    Render evidence.json as one HTML file           (offline, print-to-PDF; no scan)
 #
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
+#   REPORT=html (also render docs/security/scan-findings/report-<date>.html),
 #   pins: GITLEAKS_VER/_DIGEST, TRIVY_VER/_DIGEST, SYFT_VER/_DIGEST,
 #         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER, GUARDDOG_VER, ZIZMOR_VER.
 set -uo pipefail
@@ -472,13 +474,29 @@ scan_evidence(){
   python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE" $fargs \
     || { warn evidence "builder failed -> evidence.json not updated"; return 0; }
   # The skills' own findings have no other SARIF home -> put them on the same review surface.
-  [ -f "$KIT_DIR/lib/kit_sarif.py" ] || return 0
-  python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif" \
-    || warn evidence "kit.sarif not emitted"
+  if [ -f "$KIT_DIR/lib/kit_sarif.py" ]; then
+    python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif" \
+      || warn evidence "kit.sarif not emitted"
+  fi
+  [ "$REPORT" = "html" ] && scan_report
+  return 0
+}
+
+# One self-contained HTML file to attach, mail, or print to PDF — opt-in via REPORT=html, or
+# `scan.sh report` to re-render. No server, no JS framework, no external fetch: it must open
+# offline in five years. Renders MORE than kit.sarif — including the triage decisions on scanner
+# findings, which SARIF leaves to each tool's own run.
+scan_report(){
+  have python3 || { warn report "no python3 -> HTML report skipped"; return 0; }
+  [ -f "$KIT_DIR/lib/report_html.py" ] || { warn report "lib/report_html.py missing -> skipped"; return 0; }
+  [ -f "$EVIDENCE" ] || { warn report "no evidence.json yet (re-run with SARIF=1) -> report skipped"; return 0; }
+  python3 "$KIT_DIR/lib/report_html.py" --evidence "$EVIDENCE" --out "$REPORT_HTML" \
+    --repo "$(basename "$ROOT")" --date "$TODAY" || warn report "report not written"
   return 0
 }
 
 SARIF="${SARIF:-0}"
+REPORT="${REPORT:-}"
 
 [ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
 [ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
@@ -504,7 +522,7 @@ run_scans(){
     zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|evidence)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|evidence|report)"; return 2 ;;
   esac
   return $rc
 }
@@ -520,12 +538,14 @@ SUMMARY="$LOG_DIR/summary.json"
 SARIF_DIR="$LOG_DIR/sarif"
 EVIDENCE="$LOG_DIR/evidence.json"
 FINDINGS_MD="$LOG_DIR/findings-$TODAY.md"
+REPORT_HTML="$LOG_DIR/report-$TODAY.html"
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE"' EXIT
 mkdir -p "$LOG_DIR"
 [ "$SARIF" = "1" ] && mkdir -p "$SARIF_DIR"
-# Rebuild the record from the SARIF already on disk, without re-scanning.
+# Rebuild the record / re-render the report from what is already on disk, without re-scanning.
 [ "$CMD" = "evidence" ] && { scan_evidence; exit $?; }
+[ "$CMD" = "report" ]   && { scan_report; exit $?; }
 
 printf '\n===== %s  scan.sh %s =====\n' "$(date +%FT%T)" "$CMD" >> "$LOG"
 

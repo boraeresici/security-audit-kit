@@ -147,6 +147,24 @@ nothing needed changing there — and GitHub's upload step validates the documen
 - Results carry `partialFingerprints.sakFindingId` (the evidence `id`), so re-running a scan updates
   an alert instead of creating a new one.
 
+## `report-<date>.html` — the human-readable rendering
+
+`lib/report_html.py` renders the same object into **one self-contained HTML file** (opt in with
+`REPORT=html` on a scan, or `scan.sh report` to re-render). No server, no JS, no external fetch, no
+fonts, no build step — it opens offline from a USB stick, and the browser's print dialog is the PDF
+story. That constraint is the feature: a security artifact you cannot open in five years is not
+evidence.
+
+It deliberately renders **more** than `kit.sarif`: every finding, including the scanner ones
+carrying a triage decision, which SARIF leaves to each tool's own run. Sections: scan header (scope,
+gate, dimensions with pass/fail), severity breakdown, findings table (severity + its source, tool /
+rule, `file:line`, message + evidence chain, decision + confidence), then **Suppressed** on record,
+then any builder warnings.
+
+All tool- and skill-supplied text is HTML-escaped. A scanner message containing markup is data, not
+markup — a security tool whose own report is injectable would be an embarrassment, so the e2e
+asserts it.
+
 ## Compatibility
 
 `schema` is versioned (`…/evidence@1`). Additive fields do not bump it; a renamed or removed field

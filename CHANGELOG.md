@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [1.13.0] - unreleased
 
+### Added (T3.1c — `report-<date>.html`: one file, offline, printable)
+- **A human-readable rendering of the same record**, opt-in via `REPORT=html` on a scan or
+  `scan.sh report` to re-render. One self-contained file: no server, no JS, no external fetch, no
+  fonts, no build step — it opens offline from a USB stick and the browser's print dialog is the PDF
+  story. Not a report platform, and deliberately not a `view`-style local web server.
+- **It shows what SARIF cannot**: the triage decision and confidence on each *scanner* finding
+  (`kit.sarif` leaves those to each tool's own run), plus the suppressed set on record with reasons.
+  Sections: scan header (scope, gate, dimensions with pass/fail), severity breakdown, findings
+  table, Suppressed, builder warnings.
+- **All tool- and skill-supplied text is HTML-escaped** and asserted in e2e. A scanner message
+  containing markup is data, not markup; a security tool whose own report is injectable would be an
+  embarrassment.
+- Deterministic: the only date shown is the scan's own, so re-rendering unchanged input produces a
+  byte-identical file.
+
 ### Added (T3.1b — `kit.sarif`: the judgment layer reaches Code Scanning)
 - **The skills' findings now land where the scanners' already are.** An IDOR `sec-sast-deep` traced
   through the call path, or a prompt-injection sink `sec-ai-review` found, lived only in

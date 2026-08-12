@@ -248,6 +248,49 @@ PY
   rm -f "$TARGET/docs/security/scan-findings/findings-$(date +%F).md"
   cp "$KSAR" "$KSAR.prev"; $SCAN evidence >/dev/null 2>&1
   cmp -s "$KSAR" "$KSAR.prev" && ok "kit.sarif: empty run refused (stale alerts not closed)" || no "kit.sarif: emitted an empty run"
+  # HTML report: one self-contained file. The whole point is that it opens offline in five years,
+  # so the test is about self-containment and escaping, not looks.
+  cat > "$TARGET/docs/security/scan-findings/findings-$(date +%F).md" <<'MD'
+# Security Scan Findings — test
+
+## Round 2 — sec-sast-deep
+
+| Sink (file:line) | Class | Untrusted source | Sev | Conf | Decision | Action |
+|---|---|---|---|---|---|---|
+| app/api.py:88 | horizontal-authz/IDOR | <script>alert(1)</script> | HIGH | 0.85 | REAL | ownership filter |
+
+### Suppressed
+| Sink (file:line) | Class | Why | Conf |
+|---|---|---|---|
+| app/admin.py:9 | vertical-authz | @require_admin present | 0.4 |
+MD
+  cat > "$ESAR/osv.sarif" <<'SARIF'
+{"runs":[{"tool":{"driver":{"name":"osv-scanner","rules":[{"id":"CVE-1","properties":{"security-severity":"9.1"}}]}},
+ "results":[{"ruleId":"CVE-1","level":"warning","message":{"text":"crit dep"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"file:///repo/requirements.txt"},"region":{"startLine":2}}}]}]}]}
+SARIF
+  printf '{"command":"osv","exit_code":1,"raw_log":"r.log","dimensions":[{"name":"osv","exit_code":1,"status":"fail"}]}\n' \
+    > "$TARGET/docs/security/scan-findings/summary.json"
+  REPORT=html $SCAN evidence >/dev/null 2>&1
+  RPT="$TARGET/docs/security/scan-findings/report-$(date +%F).html"
+  python3 - "$RPT" <<'PY' && ok "report.html: self-contained, escaped, renders scanner + judgment findings" || no "report.html: wrong shape"
+import re, sys
+h = open(sys.argv[1], encoding="utf-8").read()
+assert h.startswith("<!doctype html>")
+# Self-contained: no script tags, and no src/href pointing anywhere but an in-page anchor.
+assert "<script" not in h, "report must not carry JS"
+external = [u for u in re.findall(r'(?:src|href)=["\'](?!#)([^"\']+)', h)]
+assert not external, f"external references: {external}"
+# Untrusted tool/skill text must be escaped — this is a security tool's own report.
+assert "<script>alert(1)</script>" not in h and "&lt;script&gt;" in h
+assert "@media print" in h, "must be printable to PDF"
+# Renders BOTH halves: the scanner CVE and the deep-pass judgment finding, plus the suppressed one.
+assert "CVE-1" in h and "requirements.txt" in h
+assert "SAK-sast-deep-horizontal-authz-idor" in h and "app/api.py:88" in h
+assert "Suppressed (1)" in h and "app/admin.py:9" in h
+PY
+  cp "$RPT" "$RPT.first"; REPORT=html $SCAN evidence >/dev/null 2>&1
+  cmp -s "$RPT" "$RPT.first" && ok "report.html: re-render is byte-identical" || no "report.html: not deterministic"
+  rm -f "$RPT" "$RPT.first" "$TARGET/docs/security/scan-findings/findings-$(date +%F).md"
   rm -f "$EVD.first" "$KSAR" "$KSAR.prev" "$ESAR/osv.sarif"
 else skip "evidence.json tests (no python3)"; fi
 

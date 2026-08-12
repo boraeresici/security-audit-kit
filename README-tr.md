@@ -223,6 +223,7 @@ bash tools/security-audit-kit/scan.sh zizmor     # opsiyonel: GitHub Actions guv
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
+bash tools/security-audit-kit/scan.sh report     # tek dosyalik HTML raporu uret
 ```
 
 Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar (tarama gecti mi,
@@ -242,6 +243,11 @@ bir prompt-injection sink'i) SARIF 2.1.0 olarak, yani herhangi bir tarayici alar
 Scanning'e ulasir. Tarayici bulgulari tekrar raporlanmaz (kendi SARIF'leri zaten var); bastirilmis
 bulgular ise kaybolmaz, triyaj gerekcesiyle **bastirilmis olarak** yazilir. Mevcut self-audit
 workflow'u `sarif/` dizininin tamamini yukledigi icin ek bir baglanti gerekmez.
+
+Insan icin ise `REPORT=html` (ya da `scan.sh report`) ayni kaydi **tek basina yeterli bir
+`report-<tarih>.html`** olarak render eder — server yok, JS yok, disariya istek yok; offline
+acilir ve dogrudan PDF'e basilir. SARIF'in gosteremedigini gosterir: her tarayici bulgusunun
+triyaj karari ve kayit altindaki bastirilmis bulgular.
 
 Otomatik tetik (install sonrasi):
 - **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica
