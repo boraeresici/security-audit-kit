@@ -398,6 +398,20 @@ edemez.
 | CI workflow | `zizmor` | `# zizmor: ignore[<rule>]` |
 | tekrar eden *yargi* FP'si | AI katmani | `.security-exclusions.md` |
 
+`scan.sh allowlist` bunlari denetler — offline, tarama yok. **Suresi gecmis** ertelemeleri tarihiyle
+adlandirir, **hic suresi olmayan** girdileri sayar (onlar bir daha asla sesini duyurmaz) ve bir
+advisory'nin bir bagimlilik yolunda bastirilip **digerinde bulunmadigini** isaretler; ikisinde de
+sifirdan farkli cikar. Durust siniri: capraz kontrol **birebir id** karsilastirir, yani alias ciftleri
+(`PYSEC-…` / `CVE-…` / `GHSA-…`, ayni advisory) eslesmez — sessizlik "bosluk bulunamadi" demektir,
+"kapsamdasin" degil. `doctor` tek satirlik hukmu tasir.
+
+```
+== allowlist audit (2026-08-23) ==
+  !!  .pip-audit-ignore      EXPIRED GHSA-aaaa-bbbb-cccc (2026-07-01) — the deferral outlived its date
+  ok  .pip-audit-ignore      3 entr(y|ies) · 1 expired · 1 with no expiry
+  !!  GHSA-aaaa-bbbb-cccc is suppressed in .pip-audit-ignore but not in osv-scanner.toml
+```
+
 `scan.sh doctor` bu dosyalardan hangilerinin repoda oldugunu listeler; yarim uygulanmis bir bastirma
 boylece gorunur olur. Iki aliskanlik bunu durust tutar: girdileri yazdiktan sonra **ilgili boyutlari
 yeniden kos** (kosmadigin bastirma bir hipotezdir) ve **her erteleme icin bir son tarih yaz** —

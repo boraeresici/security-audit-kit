@@ -394,6 +394,20 @@ dismiss another tool's run.
 | CI workflow | `zizmor` | `# zizmor: ignore[<rule>]` |
 | recurring *judgment* FP | the AI layer | `.security-exclusions.md` |
 
+`scan.sh allowlist` audits them — offline, no scan. It names **expired** deferrals with their date,
+counts entries carrying **no expiry at all** (those never become loud again), and flags an advisory
+suppressed in one dependency path but **absent from another**; it exits non-zero on either. Its
+honest limit: the cross-path check compares **exact ids**, so alias pairs (`PYSEC-…` / `CVE-…` /
+`GHSA-…` of one advisory) are not matched — silence means "no gap found", never "you are covered".
+`doctor` carries the one-line verdict.
+
+```
+== allowlist audit (2026-08-23) ==
+  !!  .pip-audit-ignore      EXPIRED GHSA-aaaa-bbbb-cccc (2026-07-01) — the deferral outlived its date
+  ok  .pip-audit-ignore      3 entr(y|ies) · 1 expired · 1 with no expiry
+  !!  GHSA-aaaa-bbbb-cccc is suppressed in .pip-audit-ignore but not in osv-scanner.toml
+```
+
 `scan.sh doctor` lists which of these files exist in your repo, so a half-applied suppression is
 visible. Two habits keep it honest: **re-run the affected dimensions** after writing the entries (a
 suppression you did not re-run is a hypothesis), and **give every deferral an expiry** —
