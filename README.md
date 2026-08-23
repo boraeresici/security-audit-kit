@@ -196,6 +196,32 @@ reverted the vendored tree, leaving the team convinced they run a version they d
 by an older bootstrap has no digest; verify then falls back to comparing the tag against the
 vendored `CHANGELOG`. Re-run `bootstrap.sh <tag> --expect=<sha>` to resolve a mismatch.
 
+## Platform notes (Windows: use WSL2)
+
+The kit is bash-first. Linux and macOS are native; on Windows the supported path is **WSL2**.
+
+| Environment | Status | Notes |
+|---|---|---|
+| Linux | ✓ full | native |
+| macOS | ✓ full | native (bash 3.2 — the scripts stay POSIX-ish on purpose) |
+| **WSL2** | ✓ full | run everything *inside* the WSL filesystem; docker dimensions work through Docker Desktop's WSL integration |
+| Git Bash / MSYS | Partial | `uvx`/`pipx` dimensions and the git hooks work; **docker** dimensions (secret, container, sbom, osv) are unreliable — MSYS rewrites the `/repo` mount into a Windows path before docker sees it. Prefix `MSYS_NO_PATHCONV=1`, or move to WSL2 |
+| PowerShell / cmd | ✗ | not supported — no bash |
+
+`scan.sh doctor` prints which of these it is running under, so a mangled mount is named rather than
+debugged. Two WSL2 habits that matter:
+
+- **Keep the repo on the Linux side** (`~/code/...`, not `/mnt/c/...`). Scanning across the
+  `/mnt/c` bridge is slow enough to change behaviour — gitleaks over a large history goes from
+  seconds to minutes.
+- **Enable Docker Desktop's WSL integration** for your distro, otherwise `docker info` fails inside
+  WSL and the kit skips those dimensions with a notice (the missing-toolchain contract, working as
+  intended — but you will be scanning less than you think).
+
+> **Not yet verified by us on a real WSL2 machine.** The path above follows from how the scripts
+> work, and `doctor` will tell you what it detected; if you run it under WSL2 or Git Bash, the
+> result is worth reporting back.
+
 ## Requirements (a missing one only skips that dimension)
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)
 - **uvx or pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (no install, on-demand)

@@ -486,6 +486,25 @@ if have node; then
 JSON
   node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null | grep -q 'recall:     50.0%' \
     && ok "eval: score.mjs precision/recall math" || no "eval: score.mjs math wrong"
+  # Head-to-head: results MUST be grouped per provider — pooling two backends into one confusion
+  # matrix reports a model that does not exist. A dead backend is "not measured", never 0%.
+  cat > eval_matrix_mock.json <<'JSON'
+{"results":{"results":[
+ {"provider":{"label":"alpha"},"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"REAL\"}"}},
+ {"provider":{"label":"alpha"},"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"FP\"}"}},
+ {"provider":{"label":"beta"},"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"FP\"}"}},
+ {"provider":{"label":"beta"},"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"FP\"}"}},
+ {"provider":{"label":"dead"},"vars":{"expected":"REAL"},"failureReason":2,"error":"401"}
+]}}
+JSON
+  MOUT="$(node tools/security-audit-kit/tests/eval/score.mjs eval_matrix_mock.json 2>/dev/null)"
+  printf '%s' "$MOUT" | grep -q '3 backends' \
+    && printf '%s' "$MOUT" | grep -qE 'alpha +2 +100\.0%' \
+    && printf '%s' "$MOUT" | grep -qE 'beta +2 +.*0\.0%' \
+    && printf '%s' "$MOUT" | grep -q 'dead.*not measured' \
+    && ok "eval: head-to-head table scores each backend separately, dead one not scored 0%" \
+    || no "eval: multi-provider scoring wrong"
+  rm -f eval_matrix_mock.json
   rm -f eval_mock.json
 else
   skip "eval harness (node unavailable)"

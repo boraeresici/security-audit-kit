@@ -436,6 +436,19 @@ scan_doctor(){
   printf '== security-audit-kit doctor ==\n'
   printf 'root   : %s\n' "$ROOT"
   printf 'config : %s\n\n' "$([ -f "$CONF" ] && echo "$CONF" || echo '(none; using defaults)')"
+  # Platform: on Windows the difference between WSL2 and Git Bash is invisible until a docker
+  # dimension silently misbehaves (MSYS rewrites /repo into a Windows path before docker sees it),
+  # so name it here rather than letting someone debug a mangled mount.
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+      printf 'platform: Git Bash/MSYS — PARTIAL. uvx/pipx dimensions + hooks work; docker ones\n'
+      printf '          (secret/container/sbom/osv) mangle the /repo mount — prefix MSYS_NO_PATHCONV=1,\n'
+      printf '          or use WSL2, which is the supported Windows path.\n\n' ;;
+    Linux)
+      if grep -qi microsoft /proc/version 2>/dev/null; then
+        printf 'platform: WSL2 — full support (docker via Docker Desktop WSL integration).\n\n'
+      fi ;;
+  esac
   printf 'toolchain (a missing one only skips that dimension):\n'
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
   { have uvx || have pipx; } && echo "  ok  uvx/pipx      (semgrep/checkov/pip-audit/guarddog/zizmor)" || echo "  --  uvx/pipx      MISSING -> sast/iac/py-deps/guarddog/zizmor skipped"
