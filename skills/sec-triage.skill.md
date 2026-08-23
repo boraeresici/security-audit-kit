@@ -55,6 +55,11 @@ the vendored copy. The only files you write are the project's own: the findings 
    - **Reachable from untrusted input?** Trace the path from an attacker-controlled source to
      this sink. If it is NOT reachable (dead code, never called with untrusted data, behind an
      unreachable flag) -> FP (reason: not reachable).
+     *For dependency CVEs, a machine answer may already exist:* run with `OSV_CALL_ANALYSIS=go`
+     (Go today) and osv-scanner marks whether the vulnerable symbol is actually **called**. An
+     "uncalled" marking is strong evidence for this gate — but not proof: call graphs miss
+     reflection, dynamic dispatch and plugin loading, so treat it as a heavy thumb on the scale,
+     not a verdict. A "called" marking is the stronger signal of the two.
    - **Matches an exclusion / precedent?** (step 2) -> FP.
    - **Obvious FP** — dev placeholder, test/doc path, fake sandbox value, tool mismatch
      (evidence: a `# noqa`/dev-only comment, a `tests/`/`docs/` path, a known example PAN) -> FP.
