@@ -248,7 +248,7 @@ footer .right{margin-left:auto}
           <span class="badge"><span class="dot"></span> ci <b>passing</b></span>
           <span class="badge"><span class="dot"></span> self-audit <b>passing</b></span>
           <span class="badge">license <b>MIT</b></span>
-          <span class="badge">release <b>v1.15.0</b></span>
+          <span class="badge">release <b>v1.16.0</b></span>
         </div>
         <h1>Security scanning that runs <em>in your repo</em> — not in someone's cloud.</h1>
         <p class="sub">
@@ -271,7 +271,7 @@ footer .right{margin-left:auto}
           <li class="step active">
             <span class="node">1</span>
             <h4>Vendor, pinned</h4>
-            <span class="cmd">$ bash bootstrap.sh v1.15.0</span>
+            <span class="cmd">$ bash bootstrap.sh v1.16.0</span>
             <small>Download → read → run. Tag + resolved SHA land in a committed <b>.kit-version</b>.</small>
           </li>
           <li class="step">
@@ -425,7 +425,7 @@ finding       <span class="f">────────────────�
           <tr><td>Custom rules (your own invariants)</td><td class="m p">◐</td><td><span class="m y">✓</span><span class="note">its core strength</span></td><td><span class="m y">✓</span><span class="note">semgrep-rules/ composed with the registry packs — adding a rule never costs you OWASP/stack packs — plus doctor showing how many rules actually gate (a non-ERROR rule loads and is then ignored) and scan.sh rules-test running semgrep's native rule tests</span></td></tr>
           <tr><td>Secrets detection</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">gitleaks — full history + sub-second staged mode</span></td></tr>
           <tr><td>Dependency CVE scanning (SCA)</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">pip-audit + npm/pnpm/yarn audit + OSV-Scanner (multi-ecosystem)</span></td></tr>
-          <tr><td>Reachability analysis for SCA</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m s">→</span><span class="note">planned as an optional heavy dimension (prioritizes OSV output)</span></td></tr>
+          <tr><td>Reachability analysis for SCA</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m p">◐</span><span class="note">opt-in OSV_CALL_ANALYSIS=go marks whether the vulnerable symbol is actually called, paired with --all-vulns so the gate never loosens; sec-triage treats it as evidence, not a verdict. Python/JS reachability needs a heavier tool and is not shipped. Rust is refused by default: it runs the dependency tree's build scripts</span></td></tr>
           <tr><td>Malicious package / typosquat detection</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">GuardDog (PyPI + npm)</span></td></tr>
           <tr><td>SBOM generation</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">syft — CycloneDX + SPDX</span></td></tr>
           <tr><td>License scanning</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">trivy license scanner</span></td></tr>
@@ -436,7 +436,7 @@ finding       <span class="f">────────────────�
           <tr><td>False-positive triage</td><td><span class="m y">✓</span><span class="note">AutoTriage (opaque)</span></td><td><span class="m n">✗</span><span class="note">registry noted as noisy</span></td><td><span class="m y">✓</span><span class="note">sec-triage: hard-evidence bar (REAL must name the sink file:line, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check; suppressions are audited for decay (scan.sh allowlist: expired deferrals, entries with no expiry, an advisory suppressed on one dependency path but not the others)</span></td></tr>
           <tr><td>Measured triage quality (precision/recall evals)</td><td><span class="m n">✗</span><span class="note">marketing claims only</span></td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">promptfoo eval harness with recall regression gates (tests/eval/)</span></td></tr>
           <tr><td>Structured evidence per finding</td><td class="m y">✓ dashboard</td><td class="m p">◐</td><td><span class="m y">✓</span><span class="note">evidence.json — every finding in one shape, severity normalized across tools (source value kept verbatim), CVSS only where a tool supplied one; deterministic and diffable</span></td></tr>
-          <tr><td>AutoFix</td><td><span class="m y">✓</span><span class="note">AI AutoFix PRs (all plans)</span></td><td>Experimental</td><td><span class="m p">◐</span><span class="note">AI-assisted fixes via triage (show diff, re-scan); → validated per-ecosystem fix commands + parent-aware transitive remediation</span></td></tr>
+          <tr><td>AutoFix</td><td><span class="m y">✓</span><span class="note">AI AutoFix PRs (all plans)</span></td><td>Experimental</td><td><span class="m p">◐</span><span class="note">AI-assisted fixes via triage (show diff, re-scan) with a per-ecosystem command table (direct vs transitive-forcing) and the direct/transitive + parent-range questions asked before any bump; → computing the parent-range answer automatically</span></td></tr>
           <tr><td>PoC / exploit validation</td><td><span class="m y">✓</span><span class="note">agentic pentesting (executes)</span></td><td class="m n">✗</td><td><span class="m s">→</span><span class="note">planned: generate-only PoC mode — the kit never executes exploits</span></td></tr>
           <tr><td>AI/LLM app security review (OWASP LLM Top 10)</td><td class="m n">✗</td><td class="m p">◐</td><td><span class="m y">✓</span><span class="note">sec-ai-review skill</span></td></tr>
           <tr><td>Threat modeling</td><td class="m n">✗</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">sec-threat-model (STRIDE + data flows)</span></td></tr>
@@ -454,7 +454,7 @@ finding       <span class="f">────────────────�
       </table>
     </div>
     <p class="src rv">
-      Last updated 2026-08 · kit v1.15.0 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
+      Last updated 2026-08 · kit v1.16.0 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
       Aikido and Semgrep are trademarks of their respective owners. Planned rows describe intended work, not commitments.
       Maintained source: <a href="https://github.com/boraeresici/security-audit-kit/blob/main/docs/compare/aikido-semgrep.md">docs/compare/aikido-semgrep.md</a>
     </p>
@@ -533,7 +533,7 @@ finding       <span class="f">────────────────�
 
 <footer>
   <div class="wrap">
-    <span>security-audit-kit v1.15.0</span>
+    <span>security-audit-kit v1.16.0</span>
     <span><a href="https://github.com/boraeresici/security-audit-kit/blob/main/LICENSE">MIT</a></span>
     <span><a href="https://github.com/boraeresici/security-audit-kit/blob/main/SECURITY.md">SECURITY.md</a></span>
     <span class="right">built by <a href="https://studiobinary.co">studiobinary.co</a></span>
