@@ -112,6 +112,39 @@ done
 printf '%s' "$ADOC" | grep -q 'osv-scanner.toml' && printf '%s' "$ADOC" | grep -q '.trivyignore.yaml' \
   && ok "doctor: the two paths triage used to forget are listed" || no "doctor: osv/trivy paths missing"
 
+echo "-- allowlist audit (decay detection) --"
+# A suppression is an accepted risk with a shelf life. Both decay modes are silent and both fail
+# in the dangerous direction: the suppression stays, the protection goes.
+cat > .pip-audit-ignore <<'EOF'
+GHSA-aaaa-bbbb-cccc  # unreachable; expires 2020-01-01 — fixed in 50.0.0
+GHSA-dddd-eeee-ffff  # no fix yet; expires 2099-01-01
+GHSA-9999-9999-9999  # no expiry recorded
+EOF
+cat > osv-scanner.toml <<'EOF'
+[[IgnoredVulns]]
+id = "GHSA-dddd-eeee-ffff"
+ignoreUntil = 2099-01-01
+EOF
+AOUT="$($SCAN allowlist 2>&1)"; ARC=$?
+[ "$ARC" -ne 0 ] && ok "allowlist: exits non-zero when a suppression has decayed" || no "allowlist: decay not gated"
+printf '%s' "$AOUT" | grep -q 'EXPIRED GHSA-aaaa-bbbb-cccc' \
+  && ok "allowlist: an expired deferral is named with its date" || no "allowlist: expired entry not caught"
+printf '%s' "$AOUT" | grep -q 'GHSA-aaaa-bbbb-cccc is suppressed in .pip-audit-ignore but not in osv-scanner.toml' \
+  && ok "allowlist: cross-path gap reported (an entry in one path does not silence the others)" || no "allowlist: cross-path gap missed"
+# The id present in BOTH files must not be reported — a detector that cries wolf stops being read.
+printf '%s' "$AOUT" | grep -q 'GHSA-dddd-eeee-ffff is suppressed' \
+  && no "allowlist: false positive on an id covered in both paths" || ok "allowlist: no false positive on a fully-covered id"
+printf '%s' "$AOUT" | grep -q 'with no expiry' \
+  && ok "allowlist: entries with no expiry are counted" || no "allowlist: missing-expiry count absent"
+# In sync + unexpired -> clean and quiet.
+cat > .pip-audit-ignore <<'EOF'
+GHSA-dddd-eeee-ffff  # no fix yet; expires 2099-01-01
+EOF
+$SCAN allowlist >/dev/null 2>&1 && ok "allowlist: clean when every path agrees and nothing expired" || no "allowlist: false alarm on a clean set"
+printf '%s' "$($SCAN doctor 2>/dev/null)" | grep -q 'audit: nothing expired' \
+  && ok "allowlist: doctor carries a one-line verdict" || no "allowlist: doctor summary missing"
+rm -f .pip-audit-ignore osv-scanner.toml
+
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
 DOC="$($SCAN doctor 2>/dev/null)"

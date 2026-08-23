@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [1.15.0] - unreleased
 
+### Added (#13 — `scan.sh allowlist`: the decay detector for accepted risks)
+- **A suppression is an accepted risk with a shelf life, and both ways it rots are silent and fail in
+  the dangerous direction** — the suppression stays, the protection goes. (1) The fix ships, the
+  entry is never deleted, and a *future, real* CVE in that package is silenced. (2) The same advisory
+  is suppressed on one dimension's path but not the others, so the record disagrees with itself.
+  `scan.sh allowlist` audits the files offline — no scan, no network — and **exits non-zero** on
+  either, so a team can wire it wherever they want it enforced.
+- Reports: **expired** deferrals by id and date; a count of entries carrying **no expiry at all**
+  (those never become loud again); and an advisory suppressed in one dependency path but **absent
+  from another**. Expiries are read natively where the tool has them (`ignoreUntil` in
+  `osv-scanner.toml`, `expiredAt` in `.trivyignore.yaml`) and by the kit's `# expires YYYY-MM-DD`
+  convention elsewhere. ISO dates compare lexically — no date arithmetic, no locale.
+- **Deliberately under-reports.** The cross-path check compares **exact ids**, so alias pairs
+  (`PYSEC-…` / `CVE-…` / `GHSA-…` of one advisory) are not matched and their gaps are missed. That
+  is the intended trade: a false "you are covered" is worse than a missed hint, and a detector that
+  cries wolf is one people stop reading — the same reasoning that rejected the "0-match ⇒ stale
+  rule" idea in v1.14.0. The output says so rather than implying coverage.
+- `doctor` carries a **one-line verdict** (the detail lives in the subcommand), and `sec-triage`
+  step 5 now ends with "then prove it with `scan.sh allowlist`" — the cheapest check that the record
+  you just wrote agrees with itself.
+
 ### Added (#10 — one run, every backend: the head-to-head eval table)
 - **`tests/eval/promptfooconfig.matrix.yaml`** runs all candidate backends against the same corpus,
   prompt, grader and split **in a single run**. Comparing separate per-backend runs by hand is where

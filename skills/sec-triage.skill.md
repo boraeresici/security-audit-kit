@@ -137,9 +137,17 @@ the vendored copy. The only files you write are the project's own: the findings 
    you did not re-run is a hypothesis.
 
    **Give every deferral an exit.** Record the fixing version and an expiry in the entry
-   (`ignoreUntil` in `osv-scanner.toml`; a `# expires YYYY-MM-DD — fixed in <ver>` comment in the
-   others). Hand-synced allowlists decay: when the fix lands the entry must be deleted from *all*
-   of them, and a forgotten one silently suppresses a future, real CVE in that package.
+   (`ignoreUntil` in `osv-scanner.toml`, `expiredAt` in `.trivyignore.yaml`, a
+   `# expires YYYY-MM-DD — fixed in <ver>` comment in the others). Hand-synced allowlists decay:
+   when the fix lands the entry must be deleted from *all* of them, and a forgotten one silently
+   suppresses a future, real CVE in that package.
+
+   **Then prove it with `scan.sh allowlist`** (offline, no scan). It reports expired deferrals by
+   name and date, counts entries that carry no expiry at all, and flags an id suppressed in one
+   dependency path but absent from another — and it exits non-zero on either. Run it after writing
+   the entries: it is the cheapest check that the record you just wrote agrees with itself. Note its
+   honest limit: it compares **exact ids**, so alias pairs (`PYSEC-…` / `CVE-…` / `GHSA-…` of one
+   advisory) are not matched — silence means "no gap found", never "you are covered".
 
    Rule: ONLY a proven fake/dev value or a judged-and-documented accepted risk; never a real secret
    or a confirmed exploit. (Recurring judgment FPs belong in `.security-exclusions.md`, not an

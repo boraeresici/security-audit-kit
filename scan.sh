@@ -21,6 +21,7 @@
 #   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
 #   checksums (Re)generate the CHECKSUMS manifest             (maintainer)
 #   rules-test Run semgrep --test over the repo's OWN rules    (no scan)
+#   allowlist Audit suppressions: expired + cross-path gaps    (no scan; exit 1 on either)
 #   evidence  Rebuild evidence.json from the SARIF on disk    (normalized findings; no scan)
 #   report    Render evidence.json as one HTML file           (offline, print-to-PDF; no scan)
 #
@@ -518,6 +519,122 @@ scan_doctor(){
   done
   printf '  note: dependency CVEs are reported by py-deps + osv + container — an entry in one\n'
   printf '        does not silence the others; semgrep/checkov/zizmor use inline comments.\n'
+  # One line, not a report: doctor stays worth reading. `scan.sh allowlist` has the detail.
+  if scan_allowlist >/dev/null 2>&1; then
+    printf '  ok  audit: nothing expired, no exact-id gap  (detail: scan.sh allowlist)\n'
+  else
+    printf '  !!  audit: expired entries or a cross-path gap -> run: scan.sh allowlist\n'
+  fi
+}
+
+# ---- allowlist audit: the decay detector ----
+# A suppression is an accepted risk with a shelf life. Two ways it rots, both silent and both in the
+# dangerous direction (the suppression stays, the protection goes):
+#   1. The fix ships, the entry is never deleted -> a FUTURE, real CVE in that package is silenced.
+#   2. The same advisory is suppressed on one dimension's path and not the others -> either the risk
+#      was accepted twice over or one path is still firing; both mean the record disagrees with itself.
+# This audits the FILES, offline — no scan, no network.
+#
+# The three dependency-CVE paths carry advisory ids; each supports an expiry natively
+# (`ignoreUntil` in osv-scanner.toml, `expiredAt` in .trivyignore.yaml) or by the kit's convention
+# (`# expires YYYY-MM-DD` in .pip-audit-ignore and anywhere else). Dates are ISO, so a lexical
+# compare against `date +%F` is exact — no date arithmetic, no locale.
+allowlist_entries(){   # <file> -> "<id>\t<expiry|->" per entry
+  local f="$ROOT/$1"
+  [ -f "$f" ] || return 0
+  case "$1" in
+    .pip-audit-ignore)
+      awk '
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+        { id = $1
+          xpiry = "-"
+          if (match($0, /expires[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}/))
+            xpiry = substr($0, RSTART + RLENGTH - 10, 10)
+          print id "\t" xpiry }
+      ' "$f" ;;
+    osv-scanner.toml)
+      awk '
+        /^[[:space:]]*\[\[IgnoredVulns\]\]/ { if (id != "") print id "\t" xpiry; id = ""; xpiry = "-"; next }
+        /^[[:space:]]*id[[:space:]]*=/ { id = $0; gsub(/.*=[[:space:]]*"?/, "", id); gsub(/".*/, "", id); gsub(/[[:space:]]+$/, "", id) }
+        /ignoreUntil/ { if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) xpiry = substr($0, RSTART, 10) }
+        END { if (id != "") print id "\t" (xpiry == "" ? "-" : xpiry) }
+      ' "$f" ;;
+    .trivyignore.yaml)
+      awk '
+        /^[[:space:]]*-[[:space:]]*id:/ { if (id != "") print id "\t" xpiry; xpiry = "-"
+          id = $0; gsub(/.*id:[[:space:]]*/, "", id); gsub(/["'"'"']/, "", id); gsub(/[[:space:]]+$/, "", id); next }
+        /expiredAt:/ { if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) xpiry = substr($0, RSTART, 10) }
+        END { if (id != "") print id "\t" (xpiry == "" ? "-" : xpiry) }
+      ' "$f" ;;
+    *)
+      # Any other allowlist: no id vocabulary, so only the expiry convention is checked.
+      awk '
+        match($0, /expires[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}/) {
+          print "(entry)\t" substr($0, RSTART + RLENGTH - 10, 10) }
+      ' "$f" ;;
+  esac
+}
+
+DEP_ALLOWLISTS=".pip-audit-ignore osv-scanner.toml .trivyignore.yaml"
+OTHER_ALLOWLISTS=".gitleaks.toml .security-exclusions.md"
+
+scan_allowlist(){
+  local today; today="$(date +%F)"
+  local rc=0 f id exp total expired noexp present=""
+  printf '== allowlist audit (%s) ==\n' "$today"
+  for f in $DEP_ALLOWLISTS $OTHER_ALLOWLISTS; do
+    if [ ! -f "$ROOT/$f" ]; then printf '  --  %-22s absent\n' "$f"; continue; fi
+    present="$present $f"
+    total=0; expired=0; noexp=0
+    while IFS="$(printf '\t')" read -r id exp; do
+      [ -n "${id:-}" ] || continue
+      total=$((total + 1))
+      if [ "$exp" = "-" ]; then noexp=$((noexp + 1))
+      elif [ "$exp" \< "$today" ]; then
+        expired=$((expired + 1))
+        printf '  !!  %-22s EXPIRED %s (%s) — the deferral outlived its date; delete it or renew it\n' "$f" "$id" "$exp"
+        rc=1
+      fi
+    done <<EOF
+$(allowlist_entries "$f")
+EOF
+    printf '  ok  %-22s %s entr(y|ies) · %s expired · %s with no expiry\n' "$f" "$total" "$expired" "$noexp"
+    [ "$noexp" -gt 0 ] && printf '      note: an entry with no expiry never becomes loud again — add "expires YYYY-MM-DD"\n'
+  done
+
+  # Cross-path: the same advisory id present in one dependency path and literally absent from
+  # another. EXACT ids only — PYSEC-…/CVE-…/GHSA-… aliases of one advisory are NOT resolved here, so
+  # silence is not proof of coverage. Deliberately under-reports: a false "you're covered" is worse
+  # than a missed hint, and a noisy detector is one people stop reading.
+  local a b ids_a ids_b missing_any=0
+  for a in $DEP_ALLOWLISTS; do
+    [ -f "$ROOT/$a" ] || continue
+    ids_a="$(allowlist_entries "$a" | cut -f1 | grep -vx '(entry)' || true)"
+    [ -n "$ids_a" ] || continue
+    for b in $DEP_ALLOWLISTS; do
+      [ "$a" = "$b" ] && continue
+      [ -f "$ROOT/$b" ] || continue
+      ids_b="$(allowlist_entries "$b" | cut -f1 || true)"
+      while IFS= read -r id; do
+        [ -n "${id:-}" ] || continue
+        printf '%s\n' "$ids_b" | grep -qxF "$id" || {
+          printf '  !!  %s is suppressed in %s but not in %s\n' "$id" "$a" "$b"
+          missing_any=1
+        }
+      done <<EOF
+$ids_a
+EOF
+    done
+  done
+  if [ "$missing_any" = 1 ]; then
+    printf '      A dependency CVE is reported by py-deps + osv + container: an entry in one path\n'
+    printf '      does not silence the others. Exact-id comparison only — aliases (PYSEC/CVE/GHSA of\n'
+    printf '      the same advisory) are not resolved, so no warning here does NOT prove coverage.\n'
+    rc=1
+  fi
+  [ -z "$present" ] && printf '  (no allowlists in this repo — nothing to audit)\n'
+  [ "$rc" = 0 ] && printf '  clean: nothing expired, no exact-id gap across the dependency paths\n'
+  return $rc
 }
 
 # ---- integrity: CHECKSUMS manifest + verify (Tier S Layer 2) ----
@@ -654,6 +771,7 @@ REPORT="${REPORT:-}"
 [ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
 [ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
+[ "${1:-}" = "allowlist" ] && { scan_allowlist; exit $?; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
 
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
@@ -675,7 +793,7 @@ run_scans(){
     zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|evidence|report)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report)"; return 2 ;;
   esac
   return $rc
 }
