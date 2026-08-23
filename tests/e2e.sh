@@ -484,6 +484,21 @@ echo "-- osv (OSV-Scanner optional dimension) --"
 if docker_ok; then
   # target has no lockfiles -> osv-scanner exits 128 -> scan.sh maps that to a clean pass (0)
   $SCAN osv >/dev/null 2>&1 && ok "osv: wired + clean on a lockfile-less repo" || no "osv: should pass (exit 0) with no lockfiles"
+  # Reachability is opt-in and must NOT loosen the gate: call analysis drops uncalled vulns by
+  # default, so it is always paired with --all-vulns — the finding set and exit code stay the same,
+  # and what you gain is a called/uncalled signal for triage.
+  printf '%s' "$($SCAN osv 2>&1)" | grep -q 'reachability:' \
+    && no "osv: call analysis on by default (would silently shrink the finding set)" \
+    || ok "osv: reachability is opt-in, off by default"
+  printf '%s' "$(OSV_CALL_ANALYSIS=go $SCAN osv 2>&1)" | grep -q 'reachability: go, gate unchanged' \
+    && ok "osv: OSV_CALL_ANALYSIS=go enables the reachability signal" || no "osv: call analysis not wired"
+  # Rust call analysis works by RUNNING the dependency tree's build scripts. A scanner that
+  # executes untrusted code to decide what to report is an own-goal — refuse unless asked twice.
+  ROUT="$(OSV_CALL_ANALYSIS=rust $SCAN osv 2>&1)"; RRC=$?
+  printf '%s' "$ROUT" | grep -q 'RUNS dependency build scripts' && [ "$RRC" -ne 0 ] \
+    && ok "osv: rust call analysis refused (executes dependency build scripts)" || no "osv: rust refusal missing"
+  printf '%s' "$(OSV_CALL_ANALYSIS=rust OSV_ALLOW_BUILD_SCRIPTS=1 $SCAN osv 2>&1)" | grep -q 'WILL execute' \
+    && ok "osv: the rust override is allowed but says what it does" || no "osv: rust override missing"
 else
   skip "osv (docker unavailable)"
 fi

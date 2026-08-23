@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [1.16.0] - unreleased
 
+### Added (#7, free slice — reachability for dependency CVEs, no new tool)
+- **`OSV_CALL_ANALYSIS=go` turns on osv-scanner's call analysis**, which marks whether a vulnerable
+  symbol is actually *called*. This needed no new dependency: the pinned osv-scanner image we
+  already ship supports it. Checking that first changed the shape of this item — the heavy
+  `dep-scan` tool is now only needed for Python/JS, not for reachability as such.
+- **The gate does not loosen.** With call analysis on, osv-scanner drops uncalled vulnerabilities by
+  default — a security gate that silently reports less is the wrong trade. The kit always pairs it
+  with `--all-vulns`, so the finding set and the exit code are unchanged; what you gain is a
+  called/uncalled **signal for the judgment layer**, not fewer findings.
+- **Rust is refused by default.** `--call-analysis=rust` works by *running the dependency tree's
+  build scripts*. A scanner that executes untrusted code to decide what to report is an own-goal
+  and contradicts the kit's stated boundary (scan and judge, never execute). It requires an explicit
+  second opt-in, `OSV_ALLOW_BUILD_SCRIPTS=1`, and says plainly what will happen.
+- **`sec-triage` uses the marking honestly**: an "uncalled" result is a heavy thumb on the scale for
+  the reachability gate, never a verdict — call graphs miss reflection, dynamic dispatch and plugin
+  loading. A "called" marking is the stronger of the two signals.
+- Still not shipped: Python/JS reachability, which needs `dep-scan` (heavy, minutes, overlapping
+  output). That decision stays open rather than being made by accident here.
+
 ### Changed (#8, first half — remediation: the cost of the bump is the decision)
 - **`sec-triage` step 6 now tells you how to fix a dependency CVE, not just that you should.**
   "Bump it" is not an instruction. The skill asks three questions in order: is the package **direct

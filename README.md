@@ -196,6 +196,23 @@ reverted the vendored tree, leaving the team convinced they run a version they d
 by an older bootstrap has no digest; verify then falls back to comparing the tag against the
 vendored `CHANGELOG`. Re-run `bootstrap.sh <tag> --expect=<sha>` to resolve a mismatch.
 
+### Reachability for dependency CVEs (opt-in)
+
+`OSV_CALL_ANALYSIS=go bash scan.sh osv` asks osv-scanner whether the vulnerable symbol is actually
+**called** in your code. Two rules make it safe to turn on:
+
+- **The gate does not loosen.** With call analysis on, osv-scanner drops uncalled vulnerabilities by
+  default; the kit always pairs it with `--all-vulns`, so the finding set and the exit code are
+  unchanged. What you gain is a *called / uncalled* signal for triage — not fewer findings.
+- **No build scripts.** Rust call analysis works by running the dependency tree's build scripts. A
+  scanner that executes untrusted code to decide what to report is an own-goal, so it is **refused**
+  unless you explicitly accept it with `OSV_ALLOW_BUILD_SCRIPTS=1`.
+
+Go is the ecosystem osv-scanner supports without executing anything. Python and JS reachability
+needs a heavier tool (`dep-scan`) and is not shipped — an "uncalled" marking is also not proof:
+call graphs miss reflection, dynamic dispatch and plugin loading, so `sec-triage` treats it as a
+heavy thumb on the scale, never a verdict.
+
 ## Platform notes (Windows: use WSL2)
 
 The kit is bash-first. Linux and macOS are native; on Windows the supported path is **WSL2**.

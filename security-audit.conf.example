@@ -28,6 +28,12 @@
 # Point elsewhere, or switch the mechanism off entirely:
 # : "${SEMGREP_LOCAL_RULES:=semgrep-rules}"
 # : "${SEMGREP_LOCAL_RULES:=off}"
+#
+# Reachability signal for dependency CVEs (opt-in). Adds --all-vulns, so the gate is
+# unchanged — you gain a called/uncalled marking for triage, not fewer findings.
+# rust also works but RUNS the dependency tree's build scripts, so it is refused unless
+# OSV_ALLOW_BUILD_SCRIPTS=1 is set as well.
+# : "${OSV_CALL_ANALYSIS:=go}"
 
 # --- IaC (checkov) ---
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.

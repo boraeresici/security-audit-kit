@@ -200,6 +200,23 @@ surumu kullandigini sanir. Eski bootstrap ile yazilmis pinlerde ozet yoktur; ver
 tag'i vendor'daki `CHANGELOG` ile karsilastirir. Uyusmazlikta `bootstrap.sh <tag> --expect=<sha>`
 ile yeniden vendor et.
 
+### Bagimlilik CVE'leri icin erisilebilirlik (opt-in)
+
+`OSV_CALL_ANALYSIS=go bash scan.sh osv`, osv-scanner'a zafiyetli sembolun kodunda gercekten
+**cagrilip cagrilmadigini** sordurur. Acmayi guvenli kilan iki kural:
+
+- **Kapi gevsemez.** Call analysis acikken osv-scanner cagrilmayan zafiyetleri varsayilan olarak
+  duser; kit her zaman `--all-vulns` ile birlikte gecirir, boylece bulgu kumesi ve exit kodu
+  degismez. Kazandigin sey triyaj icin bir *cagrildi / cagrilmadi* sinyalidir — daha az bulgu degil.
+- **Build script yok.** Rust call analysis, bagimlilik agacinin build scriptlerini calistirarak
+  calisir. Ne raporlayacagina karar vermek icin guvenilmeyen kod calistiran bir tarayici kendi
+  kalemize goldur; bu yuzden `OSV_ALLOW_BUILD_SCRIPTS=1` ile acikca kabul etmedikce **reddedilir**.
+
+osv-scanner'in hicbir sey calistirmadan destekledigi ekosistem Go'dur. Python ve JS icin
+erisilebilirlik daha agir bir arac (`dep-scan`) ister ve shipping edilmiyor — ayrica "cagrilmadi"
+isareti kanit da degildir: cagri grafikleri reflection'i, dinamik dispatch'i ve plugin yuklemeyi
+kacirir, bu yuzden `sec-triage` bunu bir hukum degil, teraziye basan agir bir parmak sayar.
+
 ## Platform notlari (Windows: WSL2 kullan)
 
 Kit bash-oncelikli. Linux ve macOS native; Windows'ta desteklenen yol **WSL2**.

@@ -29,6 +29,9 @@
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
 #   REPORT=html (also render docs/security/scan-findings/report-<date>.html),
 #   SEMGREP_LOCAL_RULES=<paths|off> (repo-local rule dirs; default: auto-discover .semgrep/),
+#   OSV_CALL_ANALYSIS=go (reachability signal in scan.sh osv; adds --all-vulns so the gate is
+#     unchanged. rust also works but RUNS dependency build scripts -> refused unless
+#     OSV_ALLOW_BUILD_SCRIPTS=1),
 #   pins: GITLEAKS_VER/_DIGEST, TRIVY_VER/_DIGEST, SYFT_VER/_DIGEST,
 #         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER, GUARDDOG_VER, ZIZMOR_VER.
 set -uo pipefail
@@ -345,11 +348,35 @@ scan_sbom(){
 # OSV.dev. Standalone + opt-in so it doesn't double-gate with the other dep scanners.
 scan_osv(){
   docker_ok || { warn osv "no docker -> osv-scanner skipped"; return 0; }
-  say osv "osv-scanner scan source (all lockfile ecosystems)"
+
+  # Reachability (opt-in): osv-scanner can tell whether a vulnerable symbol is actually CALLED.
+  # Two rules make this safe to offer:
+  #
+  #   1. THE GATE DOES NOT LOOSEN. With call analysis on, osv-scanner drops uncalled vulnerabilities
+  #      by default — a security gate that silently reports less is the wrong trade. We always pair
+  #      it with --all-vulns, so everything is still reported and the exit code is unchanged; what
+  #      you gain is a called/uncalled SIGNAL for the judgment layer, not fewer findings.
+  #   2. NO BUILD SCRIPTS. Rust call analysis works by running the dependency tree's build scripts.
+  #      A scanner that executes untrusted code to decide what to report is an own-goal, so it is
+  #      refused unless someone explicitly accepts that with OSV_ALLOW_BUILD_SCRIPTS=1.
+  local call=""
+  if [ -n "${OSV_CALL_ANALYSIS:-}" ]; then
+    case "$OSV_CALL_ANALYSIS" in
+      *rust*)
+        if [ "${OSV_ALLOW_BUILD_SCRIPTS:-0}" != "1" ]; then
+          warn osv "call-analysis=rust RUNS dependency build scripts (executing untrusted code to decide reachability) -> refused; set OSV_ALLOW_BUILD_SCRIPTS=1 to accept that"
+          return 1
+        fi
+        warn osv "call-analysis=rust with OSV_ALLOW_BUILD_SCRIPTS=1 — build scripts from the dependency tree WILL execute"
+        call="--call-analysis=$OSV_CALL_ANALYSIS --all-vulns" ;;
+      *) call="--call-analysis=$OSV_CALL_ANALYSIS --all-vulns" ;;
+    esac
+  fi
+  say osv "osv-scanner scan source (all lockfile ecosystems)${call:+ [reachability: $OSV_CALL_ANALYSIS, gate unchanged]}"
   local out=""; [ "$SARIF" = "1" ] && out="--format sarif --output /repo/$(sarif_rel osv.sarif)"
   # shellcheck disable=SC2086
   docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
-    scan source --recursive $out /repo
+    scan source --recursive $call $out /repo
   local rc=$?
   case "$rc" in
     0) return 0 ;;                                              # scanned, clean
