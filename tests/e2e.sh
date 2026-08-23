@@ -136,6 +136,20 @@ printf '%s' "$AOUT" | grep -q 'GHSA-dddd-eeee-ffff is suppressed' \
   && no "allowlist: false positive on an id covered in both paths" || ok "allowlist: no false positive on a fully-covered id"
 printf '%s' "$AOUT" | grep -q 'with no expiry' \
   && ok "allowlist: entries with no expiry are counted" || no "allowlist: missing-expiry count absent"
+# .trivyignore.yaml also carries misconfig checks (AVD-/DS-/KSV-) and license ids. pip-audit can
+# never report those, so comparing them manufactures a gap that cannot exist — the noise that made
+# two of the first three real-repo warnings worthless.
+cat > .trivyignore.yaml <<'EOF'
+misconfigurations:
+  - id: AVD-DS-0002
+licenses:
+  - id: LGPL-3.0-or-later
+EOF
+TOUT="$($SCAN allowlist 2>&1)"
+printf '%s' "$TOUT" | grep -qE '(AVD-DS-0002|LGPL-3.0-or-later) is suppressed' \
+  && no "allowlist: non-advisory ids (misconfig/license) compared across paths" \
+  || ok "allowlist: only package-advisory namespaces are cross-checked (no misconfig/license noise)"
+rm -f .trivyignore.yaml
 # In sync + unexpired -> clean and quiet.
 cat > .pip-audit-ignore <<'EOF'
 GHSA-dddd-eeee-ffff  # no fix yet; expires 2099-01-01
