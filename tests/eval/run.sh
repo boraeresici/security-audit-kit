@@ -64,18 +64,70 @@ for envf in ./.env.local ./.env ../../.env.local ../../.env; do
   fi
 done
 
-# Provider key checks. Anthropic providers need ANTHROPIC_API_KEY; OpenAI-compatible
-# providers declare their key env var in the config as `apiKeyEnvar:`.
+# Provider key checks, PER PROVIDER. A config may list several backends so one run produces a
+# comparable table; an all-or-nothing check would skip the whole matrix because one key is absent —
+# which is how you end up never running the comparison at all. Providers whose key is missing are
+# dropped and the rest run, via promptfoo's --filter-providers.
+#
+# Key resolution: `apiKeyEnvar: X` inside the provider block wins; otherwise it is inferred from the
+# id prefix (anthropic: -> ANTHROPIC_API_KEY, openai: -> OPENAI_API_KEY, mistral: -> MISTRAL_API_KEY).
 if ! grep -q 'providers:' "$CONFIG"; then echo "[eval] SKIP: no providers in config"; exit 0; fi
-if grep -qE 'id:\s*anthropic:' "$CONFIG" && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "[eval] SKIP: ANTHROPIC_API_KEY not set (needed for the Anthropic provider)"; exit 0
-fi
-while IFS= read -r envar; do
-  [ -n "$envar" ] || continue
-  if [ -z "${!envar:-}" ]; then
-    echo "[eval] SKIP: $envar not set (declared as apiKeyEnvar in $CONFIG)"; exit 0
+
+PROVIDER_INDEX="$(awk '
+  /^providers:/ { inp = 1; next }
+  inp && /^[a-zA-Z]/ { inp = 0 }                       # left the providers block
+  inp && /^[[:space:]]*-[[:space:]]*id:/ {
+    if (id != "") { print id "\t" key; key = "" }
+    id = $0; sub(/.*id:[[:space:]]*/, "", id)
+    sub(/[[:space:]]*#.*$/, "", id)                    # a trailing comment is not part of the id
+    gsub(/["'"'"']/, "", id); gsub(/[[:space:]]+$/, "", id)
+    next
+  }
+  inp && /apiKeyEnvar:/ {
+    key = $0; sub(/.*apiKeyEnvar:[[:space:]]*/, "", key); gsub(/[^A-Za-z0-9_]/, "", key)
+  }
+  END { if (id != "") print id "\t" key }
+' "$CONFIG")"
+
+AVAILABLE=""; MISSING=""
+while IFS="$(printf '\t')" read -r pid pkey; do
+  [ -n "${pid:-}" ] || continue
+  if [ -z "${pkey:-}" ]; then
+    case "$pid" in
+      anthropic:*) pkey=ANTHROPIC_API_KEY ;;
+      mistral:*)   pkey=MISTRAL_API_KEY ;;
+      openai:*)    pkey=OPENAI_API_KEY ;;
+      *)           pkey="" ;;
+    esac
   fi
-done < <(grep -oE 'apiKeyEnvar:[[:space:]]*[A-Za-z_][A-Za-z_0-9]*' "$CONFIG" | sed 's/.*:[[:space:]]*//')
+  if [ -n "$pkey" ] && [ -z "${!pkey:-}" ]; then
+    MISSING="$MISSING $pid($pkey)"
+  else
+    AVAILABLE="$AVAILABLE $pid"
+  fi
+done <<EOF
+$PROVIDER_INDEX
+EOF
+
+PROVIDER_COUNT="$(printf '%s\n' "$PROVIDER_INDEX" | grep -c . || true)"
+if [ -z "${AVAILABLE# }" ]; then
+  echo "[eval] SKIP: no provider key set —$MISSING"; exit 0
+fi
+if [ -n "$MISSING" ]; then
+  echo "[eval] skipping providers with no key:$MISSING"
+fi
+# Only filter when we are actually dropping someone: a filter regex that matches everything is
+# noise, and on a single-provider config it would just be the id back again.
+FILTER_ARGS=""
+if [ -n "$MISSING" ] && [ "$PROVIDER_COUNT" -gt 1 ]; then
+  re=""
+  for pid in $AVAILABLE; do
+    # shellcheck disable=SC2016  # the $ is a regex metachar being escaped, not a variable
+    esc="$(printf '%s' "$pid" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')"
+    re="${re:+$re|}$esc"
+  done
+  FILTER_ARGS="--filter-providers $re"
+fi
 
 # Copy-paste guard: interactive zsh without interactive_comments passes a trailing
 # "# comment" through as real arguments — drop a literal "#" and everything after it.
@@ -87,6 +139,7 @@ rm -f "$OUT"   # never let score.mjs read a stale result from a previous run
 # provider errors, not a bad score (score.mjs excludes them). Override with EVAL_CONCURRENCY.
 CONC="${EVAL_CONCURRENCY:-4}"
 echo "[eval] promptfoo@$PROMPTFOO_VER — grading $SPLIT split via $CONFIG -> $OUT (concurrency $CONC)"
+# shellcheck disable=SC2086  # FILTER_ARGS is a deliberate word-split (flag + regex, or empty)
 npx -y "promptfoo@$PROMPTFOO_VER" eval -c "$CONFIG" -o "$OUT" --no-progress-bar \
-  --filter-metadata "split=$SPLIT" -j "$CONC" ${pass[@]+"${pass[@]}"} || true
+  --filter-metadata "split=$SPLIT" $FILTER_ARGS -j "$CONC" ${pass[@]+"${pass[@]}"} || true
 node score.mjs "$OUT"

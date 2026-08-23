@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - unreleased
+
+### Added (#10 — one run, every backend: the head-to-head eval table)
+- **`tests/eval/promptfooconfig.matrix.yaml`** runs all candidate backends against the same corpus,
+  prompt, grader and split **in a single run**. Comparing separate per-backend runs by hand is where
+  a comparison quietly stops being one.
+- **`run.sh` now checks provider keys per provider, not all-or-nothing.** Backends whose key env var
+  is unset are dropped (via `--filter-providers`) and the rest still run; only an empty set skips.
+  The old behaviour meant one absent key skipped the entire matrix — which is how a comparison
+  harness ends up never being run. Keys resolve from `apiKeyEnvar:` in the provider block, else from
+  the id prefix (`anthropic:` / `openai:` / `mistral:`).
+- **`score.mjs` groups results per provider** and prints one row each. This is a correctness fix, not
+  cosmetics: pooling two backends into one confusion matrix reports a model that does not exist. A
+  backend that errored out is printed as **"not measured"** rather than scored 0% — a dead provider
+  is not a bad model, and a 0% row would drag the whole table. Regression gates (`EVAL_MIN_RECALL` /
+  `EVAL_MIN_PRECISION`) now apply per backend and name which one failed. Single-provider output is
+  unchanged.
+- The table prints `differences under ~1 case are noise` — with 30 held-out cases one flip moves
+  recall by ~3-7 points, and a ranking read off that would be fiction.
+
+### Added (#9 — Windows: the WSL2 path, and `doctor` naming which shell you are in)
+- **Platform notes in both READMEs**: Linux/macOS native, **WSL2 the supported Windows path**, Git
+  Bash **partial** (uvx/pipx dimensions and hooks work; docker dimensions mangle the `/repo` mount
+  because MSYS rewrites it to a Windows path before docker sees it — `MSYS_NO_PATHCONV=1` or move to
+  WSL2), PowerShell/cmd unsupported. Plus the two WSL2 habits that actually bite: keep the repo on
+  the Linux side (scanning across `/mnt/c` is slow enough to change behaviour), and enable Docker
+  Desktop's WSL integration or the docker dimensions skip themselves with a notice.
+- **`scan.sh doctor` detects and names the platform** (MSYS/Git Bash vs WSL2), so a mangled docker
+  mount is reported rather than debugged.
+- The comparison doc's platform row says **documented, not yet verified by us** — we have no WSL2
+  machine here, and claiming a verified path we have not run would be exactly the kind of unearned
+  ✓ this doc exists to avoid.
+
 ## [1.14.0] - 2026-08-23
 
 ### Added (#14 — repo-local custom rules: the kit's engine, pointed at *your* invariants)

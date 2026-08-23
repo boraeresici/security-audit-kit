@@ -1,0 +1,43 @@
+# Head-to-head backend comparison — every candidate in ONE run, so the numbers are produced under
+# identical conditions (same corpus, same prompt, same grader, same split, same day). Diffing
+# separate per-backend runs by hand is where comparisons quietly stop being comparisons.
+#
+# Run:   EVAL_CONFIG=promptfooconfig.matrix.yaml bash run.sh
+#        EVAL_SPLIT=holdout EVAL_CONFIG=promptfooconfig.matrix.yaml bash run.sh   # the reportable one
+#
+# Providers whose key env var is unset are DROPPED and the rest still run (run.sh does this via
+# --filter-providers) — an absent key must not skip the whole matrix. score.mjs groups results per
+# provider and prints one row each; a backend that errors out is marked "not measured" instead of
+# scoring 0% and dragging the table with it.
+#
+# Reading the table: the corpus is 31 dev / 30 held-out cases, so ONE flipped case moves recall by
+# ~3-7 points. Treat sub-1-case gaps as noise, not a ranking.
+description: "sec-triage REAL/FP judgment — backend comparison matrix"
+
+prompts:
+  - file://triage_prompt.md
+
+providers:
+  - id: anthropic:messages:claude-opus-4-8       # baseline: the tier the skills actually run on
+  - id: openai:chat:z-ai/glm-5.2
+    label: glm-5.2-nim
+    config:
+      apiBaseUrl: https://integrate.api.nvidia.com/v1
+      apiKeyEnvar: NVIDIA_API_KEY
+  - id: openai:chat:glm-5.2
+    label: glm-5.2-zai
+    config:
+      apiBaseUrl: https://api.z.ai/api/paas/v4
+      apiKeyEnvar: ZAI_API_KEY
+  - id: mistral:mistral-large-3
+    label: mistral-large-3
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://grade.mjs   # shared by every backend config — keep scores comparable
+
+# Both splits are loaded; run.sh selects one via --filter-metadata split=<dev|holdout>.
+tests:
+  - file://cases.yaml
+  - file://cases.holdout.yaml

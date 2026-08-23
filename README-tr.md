@@ -200,6 +200,32 @@ surumu kullandigini sanir. Eski bootstrap ile yazilmis pinlerde ozet yoktur; ver
 tag'i vendor'daki `CHANGELOG` ile karsilastirir. Uyusmazlikta `bootstrap.sh <tag> --expect=<sha>`
 ile yeniden vendor et.
 
+## Platform notlari (Windows: WSL2 kullan)
+
+Kit bash-oncelikli. Linux ve macOS native; Windows'ta desteklenen yol **WSL2**.
+
+| Ortam | Durum | Not |
+|---|---|---|
+| Linux | ✓ tam | native |
+| macOS | ✓ tam | native (bash 3.2 — scriptler bilerek POSIX'e yakin durur) |
+| **WSL2** | ✓ tam | her seyi WSL dosya sistemi *icinde* kos; docker boyutlari Docker Desktop WSL entegrasyonuyla calisir |
+| Git Bash / MSYS | Kismi | `uvx`/`pipx` boyutlari ve git hook'lari calisir; **docker** boyutlari (secret, container, sbom, osv) guvenilmez — MSYS `/repo` mount'unu docker gormeden once Windows yoluna cevirir. Basina `MSYS_NO_PATHCONV=1` koy ya da WSL2'ye gec |
+| PowerShell / cmd | ✗ | desteklenmiyor — bash yok |
+
+`scan.sh doctor` hangisinde kostugunu yazar; boylece bozulmus bir mount debug edilmek yerine adiyla
+soylenir. WSL2'de onemli iki aliskanlik:
+
+- **Repo'yu Linux tarafinda tut** (`~/code/...`, `/mnt/c/...` degil). `/mnt/c` koprusu uzerinden
+  tarama davranisi degistirecek kadar yavastir — buyuk bir gecmiste gitleaks saniyelerden dakikalara
+  cikar.
+- **Docker Desktop'in WSL entegrasyonunu ac**; yoksa WSL icinde `docker info` basarisiz olur ve kit o
+  boyutlari bildirimle atlar (eksik-toolchain sozlesmesi calisiyor demektir — ama sandigindan az
+  tarama yapiyor olursun).
+
+> **Bizim tarafimizdan gercek bir WSL2 makinesinde henuz dogrulanmadi.** Yukaridaki yol scriptlerin
+> calisma biciminden cikiyor ve `doctor` neyi tespit ettigini soyluyor; WSL2 ya da Git Bash'te
+> kosarsan sonucu bildirmen degerli olur.
+
 ## Gereksinimler (hangisi yoksa o boyut atlanir)
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinli image, kurulum yok)
 - **uvx veya pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (kurulum yok, on-demand)
