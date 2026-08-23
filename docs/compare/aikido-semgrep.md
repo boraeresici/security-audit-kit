@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-08-23 · kit **v1.15.0**
+> **Last updated:** 2026-08-23 · kit **v1.16.0**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -38,7 +38,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | Custom rules (your own invariants) | Partial | ✓ (its core strength) | ✓ `semgrep-rules/` **composed with** the registry packs — adding a rule never costs you OWASP/stack packs — plus `doctor` showing how many rules actually **gate** (a non-ERROR rule loads and is then ignored) and `scan.sh rules-test` running semgrep's native rule tests |
 | Secrets detection | ✓ | ✓ | ✓ gitleaks — full history + sub-second staged mode |
 | Dependency CVE scanning (SCA) | ✓ | ✓ | ✓ pip-audit + npm/pnpm/yarn audit + OSV-Scanner (multi-ecosystem) |
-| Reachability analysis for SCA | ✓ | ✗ | 🔜 planned as an optional heavy dimension (prioritizes OSV output) |
+| Reachability analysis for SCA | ✓ | ✗ | Partial — opt-in `OSV_CALL_ANALYSIS=go` marks whether the vulnerable symbol is actually called, paired with `--all-vulns` so the gate never loosens; `sec-triage` treats it as evidence, not a verdict. Python/JS reachability needs a heavier tool and is not shipped. Rust is refused by default: it runs the dependency tree's build scripts |
 | Malicious package / typosquat detection | ✓ | ✗ | ✓ GuardDog (PyPI + npm) |
 | SBOM generation | ✓ | ✓ | ✓ syft — CycloneDX + SPDX |
 | License scanning | ✓ | ✓ | ✓ trivy license scanner |
@@ -49,7 +49,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | False-positive triage | ✓ AutoTriage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check; suppressions are audited for decay (`scan.sh allowlist`: expired deferrals, entries with no expiry, an advisory suppressed on one dependency path but not the others) |
 | Measured triage quality (precision/recall evals) | ✗ (marketing claims only) | ✗ | ✓ promptfoo eval harness with recall regression gates (`tests/eval/`) |
 | Structured evidence per finding | ✓ (dashboard) | Partial | ✓ `evidence.json` — every finding in one shape, severity normalized across tools (source value kept verbatim), CVSS only where a tool supplied one; deterministic and diffable |
-| AutoFix | ✓ AI AutoFix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan); 🔜 validated per-ecosystem fix commands + parent-aware transitive remediation |
+| AutoFix | ✓ AI AutoFix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan) with a per-ecosystem command table (direct vs transitive-forcing) and the direct/transitive + parent-range questions asked before any bump; 🔜 computing the parent-range answer automatically |
 | PoC / exploit validation | ✓ agentic pentesting (executes) | ✗ | 🔜 planned: **generate-only** PoC mode — the kit never executes exploits |
 | AI/LLM app security review (OWASP LLM Top 10) | ✗ | Partial | ✓ `sec-ai-review` skill |
 | Threat modeling | ✗ | ✗ | ✓ `sec-threat-model` (STRIDE + data flows) |
