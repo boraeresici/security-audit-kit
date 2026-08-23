@@ -4,7 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.15.0] - unreleased
+## [1.15.0] - 2026-08-23
+
+### Changed (process)
+- **`RELEASING.md` now describes the release prep as a PR**, not a direct commit to `main`. `main` is
+  protected (PR + required checks) and the prep step was telling us to push straight to it — which
+  bypasses the very gate this repo asks its consumers to keep. The doc sweep is written into that
+  step as a standing rule (READMEs en+tr, `docs/compare/*` + `landing/build.py`, diagrams, then
+  regenerate `CHECKSUMS` because docs live inside the manifest).
 
 ### Added (#13 — `scan.sh allowlist`: the decay detector for accepted risks)
 - **A suppression is an accepted risk with a shelf life, and both ways it rots are silent and fail in

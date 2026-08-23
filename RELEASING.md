@@ -26,20 +26,33 @@ low-friction release model:
 ### 1. Land the work on `main`
 Feature branches → PR → CI green (shellcheck / self-audit / checksums) → merge. (Same as today.)
 
-### 2. Prep the release commit
-On `main`, up to date:
+### 2. Prep the release commit — through a PR, like any other change
+`main` is protected (PR + required checks). The release prep is a change like any other: branch it,
+open a PR, let the checks run, merge. Pushing straight to `main` bypasses the very gate this repo
+asks its consumers to keep.
+
 ```sh
 git checkout main && git pull --ff-only
+git checkout -b chore/release-vX.Y.Z
+```
+Then, on that branch:
+```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
 # 2) regenerate + verify the integrity manifest (kit files changed)
 bash scan.sh checksums
 bash scan.sh verify
 # 3) full local e2e must pass
 bash tests/e2e.sh
-git add -A && git commit -m "chore: prep vX.Y.Z (checksums)"   # if checksums/CHANGELOG changed
-git push origin main
+git add -A && git commit -m "chore: prep vX.Y.Z (release date, doc sweep, checksums)"
+git push -u origin chore/release-vX.Y.Z
+gh pr create --base main --title "Release vX.Y.Z" --body "..."
 ```
-Wait for CI to go green on `main`.
+Wait for the PR checks, merge, then `git checkout main && git pull --ff-only`. Tags are cut on
+`main` after the merge — the tag itself is not a PR.
+
+**Doc sweep belongs in this commit** (standing rule): READMEs (en **and** tr), badges,
+`docs/compare/*` + re-run `landing/build.py`, the lifecycle diagrams, and any doc the release
+invalidates — then regenerate `CHECKSUMS`, because docs are inside the manifest.
 
 ### 3. Cut the RC and mark it pre-release
 ```sh
