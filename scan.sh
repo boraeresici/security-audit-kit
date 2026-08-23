@@ -20,12 +20,14 @@
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
 #   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
 #   checksums (Re)generate the CHECKSUMS manifest             (maintainer)
+#   rules-test Run semgrep --test over the repo's OWN rules    (no scan)
 #   evidence  Rebuild evidence.json from the SARIF on disk    (normalized findings; no scan)
 #   report    Render evidence.json as one HTML file           (offline, print-to-PDF; no scan)
 #
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
 #   REPORT=html (also render docs/security/scan-findings/report-<date>.html),
+#   SEMGREP_LOCAL_RULES=<paths|off> (repo-local rule dirs; default: auto-discover .semgrep/),
 #   pins: GITLEAKS_VER/_DIGEST, TRIVY_VER/_DIGEST, SYFT_VER/_DIGEST,
 #         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER, GUARDDOG_VER, ZIZMOR_VER.
 set -uo pipefail
@@ -73,6 +75,12 @@ ZIZMOR_ARGS="${ZIZMOR_ARGS:-}"
 # project gets its own injection rules (Django ORM, React XSS, …) instead of a one-size config.
 # Base packs (always): owasp-top-ten (incl. injection A03) + secrets. Only registry packs that
 # exist are referenced (a missing pack would hard-fail this deterministic gate).
+# `semgrep-rules/` is listed first and is the RECOMMENDED home: semgrep's own test runner skips
+# HIDDEN directories, so rules under `.semgrep/` scan fine but their tests are never discovered —
+# and an untested rule is exactly the thing that rots. `.semgrep*` stays supported for repos that
+# already use it.
+LOCAL_RULES_ANCHORS="semgrep-rules .semgrep .semgrep.yml .semgrep.yaml"
+
 detect_semgrep_configs(){
   local cfg="--config p/owasp-top-ten --config p/secrets"
   local files; files="$(git ls-files 2>/dev/null | grep -v node_modules)"
@@ -84,6 +92,13 @@ detect_semgrep_configs(){
     "$ROOT") ;;
     "$ROOT"/*) files="$(printf '%s\n' "$files" | awk -v p="${KIT_DIR#"$ROOT"/}/" 'index($0,p)!=1')" ;;
   esac
+  # Same reasoning for the repo's own rule directory: a rule's TEST FIXTURE (`.semgrep/foo.py`
+  # next to `foo.yaml`) is material for the rule, not the project's stack. Left in, one python
+  # fixture pulls p/python into a repo with no python at all.
+  local anchor
+  for anchor in $LOCAL_RULES_ANCHORS; do
+    files="$(printf '%s\n' "$files" | awk -v p="$anchor/" 'index($0,p)!=1')"
+  done
   # Dependency-manifest contents (small files only) — used to detect frameworks by package name.
   local manifests mtext=""
   manifests="$(printf '%s\n' "$files" | grep -E '(^|/)(requirements[^/]*\.txt|pyproject\.toml|Pipfile|package\.json|composer\.json|Gemfile)$')"
@@ -108,8 +123,59 @@ detect_semgrep_configs(){
   _hasf '\.cs$|\.csproj$'                              && cfg="$cfg --config p/csharp"
   printf '%s' "$cfg"
 }
+# ---- repo-local custom rules (the consumer's own invariants) ----
+# The kit owns the MECHANISM, the consumer owns the RULES: nothing project-specific ships here.
+# Discovery is anchored at literal paths under $ROOT — never `git ls-files | grep`, which would let
+# the VENDORED kit's own rule files define the consumer's ruleset (the v1.12.0 p/python class).
+# `SEMGREP_LOCAL_RULES=<path...>` overrides discovery; `=off` disables it entirely.
+
+local_rules_paths(){   # -> the anchors that actually exist, space separated, relative to $ROOT
+  [ "${SEMGREP_LOCAL_RULES:-}" = "off" ] && return 0
+  if [ -n "${SEMGREP_LOCAL_RULES:-}" ]; then printf '%s' "$SEMGREP_LOCAL_RULES"; return 0; fi
+  local out="" p
+  for p in $LOCAL_RULES_ANCHORS; do
+    [ -e "$ROOT/$p" ] && out="$out $p"
+  done
+  printf '%s' "${out# }"
+}
+
+local_rules_files(){   # -> every rule FILE under the anchors (for counting/inspection)
+  local p
+  for p in $(local_rules_paths); do
+    if [ -d "$ROOT/$p" ]; then
+      find "$ROOT/$p" -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null
+    elif [ -f "$ROOT/$p" ]; then
+      printf '%s\n' "$ROOT/$p"
+    fi
+  done
+}
+
+# id + severity per rule. `scan_sast` runs `--severity ERROR`, so a rule written at WARNING/INFO is
+# loaded and then silently ignored — "the rule exists, it just never gates". doctor must say so.
+local_rules_index(){
+  local f
+  for f in $(local_rules_files); do
+    awk '
+      /^[[:space:]]*-?[[:space:]]*id:[[:space:]]*/ {
+        id = $0; sub(/.*id:[[:space:]]*/, "", id); gsub(/["'"'"']/, "", id); gsub(/[[:space:]]+$/, "", id)
+      }
+      /^[[:space:]]*severity:[[:space:]]*/ {
+        sev = $0; sub(/.*severity:[[:space:]]*/, "", sev); gsub(/[^A-Za-z]/, "", sev)
+        if (id != "") { print id "\t" toupper(sev); id = "" }
+      }
+    ' "$f"
+  done
+}
+
 [ -n "${SEMGREP_CONFIGS:-}" ] && SEMGREP_CONFIGS_OVERRIDDEN=1
-SEMGREP_CONFIGS="${SEMGREP_CONFIGS:-$(detect_semgrep_configs)}"
+# BASE = the override verbatim, else the stack-auto packs. LOCAL is appended to EITHER: adding one
+# hand-written rule must never cost you the OWASP/stack packs (before, setting SEMGREP_CONFIGS to
+# reach a local rule silently replaced the whole list, and that list then rotted as the stack moved).
+SEMGREP_CONFIGS_BASE="${SEMGREP_CONFIGS:-$(detect_semgrep_configs)}"
+SEMGREP_CONFIGS_LOCAL=""
+for _p in $(local_rules_paths); do SEMGREP_CONFIGS_LOCAL="$SEMGREP_CONFIGS_LOCAL --config $_p"; done
+unset _p
+SEMGREP_CONFIGS="$SEMGREP_CONFIGS_BASE$SEMGREP_CONFIGS_LOCAL"
 
 have(){ command -v "$1" >/dev/null 2>&1; }
 say(){ printf '\033[36m[scan:%s]\033[0m %s\n' "$1" "$2"; }
@@ -341,6 +407,30 @@ scan_zizmor(){
   [ "$rc" -eq 0 ] && return 0 || return 1
 }
 
+# ---- rules-test: run semgrep's own rule tests over the repo's local rules ----
+# A custom rule is code, and untested code rots: the pattern stops matching after a refactor and the
+# gate goes quiet without ever failing. semgrep has a native test runner (rule + a fixture file
+# annotated with `# ruleid:` / `# ok:`); this just points it at the local rules.
+scan_rules_test(){
+  local paths; paths="$(local_rules_paths)"
+  [ -n "$paths" ] || { warn rules-test "no local rules found (${LOCAL_RULES_ANCHORS}) -> nothing to test"; return 0; }
+  local rc=0 p
+  for p in $paths; do
+    # semgrep's test runner skips hidden paths: rules under `.semgrep/` scan normally but their
+    # fixtures are invisible to `--test`, which would report "all clear" while testing nothing.
+    case "$p" in
+      .*) if find "$ROOT/$p" -type f ! -name '*.yml' ! -name '*.yaml' 2>/dev/null | grep -q .; then
+            warn rules-test "$p is HIDDEN — semgrep --test cannot discover fixtures there; move rules+tests to semgrep-rules/"
+            continue
+          fi ;;
+    esac
+    say rules-test "semgrep --test $p (==$SEMGREP_VER)"
+    pyrun semgrep "$SEMGREP_VER" semgrep --test --config "$p" "$p" \
+      || { [ $? -eq 127 ] && { warn rules-test "no uvx/pipx -> skipped"; return 0; }; rc=1; }
+  done
+  return $rc
+}
+
 # ---- doctor: report environment, pins and detected projects (no scan) ----
 scan_doctor(){
   printf '== security-audit-kit doctor ==\n'
@@ -356,7 +446,18 @@ scan_doctor(){
   printf '  syft       %s @ %s\n' "$SYFT_VER" "${SYFT_DIGEST:-<tag>}"
   printf '  osv-scanner %s @ %s\n' "$OSV_VER" "${OSV_DIGEST:-<tag>}"
   printf '  semgrep    %s\n' "${SEMGREP_VER:-<latest>}"
-  printf '  semgrep cfg %s%s\n' "$SEMGREP_CONFIGS" "$([ -n "${SEMGREP_CONFIGS_OVERRIDDEN:-}" ] && echo ' (from env/conf)' || echo ' (stack-auto)')"
+  printf '  semgrep cfg %s%s\n' "$SEMGREP_CONFIGS" "$([ -n "${SEMGREP_CONFIGS_OVERRIDDEN:-}" ] && echo ' (base from env/conf + local)' || echo ' (stack-auto + local)')"
+  # An override freezes the pack list at the moment it was written; the repo then grows and the
+  # list rots silently ("from env/conf" told you nothing about what it now MISSES). Say it.
+  if [ -n "${SEMGREP_CONFIGS_OVERRIDDEN:-}" ]; then
+    local auto missing="" pack
+    auto="$(detect_semgrep_configs)"
+    for pack in $auto; do
+      case "$pack" in --config) continue ;; esac
+      case " $SEMGREP_CONFIGS_BASE " in *" $pack "*) ;; *) missing="$missing $pack" ;; esac
+    done
+    [ -n "$missing" ] && printf '  semgrep cfg OVERRIDE is missing what stack-auto would add:%s\n' "$missing"
+  fi
   printf '  checkov    %s\n' "${CHECKOV_VER:-<latest>}"
   printf '  pip-audit  %s\n' "${PIP_AUDIT_VER:-<latest>}"
   printf '  guarddog   %s\n' "${GUARDDOG_VER:-<latest>}"
@@ -371,6 +472,33 @@ scan_doctor(){
   # dimensions overlap: pip-audit, osv-scanner and trivy read the same lockfiles and report the
   # same advisory under different ids. Listing which files exist makes a half-applied suppression
   # visible — otherwise an accepted risk silenced in one path returns as a HIGH in another.
+  # Repo-local rules: the kit's own engine pointed at YOUR invariants. Three things a maintainer
+  # cannot otherwise see: how many rules load, how many actually GATE, and whether they are tested.
+  printf '\nlocal semgrep rules (yours, not shipped by the kit):\n'
+  if [ "${SEMGREP_LOCAL_RULES:-}" = "off" ]; then
+    printf '  --  DISABLED by SEMGREP_LOCAL_RULES=off (.security-audit.conf or env)\n'
+  elif [ -z "$(local_rules_paths)" ]; then
+    printf '  --  none found (looked for: %s) — see README "repo-local rules"\n' "$LOCAL_RULES_ANCHORS"
+  else
+    local idx total gating nogate names
+    idx="$(local_rules_index)"
+    total="$(printf '%s' "$idx" | grep -c . || true)"
+    gating="$(printf '%s' "$idx" | grep -c 'ERROR$' || true)"
+    nogate=$(( total - gating ))
+    printf '  ok  %s — %s rule(s), %s gating\n' "$(local_rules_paths)" "$total" "$gating"
+    if [ "$nogate" -gt 0 ]; then
+      names="$(printf '%s' "$idx" | grep -v 'ERROR$' | cut -f1 | tr '\n' ' ')"
+      # scan_sast runs --severity ERROR: a WARNING/INFO rule loads and is then ignored. Without
+      # this line you would believe a rule guards you while it silently never fails a scan.
+      printf '  !!  %s rule(s) NOT at ERROR -> WILL NOT GATE: %s\n' "$nogate" "$names"
+    fi
+    if [ -n "$(local_rules_files)" ] && find $(local_rules_paths) -type f ! -name '*.yml' ! -name '*.yaml' 2>/dev/null | grep -q .; then
+      printf '  ok  rule tests present -> verify with: scan.sh rules-test\n'
+    else
+      printf '  --  no rule tests found (a rule with no test decays silently) -> scan.sh rules-test\n'
+    fi
+  fi
+
   printf '\nallowlists (a suppression must cover every path that reports the finding):\n'
   for f in .gitleaks.toml .pip-audit-ignore osv-scanner.toml .trivyignore.yaml .security-exclusions.md; do
     [ -f "$ROOT/$f" ] && printf '  ok  %-24s\n' "$f" || printf '  --  %-24s (absent)\n' "$f"
@@ -512,6 +640,7 @@ REPORT="${REPORT:-}"
 [ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
 [ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
+[ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
 
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
@@ -533,7 +662,7 @@ run_scans(){
     zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|evidence|report)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|evidence|report)"; return 2 ;;
   esac
   return $rc
 }

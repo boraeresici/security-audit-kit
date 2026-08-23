@@ -276,6 +276,84 @@ bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-Y
                                           |- GERCEK -> fix VEYA takip-listesi entry
 ```
 
+## Kendi kurallarin — `semgrep-rules/` + bir `.gitleaks.toml` girdisi
+
+Kit registry paketlerini kosar; bunlar **senin** degismezlerini bilmez: her ORM sorgusu tenant ile
+sinirli olmali, su alan tipi yasak, su helper bir request handler'dan asla cagrilmamali. Semgrep tam
+bunda iyi, bu yuzden kit mekanizmaya desteklenen bir giris noktasi verir. **Mekanizma kitin, kurallar
+senin** — projeye ozel hicbir sey burada shipping yapilmaz.
+
+Kurallari repo kokunde **`semgrep-rules/`** icine koy (`.semgrep/`, `.semgrep.yml`, `.semgrep.yaml`
+da calisir). Base ne ise ona **eklenir** — registry paketleri yerinde kalir:
+
+```
+semgrep cfg --config p/owasp-top-ten --config p/secrets --config p/javascript --config semgrep-rules (stack-auto + local)
+```
+
+Bu kompozisyon isin ozu. Onceden elle yazilmis bir kurala ulasmanin tek yolu `SEMGREP_CONFIGS`
+vermekti; o da listeyi **degistirir** — bir kural kazanip OWASP'i, secrets'i ve tum stack paketlerini
+sessizce kaybederdin, sonra o donmus liste stack buyudukce curur. Artik `SEMGREP_CONFIGS` yalniz
+*base*'i belirler; yerel kurallar her durumda ustune eklenir ve `doctor` donmus bir override'in
+hangi paketleri kacirdigini soyler.
+
+Bir kural ve testi, yan yana:
+
+```yaml
+# semgrep-rules/tenant-scope.yaml
+rules:
+  - id: unscoped-tenant-lookup
+    pattern: Model.objects.get(id=$X)
+    message: tenant filtresi olmayan ORM sorgusu — tenant'lar arasi okuma
+    severity: ERROR          # <- ERROR degilse KAPI OLMAZ (asagi bak)
+    languages: [python]
+```
+```python
+# semgrep-rules/tenant-scope.py
+# ruleid: unscoped-tenant-lookup
+Model.objects.get(id=order_id)
+# ok: unscoped-tenant-lookup
+Model.objects.filter(id=order_id, tenant=current_tenant)
+```
+
+Sonra `scan.sh rules-test` semgrep'in kendi test kosucusunu bunlarin uzerinde calistirir. Custom
+kural da koddur: bir refactor sonrasi pattern sessizce eslesmeyi birakir ve kapi susar; test edilmemis
+kural hic hata vermeden curur.
+
+**`doctor`'in senin icin yuzeye cikardigi iki tuzak:**
+
+```
+local semgrep rules (yours, not shipped by the kit):
+  ok  semgrep-rules — 2 rule(s), 1 gating
+  !!  1 rule(s) NOT at ERROR -> WILL NOT GATE: bare-except-pass
+  ok  rule tests present -> verify with: scan.sh rules-test
+```
+
+- `scan.sh sast` `--severity ERROR` ile kosar; `WARNING`/`INFO` yazilmis bir kural **yuklenir ve
+  yoksayilir** — kural vardir, ama hicbir seyi dusurmez. Bilerek bir "advisory" katmani yok: kapi
+  olmayan kapi, bu ozelligin kapattigi deligin ta kendisi.
+- Testi olmayan kurallar isaretlenir, cunku bir kural sessizce boyle olur.
+
+Tamamen kapatmak icin `SEMGREP_LOCAL_RULES=off`; baska yeri gostermek icin
+`SEMGREP_LOCAL_RULES=<yollar>`. Kesif bu literal yollara sabitlidir — agac taranmaz; yani vendor'daki
+bir kit kopyasi senin konfigurasyonuna asla kural ekleyemez ve bir kuralin test fixture'i senin
+stack'inin parcasi sayilmaz.
+
+**Sirlar icin ayni fikir.** `.gitleaks.toml` zaten bagli; gitleaks'in entropi kurallari duz bir
+`PASSWORD=hunter2`'yi kacirir, o yuzden gercekten istedigin kurali ekle:
+
+```toml
+# .gitleaks.toml
+[extend]
+useDefault = true
+
+[[rules]]
+id = "plaintext-password-assignment"
+description = "Config veya kodda duz metin parola atamasi"
+regex = '''(?i)\b(password|passwd|pwd)\s*[:=]\s*['"]?[^\s'"$#{}]{6,}'''
+[rules.allowlist]
+regexes = ['''(?i)(example|dummy|changeme|placeholder|\$\{|process\.env|os\.getenv)''']
+```
+
 ### Bir bulguyu bastirirken: raporlayan her yolu kapat
 
 Allowlist **arac** basinadir; triyaj karari ise **bulgu** hakkindadir — ve bazi boyutlar tasarim

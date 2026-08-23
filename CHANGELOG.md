@@ -4,6 +4,52 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - unreleased
+
+### Added (#14 — repo-local custom rules: the kit's engine, pointed at *your* invariants)
+- **`semgrep-rules/` at the repo root is now a supported entry point** (`.semgrep/`, `.semgrep.yml`,
+  `.semgrep.yaml` also work). The kit shipped the best custom-rule engine in the category and gave
+  you no way to use it: the only way to reach a hand-written rule was `SEMGREP_CONFIGS`, which
+  **wins verbatim** — you gained one rule and silently lost `p/owasp-top-ten`, `p/secrets` and every
+  stack pack, and that frozen list then rotted as the stack grew. Rules are now **composed**:
+  `SEMGREP_CONFIGS` sets only the *base*, and local rules are appended to it either way. This is the
+  difference between "we run the OWASP packs" and "we gate *your* invariants" — an unscoped ORM
+  lookup, a banned field type, a helper that must never be called from a request handler are exactly
+  what no registry pack can know.
+- **`doctor` surfaces the traps that made custom rules unreliable**: how many rules load, **how many
+  actually gate**, and which ones do not — `scan.sh sast` runs `--severity ERROR`, so a rule written
+  at `WARNING`/`INFO` loads and is then ignored ("the rule exists, it just never fails anything").
+  It also reports whether rule **tests** exist, and says `DISABLED` when the mechanism is switched
+  off. There is deliberately **no advisory/warn tier** — a gate that does not gate is the hole this
+  closes.
+- **`scan.sh rules-test`** wraps semgrep's native test runner (`# ruleid:` / `# ok:` fixtures). A
+  custom rule is code: after a refactor the pattern quietly stops matching and the gate goes silent,
+  so an untested rule decays without ever failing. `semgrep-rules/` is recommended over `.semgrep/`
+  precisely because semgrep's test runner **skips hidden directories** — rules there scan fine but
+  their tests are never discovered, and `rules-test` now says so instead of reporting "all clear".
+- **`doctor` also reports what a frozen override is missing.** Found in the field: a consumer's
+  `.security-audit.conf` pinned four packs while stack-auto computed seven — `p/python` absent in a
+  repo with 959 python files, plus `p/react` and `p/php` (an entire payment-gateway SDK). The line
+  now names them, which is the difference between an override being a *decision* and a *fossil*.
+- **Discovery is anchored at literal paths under the repo root — never a tree search.** Two
+  regressions are asserted in e2e: rule files inside the **vendored kit** can never become the
+  consumer's rules (the v1.12.0 `p/python` class), and a rule's own **test fixture** never counts
+  toward stack detection (one `.py` fixture would otherwise pull `p/python` into a repo with no
+  python). Off switch: `SEMGREP_LOCAL_RULES=off`; relocate with `SEMGREP_LOCAL_RULES=<paths>`.
+- READMEs (en/tr) ship a **skeleton, not content**: a rule + its test fixture, and a `.gitleaks.toml`
+  plaintext-password rule (gitleaks' entropy rules miss a flat `PASSWORD=hunter2`; the mechanism was
+  already wired, the rule was simply absent). **The kit owns the mechanism, the consumer owns the
+  rules** — nothing org- or stack-specific ships here. `security-audit.conf.example` documents the knob.
+
+### Added (#15 — `sec-threat-model`: the availability questions a static scan cannot answer)
+- Three vendor-neutral questions in the STRIDE-D checklist, for the failure mode where a control
+  exists on paper and nobody would notice it stopping: (1) do scheduled/background jobs alarm on
+  **non-execution** (a dead man's switch) or only on error — a cron that stops firing is invisible
+  to error-only alerting; (2) has a backup **restore** ever been executed and verified, or is the
+  existence of backups being mistaken for recoverability; (3) do critical external dependencies have
+  health checks **with alerting** and a defined degraded-mode behaviour ("undefined" is the finding).
+  Skill text only — no dimension, no dependency, no runtime.
+
 ## [1.13.1] - 2026-08-23
 
 ### Fixed (suppression fan-out — a triage decision must stick on every path that reports the finding)

@@ -44,6 +44,22 @@ For each trust boundary / data flow, walk STRIDE and ask "is this defended?":
 - **E — Elevation of privilege:** can a low role do a high action? (the authz gaps `sec-sast-deep` checks)
 Record each as: boundary | STRIDE | threat | existing control? | gap? | risk (likelihood × impact).
 
+### D, continued — the availability questions a static scan can never answer
+The kit cannot watch a running system, but this skill can ask **whether anyone does**. These three
+catch the failure mode where a control exists on paper and nobody would notice it stopping. Ask them
+of the design, record the answers like any other threat:
+1. **Silent non-execution.** Do scheduled / background / queue jobs alarm when they **do not run**
+   (a dead man's switch), or only when they error? A cron that stops firing is invisible to
+   error-only alerting — the backup that never ran, the reconciliation that stopped reconciling.
+2. **Untested recovery.** Has a backup **restore** ever been executed and verified end to end, or is
+   the existence of backups being mistaken for recoverability? An unrestored backup is a hypothesis.
+3. **Dependency failure behaviour.** Do critical external dependencies (payment provider, identity
+   provider, queue, third-party API) have health checks **with alerting**, and is there a defined
+   degraded-mode behaviour — fail closed, fail open, queue and retry? "Undefined" is the finding.
+
+Phrase findings in terms of the repo's own components; name no vendor or product. The answers land
+in `findings-<TODAY>.md` on the normal path — this adds no dimension, no dependency, no runtime.
+
 ## Phase 3 — rank + record + hand off
 - Rank by risk; focus on **high impact × plausible**.
 - Write/update **`docs/security/threat-model-<TODAY>.md`** (the living model: a DFD summary table +

@@ -272,6 +272,84 @@ finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-
                                            |- REAL -> fix OR follow-up registry entry
 ```
 
+## Your own rules — `semgrep-rules/` + a `.gitleaks.toml` entry
+
+The kit runs registry packs, which know nothing about *your* invariants: every ORM lookup must be
+tenant-scoped, this field type is banned, that helper must never be called from a request handler.
+Semgrep is very good at exactly this, so the kit gives the mechanism a supported entry point. **The
+kit owns the mechanism, you own the rules** — nothing project-specific ships here.
+
+Drop rules in **`semgrep-rules/`** at the repo root (`.semgrep/`, `.semgrep.yml`, `.semgrep.yaml`
+also work). They are **appended** to whatever the base is — registry packs stay:
+
+```
+semgrep cfg --config p/owasp-top-ten --config p/secrets --config p/javascript --config semgrep-rules (stack-auto + local)
+```
+
+That composition is the point. Before, the only way to reach a hand-written rule was to set
+`SEMGREP_CONFIGS`, which **replaces** the list — you gained one rule and silently lost OWASP, secrets
+and every stack pack, and that frozen list then rotted as the stack grew. Now `SEMGREP_CONFIGS` sets
+only the *base*; local rules are added on top of it either way, and `doctor` tells you which packs a
+frozen override is now missing.
+
+A rule and its test, side by side:
+
+```yaml
+# semgrep-rules/tenant-scope.yaml
+rules:
+  - id: unscoped-tenant-lookup
+    pattern: Model.objects.get(id=$X)
+    message: ORM lookup without a tenant filter — cross-tenant read
+    severity: ERROR          # <- ERROR or it will NOT gate (see below)
+    languages: [python]
+```
+```python
+# semgrep-rules/tenant-scope.py
+# ruleid: unscoped-tenant-lookup
+Model.objects.get(id=order_id)
+# ok: unscoped-tenant-lookup
+Model.objects.filter(id=order_id, tenant=current_tenant)
+```
+
+Then `scan.sh rules-test` runs semgrep's own test runner over them. A custom rule is code: after a
+refactor the pattern quietly stops matching and the gate goes silent, so an untested rule decays
+without ever failing.
+
+**Two traps `doctor` now surfaces for you:**
+
+```
+local semgrep rules (yours, not shipped by the kit):
+  ok  semgrep-rules — 2 rule(s), 1 gating
+  !!  1 rule(s) NOT at ERROR -> WILL NOT GATE: bare-except-pass
+  ok  rule tests present -> verify with: scan.sh rules-test
+```
+
+- `scan.sh sast` runs `--severity ERROR`, so a rule written at `WARNING`/`INFO` **loads and is then
+  ignored** — the rule exists, it just never fails anything. There is deliberately no "advisory"
+  tier: a gate that does not gate is the hole this feature closes.
+- Rules with no tests are called out, because that is how a rule dies quietly.
+
+Turn it all off with `SEMGREP_LOCAL_RULES=off`; point it elsewhere with `SEMGREP_LOCAL_RULES=<paths>`.
+Discovery is anchored at those literal paths — it never searches the tree, so a vendored copy of the
+kit can never contribute rules to your config, and a rule's own test fixture never counts as part of
+your stack.
+
+**Secrets, same idea.** `.gitleaks.toml` is already wired in; gitleaks' entropy rules miss a flat
+`PASSWORD=hunter2`, so add the rule you actually want:
+
+```toml
+# .gitleaks.toml
+[extend]
+useDefault = true
+
+[[rules]]
+id = "plaintext-password-assignment"
+description = "Plaintext password assigned in config or code"
+regex = '''(?i)\b(password|passwd|pwd)\s*[:=]\s*['"]?[^\s'"$#{}]{6,}'''
+[rules.allowlist]
+regexes = ['''(?i)(example|dummy|changeme|placeholder|\$\{|process\.env|os\.getenv)''']
+```
+
 ### Suppressing a finding: cover every path that reports it
 
 An allowlist is per **tool**; a triage decision is about a **finding** — and several dimensions

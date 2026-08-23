@@ -50,6 +50,56 @@ done
 echo "-- doctor --"
 $SCAN doctor >/dev/null 2>&1 && ok "doctor ran" || no "doctor failed"
 
+echo "-- repo-local custom rules (the consumer's own invariants) --"
+mkdir -p semgrep-rules
+cat > semgrep-rules/local.yaml <<'YAML'
+rules:
+  - id: local-gating-rule
+    pattern: eval(...)
+    message: local rule that must gate
+    severity: ERROR
+    languages: [python]
+  - id: local-warning-rule
+    pattern: print(...)
+    message: local rule at WARNING — loaded but never gates
+    severity: WARNING
+    languages: [python]
+YAML
+# A rule's test fixture is material for the RULE, not the project's stack: this .py must not pull
+# p/python into a repo that has no python (same class as the vendored-kit leak).
+cat > semgrep-rules/local.py <<'PY'
+# ruleid: local-gating-rule
+eval("1")
+# ok: local-gating-rule
+int("1")
+PY
+git -c user.email=e2e@test -c user.name=e2e add semgrep-rules >/dev/null 2>&1
+RDOC="$($SCAN doctor 2>/dev/null)"
+printf '%s' "$RDOC" | grep -q 'semgrep cfg .*--config semgrep-rules' \
+  && ok "rules: local rules appended to the stack-auto packs" || no "rules: local rules not composed"
+printf '%s' "$RDOC" | grep -q 'semgrep cfg .*p/python' \
+  && no "rules: a rule test fixture leaked into stack detection" || ok "rules: rule fixtures do not define the stack"
+printf '%s' "$RDOC" | grep -q 'WILL NOT GATE: local-warning-rule' \
+  && ok "rules: a non-ERROR rule is reported as non-gating" || no "rules: silent non-gating rule not surfaced"
+printf '%s' "$RDOC" | grep -q 'rule tests present' \
+  && ok "rules: rule tests detected" || no "rules: rule tests not detected"
+# The whole point of the composition: adding one local rule must NOT cost you the registry packs.
+ODOC="$(SEMGREP_CONFIGS='--config p/owasp-top-ten' $SCAN doctor 2>/dev/null)"
+printf '%s' "$ODOC" | grep -q 'semgrep cfg .*p/owasp-top-ten --config semgrep-rules' \
+  && ok "rules: local rules append even when SEMGREP_CONFIGS overrides the base" || no "rules: override drops local rules"
+printf '%s' "$ODOC" | grep -q 'OVERRIDE is missing what stack-auto would add' \
+  && ok "rules: a frozen override reports the packs it now misses" || no "rules: override rot not surfaced"
+printf '%s' "$(SEMGREP_LOCAL_RULES=off $SCAN doctor 2>/dev/null)" | grep -q 'DISABLED by SEMGREP_LOCAL_RULES=off' \
+  && ok "rules: off switch honoured" || no "rules: off switch ignored"
+# Regression (v1.12.0 class): rule files shipped INSIDE the vendored kit must never become the
+# consumer's rules — discovery is anchored at $ROOT literally, not by searching the tree.
+mkdir -p tools/security-audit-kit/semgrep-rules
+cp semgrep-rules/local.yaml tools/security-audit-kit/semgrep-rules/kit-own.yaml
+printf '%s' "$($SCAN doctor 2>/dev/null)" | grep -q 'config tools/security-audit-kit/semgrep-rules' \
+  && no "rules: the vendored kit's own rules reached the consumer" || ok "rules: vendored kit's own rules stay out of the consumer's config"
+rm -rf tools/security-audit-kit/semgrep-rules
+rm -rf semgrep-rules && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+
 echo "-- allowlist surface (doctor lists every suppression path) --"
 # A dependency CVE is reported by py-deps + osv + container, so a suppression written to one file
 # leaves the others firing. doctor has to make a half-applied suppression visible.
@@ -65,7 +115,7 @@ printf '%s' "$ADOC" | grep -q 'osv-scanner.toml' && printf '%s' "$ADOC" | grep -
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
 DOC="$($SCAN doctor 2>/dev/null)"
-printf '%s' "$DOC" | grep -q 'semgrep cfg .*owasp-top-ten.*secrets.*(stack-auto)' && ok "cfg: base packs auto" || no "cfg: base packs missing"
+printf '%s' "$DOC" | grep -q 'semgrep cfg .*owasp-top-ten.*secrets.*(stack-auto' && ok "cfg: base packs auto" || no "cfg: base packs missing"
 printf '%s' "$DOC" | grep -q 'semgrep cfg.*p/python' && no "cfg: python pack on non-python repo" || ok "cfg: no language pack on bash repo"
 # Plant a python+react stack -> should pull p/python and p/react.
 mkdir -p stack/backend stack/frontend
@@ -80,7 +130,7 @@ printf '%s' "$DOC2" | grep -q 'p/python' && printf '%s' "$DOC2" | grep -q 'p/dja
 # Explicit override wins verbatim, nothing appended. Capture first (env-prefixed pipeline +
 # pipefail is fragile) — same command-substitution form as the base/stack assertions above.
 OVR="$(SEMGREP_CONFIGS='--config p/custom' $SCAN doctor 2>/dev/null)"
-printf '%s' "$OVR" | grep -q 'semgrep cfg --config p/custom (from env/conf)' && ok "cfg: env override wins" || no "cfg: env override ignored"
+printf '%s' "$OVR" | grep -q 'semgrep cfg --config p/custom (base from env/conf' && ok "cfg: env override wins" || no "cfg: env override ignored"
 # Robust cleanup: `git rm` fails silently on staged-but-uncommitted paths (no -f), leaving them
 # tracked. Remove the working tree then `git add -A` the path to stage its removal from the index.
 rm -rf stack; git -c user.email=e2e@test -c user.name=e2e add -A stack >/dev/null 2>&1

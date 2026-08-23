@@ -22,6 +22,12 @@
 # p/javascript, p/typescript, p/react, p/golang, p/java, p/php, p/ruby, p/csharp).
 # Set it ONLY to override that auto-selection verbatim (env/conf wins, nothing is appended):
 # : "${SEMGREP_CONFIGS:=--config p/owasp-top-ten --config p/django --config p/secrets --config p/javascript}"
+#
+# Repo-local rules (YOURS). Auto-discovered at semgrep-rules/ (.semgrep/ also works) and
+# APPENDED to the base above — setting SEMGREP_CONFIGS no longer costs you your own rules.
+# Point elsewhere, or switch the mechanism off entirely:
+# : "${SEMGREP_LOCAL_RULES:=semgrep-rules}"
+# : "${SEMGREP_LOCAL_RULES:=off}"
 
 # --- IaC (checkov) ---
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.
