@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.13.1] - 2026-08-12
+## [1.13.1] - 2026-08-23
 
 ### Fixed (suppression fan-out — a triage decision must stick on every path that reports the finding)
 - **The allowlist model was per-tool while a triage decision is per-finding.** A dependency CVE is
