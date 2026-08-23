@@ -165,6 +165,40 @@ the vendored copy. The only files you write are the project's own: the findings 
      now. A not-in-KEV, low-EPSS CVE with no available patch is safer to defer with a follow-up.
      (On-demand lookup only — the kit does not vendor these feeds; they must stay fresh.)
 
+   **Fixing a dependency CVE — answer three questions in order.** "Bump it" is not an instruction;
+   the cost of the bump is the decision.
+
+   1. **Is the vulnerable package a DIRECT dependency or a transitive one?** Check the manifest, not
+      the lockfile: if it is not listed there, something else pulls it in. This changes everything
+      below — you cannot upgrade what you do not declare.
+   2. **Does the fixed version fit the parent's declared range?** For a transitive dep, read the
+      parent's constraint (`npm ls <pkg>` / `pnpm why <pkg>` / `uv pip tree` / `pip show <parent>`).
+      If the fix is inside the range, bumping the **parent** resolves it cleanly. If it is outside —
+      the fix is a major and the parent has not adopted it — that is a **different decision** with
+      its own risk, not a bump: record it as such rather than forcing it.
+   3. **Only if the parent will not carry the fix**, pin it yourself — and know what you are doing:
+      an override runs the parent against a version its maintainers never tested with it.
+
+   Command shape per ecosystem (use the one this repo actually uses; `scan.sh doctor` names the
+   detected package manager):
+
+   | Ecosystem | Direct dependency | Forcing a transitive version |
+   |---|---|---|
+   | pnpm | `pnpm up <pkg>@<ver>` | `pnpm.overrides` in `package.json` |
+   | npm | `npm install <pkg>@<ver>` | `overrides` in `package.json` |
+   | yarn | `yarn up <pkg>@<ver>` | `resolutions` in `package.json` |
+   | uv | `uv lock --upgrade-package <pkg>` | a `>=` floor in `pyproject.toml` |
+   | pip / requirements | `pip install -U <pkg>` + repin | a constraints file (`-c`) |
+   | poetry | `poetry update <pkg>` | an explicit dependency entry |
+
+   Write the **exact command for this repo** into the findings row, not a generic one — the next
+   person should be able to paste it. Then **re-run that dimension** (`scan.sh py-deps` / `osv` /
+   `container`) and confirm it is clean: an unverified fix is the same class of claim as an
+   unverified suppression.
+
+   > Not yet automated: the kit does **not** compute the parent-range answer for you (question 2).
+   > That needs per-ecosystem resolver calls and is tracked separately; today it is a lookup you run.
+
 7. **Summary:** counts of REAL / UNCERTAIN / FP / suppressed; which allowlists (name every file you
    wrote to, and for a dependency CVE state explicitly which of the three paths are now covered and
    which dimensions you re-ran to prove it); which fixes; which
