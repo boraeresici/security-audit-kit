@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - unreleased
+
+### Changed (#8, first half — remediation: the cost of the bump is the decision)
+- **`sec-triage` step 6 now tells you how to fix a dependency CVE, not just that you should.**
+  "Bump it" is not an instruction. The skill asks three questions in order: is the package **direct
+  or transitive** (read the manifest, not the lockfile — you cannot upgrade what you do not
+  declare); **does the fixed version fit the parent's declared range** (`npm ls` / `pnpm why` /
+  `uv pip tree` / `pip show`), in which case bumping the *parent* resolves it cleanly; and only if
+  the parent will not carry the fix, pin it yourself — knowing that an override runs the parent
+  against a version its maintainers never tested with it.
+- A **per-ecosystem command table** (pnpm / npm / yarn / uv / pip / poetry), with the direct-dep
+  form and the transitive-forcing form side by side, so the findings row carries the exact command
+  for *this* repo rather than a generic one. Then re-run that dimension: an unverified fix is the
+  same class of claim as an unverified suppression.
+- This is deliberately the **judgment half** of T2.2. The kit does **not** compute the parent-range
+  answer — that needs per-ecosystem resolver calls, and it stays tracked as its own item rather than
+  being half-built here. The skill says so instead of implying automation that does not exist.
+
 ## [1.15.0] - 2026-08-23
 
 ### Changed (process)
