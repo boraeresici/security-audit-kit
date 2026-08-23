@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-08-12 · kit **v1.13.0**
+> **Last updated:** 2026-08-23 · kit **v1.14.0**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -35,6 +35,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 |---|---|---|---|
 | SAST | ✓ (Opengrep engine) | ✓ | ✓ semgrep (pinned), stack-aware ruleset auto-selection |
 | Deep semantic SAST (authz/IDOR, business logic) | Partial (taint) | Partial (taint, Pro) | ✓ `sec-sast-deep` skill — flaw classes rule engines can't express |
+| Custom rules (your own invariants) | Partial | ✓ (its core strength) | ✓ `semgrep-rules/` **composed with** the registry packs — adding a rule never costs you OWASP/stack packs — plus `doctor` showing how many rules actually **gate** (a non-ERROR rule loads and is then ignored) and `scan.sh rules-test` running semgrep's native rule tests |
 | Secrets detection | ✓ | ✓ | ✓ gitleaks — full history + sub-second staged mode |
 | Dependency CVE scanning (SCA) | ✓ | ✓ | ✓ pip-audit + npm/pnpm/yarn audit + OSV-Scanner (multi-ecosystem) |
 | Reachability analysis for SCA | ✓ | ✗ | 🔜 planned as an optional heavy dimension (prioritizes OSV output) |
