@@ -25,6 +25,11 @@ All notable changes to this project are documented here. The format is based on
   from another**. Expiries are read natively where the tool has them (`ignoreUntil` in
   `osv-scanner.toml`, `expiredAt` in `.trivyignore.yaml`) and by the kit's `# expires YYYY-MM-DD`
   convention elsewhere. ISO dates compare lexically — no date arithmetic, no locale.
+- **Only package-advisory namespaces are cross-checked** (`CVE-` / `GHSA-` / `PYSEC-` / `OSV-`).
+  `.trivyignore.yaml` also carries trivy's misconfiguration checks (`AVD-…`/`DS-…`/`KSV-…`) and
+  license ids (`LGPL-3.0-or-later`); pip-audit can never report those, so comparing them
+  manufactures a gap that cannot exist. Caught by dogfooding rc.1 on a real repo, where two of the
+  three warnings were exactly that — a detector two-thirds noise is one nobody reads.
 - **Deliberately under-reports.** The cross-path check compares **exact ids**, so alias pairs
   (`PYSEC-…` / `CVE-…` / `GHSA-…` of one advisory) are not matched and their gaps are missed. That
   is the intended trade: a false "you are covered" is worse than a missed hint, and a detector that

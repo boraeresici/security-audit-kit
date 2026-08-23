@@ -606,10 +606,16 @@ EOF
   # another. EXACT ids only — PYSEC-…/CVE-…/GHSA-… aliases of one advisory are NOT resolved here, so
   # silence is not proof of coverage. Deliberately under-reports: a false "you're covered" is worse
   # than a missed hint, and a noisy detector is one people stop reading.
+  #
+  # ONLY package-advisory namespaces are compared. `.trivyignore.yaml` also carries trivy's
+  # misconfiguration checks (AVD-…/DS-…/KSV-…) and license ids (LGPL-3.0-or-later) — pip-audit can
+  # never report those, so comparing them manufactures a gap that cannot exist. Two of the three
+  # warnings on the first real repo were exactly that; a detector two-thirds noise gets ignored.
+  local ADVISORY_NS='^(CVE|GHSA|PYSEC|OSV)-'
   local a b ids_a ids_b missing_any=0
   for a in $DEP_ALLOWLISTS; do
     [ -f "$ROOT/$a" ] || continue
-    ids_a="$(allowlist_entries "$a" | cut -f1 | grep -vx '(entry)' || true)"
+    ids_a="$(allowlist_entries "$a" | cut -f1 | grep -Ex "$ADVISORY_NS.*" || true)"
     [ -n "$ids_a" ] || continue
     for b in $DEP_ALLOWLISTS; do
       [ "$a" = "$b" ] && continue
@@ -628,8 +634,10 @@ EOF
   done
   if [ "$missing_any" = 1 ]; then
     printf '      A dependency CVE is reported by py-deps + osv + container: an entry in one path\n'
-    printf '      does not silence the others. Exact-id comparison only — aliases (PYSEC/CVE/GHSA of\n'
-    printf '      the same advisory) are not resolved, so no warning here does NOT prove coverage.\n'
+    printf '      does not silence the others. Compared: CVE/GHSA/PYSEC/OSV ids only (trivy misconfig\n'
+    printf '      and license ids are out of scope). Exact ids — aliases of one advisory are not\n'
+    printf '      resolved, and an OS-package CVE has no pip-audit counterpart, so a warning is a\n'
+    printf '      prompt to check, and silence does NOT prove coverage.\n'
     rc=1
   fi
   [ -z "$present" ] && printf '  (no allowlists in this repo — nothing to audit)\n'
