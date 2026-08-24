@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.1] - 2026-08-24
+
+### Fixed (docs — the flow diagrams described less than the kit does)
+- The lifecycle diagram and the finding-loop sketch had fallen behind three releases of behaviour,
+  which is worse than merely stale: a reader took the wrong mental model from the most-looked-at
+  part of the README.
+  - **The `verify` gate was invisible.** `pre-push` has run `scan.sh verify` since v1.12.0 — an
+    edited vendored kit blocks the push — and neither flow showed it. Both now do, including the
+    restore path and the rule that kit bugs go upstream rather than being patched in place.
+  - **The artifacts were missing.** The diagram claimed the scan writes `raw-DATE.log +
+    summary.json`; `evidence.json`, `sarif/kit.sarif` and `report-DATE.html` (v1.13.0) were absent.
+    The judgment findings reaching GitHub Code Scanning is now drawn, not just described in prose.
+  - **The verification loop was missing.** "An unrun suppression is a hypothesis" is a rule the
+    skills state twice, and the flow still ended at *write the allowlist entry*. Both flows now end
+    at **prove it**: `scan.sh allowlist` plus re-running the affected dimension, with the expiry
+    requirement on each entry.
+- Verified by rendering: the diagram was run through the official mermaid CLI and produces a valid
+  SVG. A README diagram that fails to parse degrades silently on GitHub, so "it looks right" is not
+  a check.
+- No code changes — the doc sweep that should have ridden along with v1.14.0–v1.16.0, applied late.
+
 ## [1.16.0] - 2026-08-23
 
 ### Added (#7, free slice — reachability for dependency CVEs, no new tool)

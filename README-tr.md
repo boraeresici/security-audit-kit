@@ -49,10 +49,12 @@ flowchart TD
     C -->|up to date| R
     C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
     RV --> B
-    B --> I["vendor + .kit-version, then install.sh:<br/>hooks, skills, .conf, .exclusions, verify"]
+    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks, skills, .conf, .exclusions, verify"]
     I --> R(["ready"])
 
-    R --> S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>writes raw-DATE.log + summary.json"]
+    R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
+    V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
+    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>raw-DATE.log + summary.json<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
     S -->|clean| D(["done"])
     S -->|findings| T1
 
@@ -68,9 +70,12 @@ flowchart TD
       TM -. appends .-> F
     end
 
-    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md"]
-    F -->|REAL| FX["fix now, OR promote to<br/>security-followups registry"]
-    FX --> S
+    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md — each with an expiry"]
+    F -->|REAL| FX["fix now (direct? transitive? parent range?),<br/>OR promote to security-followups registry"]
+    AL --> P["PROVE IT: scan.sh allowlist + re-run that dimension"]
+    FX --> P
+    P --> S
+    F -. "SARIF=1: judgment findings become sarif/kit.sarif" .-> CS[["GitHub Code Scanning"]]
 ```
 
 Skill sirasi: **`/sec-triage` once kosar** (her bulgulu taramadan sonra; `findings-DATE.md`
@@ -91,13 +96,13 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.16.0
-bash bootstrap.sh v1.16.0 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.16.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.16.1
+bash bootstrap.sh v1.16.1 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.16.1 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.16.0`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.16.1`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
@@ -130,7 +135,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.16.0          # bir tag'e pinle
+  rev: v1.16.1          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -175,9 +180,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    (clone yok):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.15.0
-   # latest tag       : v1.16.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.0
+   # vendored version : v1.16.0
+   # latest tag       : v1.16.1
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.1
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
    `make` hedefine baglanabilir.
@@ -187,9 +192,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.16.0   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.16.1   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.16.0'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.16.1'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
@@ -311,7 +316,8 @@ Otomatik tetik (install sonrasi):
 
 ```
 her commit  --(pre-commit)-->  scan.sh staged  (+ manifest degistiyse deps)
-PR oncesi   --(pre-push)----->  scan.sh all
+PR oncesi   --(pre-push)----->  scan.sh verify   (butunluk: elle duzenlenmis vendor kopyasi push'u bloklar)
+                           \-->  scan.sh all
 bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-YYYY-MM-DD.md
                                           |- FP    -> raporlayan HER yolu allowlist'le
                                           |           (.gitleaks.toml / nosemgrep /

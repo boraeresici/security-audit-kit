@@ -49,10 +49,12 @@ flowchart TD
     C -->|up to date| R
     C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
     RV --> B
-    B --> I["vendor + .kit-version, then install.sh:<br/>hooks, skills, .conf, .exclusions, verify"]
+    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks, skills, .conf, .exclusions, verify"]
     I --> R(["ready"])
 
-    R --> S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>writes raw-DATE.log + summary.json"]
+    R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
+    V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
+    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>raw-DATE.log + summary.json<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
     S -->|clean| D(["done"])
     S -->|findings| T1
 
@@ -68,9 +70,12 @@ flowchart TD
       TM -. appends .-> F
     end
 
-    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md"]
-    F -->|REAL| FX["fix now, OR promote to<br/>security-followups registry"]
-    FX --> S
+    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md — each with an expiry"]
+    F -->|REAL| FX["fix now (direct? transitive? parent range?),<br/>OR promote to security-followups registry"]
+    AL --> P["PROVE IT: scan.sh allowlist + re-run that dimension"]
+    FX --> P
+    P --> S
+    F -. "SARIF=1: judgment findings become sarif/kit.sarif" .-> CS[["GitHub Code Scanning"]]
 ```
 
 Skill order: **`/sec-triage` runs first** after any scan with findings (writes `findings-DATE.md`,
@@ -90,13 +95,13 @@ re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, revie
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.16.0
-bash bootstrap.sh v1.16.0 --scan          # also run a full scan after install
-bash bootstrap.sh v1.16.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.16.1
+bash bootstrap.sh v1.16.1 --scan          # also run a full scan after install
+bash bootstrap.sh v1.16.1 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.16.0`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.16.1`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
@@ -129,7 +134,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.16.0          # pin a tag
+  rev: v1.16.1          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -172,9 +177,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
    against the newest semver tag in the kit repo via `git ls-remote` (no clone):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.15.0
-   # latest tag       : v1.16.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.0
+   # vendored version : v1.16.0
+   # latest tag       : v1.16.1
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.1
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
    periodic check or a `make` target.
@@ -184,9 +189,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.16.0   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.16.1   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.16.0"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.16.1"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
@@ -307,12 +312,18 @@ Automatic triggers (after install):
 
 ```
 every commit --(pre-commit)-->  scan.sh staged  (+ deps if a manifest changed)
-before a PR  --(pre-push)----->  scan.sh all
+before a PR  --(pre-push)----->  scan.sh verify   (integrity: an edited vendored kit blocks the push)
+                            \-->  scan.sh all
 finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-YYYY-MM-DD.md
                                            |- FP   -> allowlist EVERY reporting path
                                            |          (.gitleaks.toml / nosemgrep /
                                            |           .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
+                                           |          + an expiry on each entry
                                            |- REAL -> fix OR follow-up registry entry
+                                           v
+                                          PROVE IT: scan.sh allowlist  (expired? cross-path gap?)
+                                                    re-run that dimension until clean
+                                          an unrun suppression, like an unrun fix, is a hypothesis
 ```
 
 ## Your own rules — `semgrep-rules/` + a `.gitleaks.toml` entry
