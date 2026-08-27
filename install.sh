@@ -21,7 +21,18 @@ have(){ command -v "$1" >/dev/null 2>&1; }
 # --skills-only: install skills/config but DON'T touch git hooks (for teams driving the
 # triggers via the pre-commit framework, which would clash with core.hooksPath).
 SKILLS_ONLY=0
-[ "${1:-}" = "--skills-only" ] && SKILLS_ONLY=1
+# --with-agent-hook: also wire the PreToolUse package check into .claude/settings.json. OPT-IN by
+# design — it runs on every Bash tool call the agent makes, and silently editing a consumer's
+# agent settings is not something an installer should do on its own.
+AGENT_HOOK=0
+for arg in "$@"; do
+  case "$arg" in
+    --skills-only)     SKILLS_ONLY=1 ;;
+    --with-agent-hook) AGENT_HOOK=1 ;;
+    "") ;;
+    *) echo "unknown option: $arg (usage: install.sh [--skills-only] [--with-agent-hook])"; exit 2 ;;
+  esac
+done
 
 echo "== prerequisite check (a missing one only skips that dimension; install still runs) =="
 have docker && ok "docker (gitleaks/trivy/syft)" || miss "docker MISSING -> secret/container/sbom skipped"
@@ -72,6 +83,49 @@ cp "$KIT/skills/sec-audit.skill.md" "$ROOT/.claude/skills/sec-audit/SKILL.md"
 ok ".claude/skills/sec-audit/SKILL.md (one-command orchestrator: scan + triage + signal-gated deep)"
 mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
 
+echo "== agent hook (pre-install package check) =="
+HOOK_CMD="bash \"\$CLAUDE_PROJECT_DIR/$KIT_REL/hooks/pre-tool-install.sh\""
+if [ "$AGENT_HOOK" = "1" ]; then
+  chmod +x "$KIT/hooks/pre-tool-install.sh"
+  if have python3; then
+    # `set -e` would abort the installer on a non-zero python exit, so branch on it directly.
+    if SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 - <<'PYEOF'
+import json, os, pathlib
+path = pathlib.Path(os.environ["SETTINGS"])
+cmd = os.environ["HOOKCMD"]
+doc = {}
+if path.exists():
+    try:
+        doc = json.loads(path.read_text() or "{}")
+    except ValueError:
+        raise SystemExit("settings.json is not valid JSON — refusing to rewrite it")
+hooks = doc.setdefault("hooks", {}).setdefault("PreToolUse", [])
+entry = {"type": "command", "command": cmd, "timeout": 120}
+for matcher in hooks:
+    if matcher.get("matcher") == "Bash":
+        inner = matcher.setdefault("hooks", [])
+        if any(h.get("command") == cmd for h in inner):
+            raise SystemExit(0)          # already wired: idempotent, nothing to do
+        inner.append(entry)
+        break
+else:
+    hooks.append({"matcher": "Bash", "hooks": [entry]})
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(doc, indent=2) + "\n")
+PYEOF
+    then
+      ok ".claude/settings.json -> PreToolUse(Bash) runs hooks/pre-tool-install.sh"
+    else
+      miss ".claude/settings.json NOT modified — add this hook by hand (see README)"
+    fi
+  else
+    miss "python3 MISSING -> cannot edit .claude/settings.json; add the PreToolUse entry by hand"
+  fi
+else
+  miss "not wired (opt-in). Enable with: bash $KIT_REL/install.sh --with-agent-hook"
+  echo "      what it does: checks a package with guarddog BEFORE 'npm i'/'pip install' runs it"
+fi
+
 echo "== integrity =="
 # Advisory (not fatal): confirm the vendored kit matches its CHECKSUMS manifest. A modified
 # fork without a regenerated manifest will warn here — that is expected; review and proceed.
@@ -96,8 +150,14 @@ cat <<EOF
   AI/LLM review : /sec-ai-review in Claude (prompt injection/agency; if the code calls an LLM)
   threat model  : /sec-threat-model in Claude (STRIDE/data-flow; new subsystem / design review)
   one-command   : /sec-audit in Claude (orchestrator: scan + triage + signal-gated deep passes)
+  skills visible: open THIS repo root in Claude Code (not a parent folder) and start a NEW
+                  session — only <root>/.claude/skills is scanned; confirm with /skills
+  share w/ team : git add .claude/skills tools/security-audit-kit .security-audit.conf \\
+                  .security-exclusions.md   (uncommitted works for YOU; teammates need the commit)
   pre-commit fw : already use pre-commit? add this repo via .pre-commit-hooks.yaml instead of
                   the kit's hooks; run 'install.sh --skills-only' for the skills (no hooksPath)
+  agent hook    : install.sh --with-agent-hook -> checks a package BEFORE the agent installs it
+                  (ad-hoc: bash $KIT_REL/scan.sh pkgcheck npm <pkg>)
   emergency bypass: SKIP_SECURITY=1 git commit   |   git push --no-verify
 
 HARD boundary: produces internal evidence; does NOT replace an ASV scan + pentest.

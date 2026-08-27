@@ -19,7 +19,9 @@ Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE
 **SBOM** (syft), plus optional dimensions: **broad multi-ecosystem dependency CVE**
 (`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **malicious/typosquat dependencies**
 (`scan.sh guarddog` — GuardDog; the known-CVE blind spot), and **GitHub Actions security**
-(`scan.sh zizmor` — template injection, poisoned pipelines, token over-permissioning). Any
+(`scan.sh zizmor` — template injection, poisoned pipelines, token over-permissioning), plus a
+**pre-install package check** (`scan.sh pkgcheck` — guarddog on a package *before* `npm i` runs its
+install script; also available as an agent hook). Any
 dimension whose toolchain is missing is skipped automatically.
 
 On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
@@ -95,13 +97,13 @@ re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, revie
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.16.1
-bash bootstrap.sh v1.16.1 --scan          # also run a full scan after install
-bash bootstrap.sh v1.16.1 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.17.0
+bash bootstrap.sh v1.17.0 --scan          # also run a full scan after install
+bash bootstrap.sh v1.17.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.16.1`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.17.0`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
@@ -127,6 +129,45 @@ cp -R /project-a/tools/security-audit-kit /project-b/tools/
 cd /project-b && bash tools/security-audit-kit/install.sh
 ```
 
+## After install: making the skills visible in Claude Code
+
+The five `sec-*` skills are plain files at `<repo-root>/.claude/skills/<name>/SKILL.md`.
+Claude Code reads them off disk, so **you do not need to commit anything to see them**.
+Two things decide whether they show up:
+
+1. **Claude Code's working root must BE the repo root** that holds `.claude/skills`. Only
+   `<root>/.claude/skills` is scanned — subdirectories are not, and `--add-dir` does not
+   extend the scan. If you keep several repos side by side under a container folder and
+   open the **container** in your editor, skills installed into one of the repos will not
+   load:
+
+   ```
+   work/acme/                 <- opening THIS in the editor: no skills
+     backend/                 <- opening THIS: skills load
+       tools/security-audit-kit/
+       .claude/skills/sec-*/
+     frontend/                <- needs its own install
+   ```
+
+2. **Start a new session.** Skills are enumerated at session start; toggling them in
+   `/skills` mid-session does not discover newly installed ones.
+
+Confirm with `/skills` — `sec-audit`, `sec-triage`, `sec-sast-deep`, `sec-ai-review` and
+`sec-threat-model` should all be listed.
+
+**Committing is for your teammates, not for you.** The skills reach the rest of the team
+the way any other file does, through git:
+
+```bash
+git add .claude/skills tools/security-audit-kit .security-audit.conf .security-exclusions.md
+git commit -m "chore(sec): add security-audit-kit"
+```
+
+**One install per repository.** The kit is repo-scoped by design: hooks are wired through
+that repo's `core.hooksPath`, `.security-audit.conf` carries that repo's SAST paths, and
+findings land in that repo's `docs/security/scan-findings/`. A backend and a frontend in
+two repos need two installs — there is no cross-repo mode.
+
 ## Using the pre-commit framework (alternative to the kit's own hooks)
 
 Already on [pre-commit](https://pre-commit.com)? Add the kit to your `.pre-commit-config.yaml`
@@ -134,7 +175,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.16.1          # pin a tag
+  rev: v1.17.0          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -178,8 +219,8 @@ repo — it won't tell you upstream changed. Two ways to find out:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
    # vendored version : v1.16.0
-   # latest tag       : v1.16.1
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.1
+   # latest tag       : v1.17.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.17.0
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
    periodic check or a `make` target.
@@ -189,9 +230,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.16.1   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.17.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.16.1"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.17.0"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
@@ -266,6 +307,7 @@ bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh osv        # optional: broad multi-ecosystem dep CVE (OSV-Scanner)
 bash tools/security-audit-kit/scan.sh guarddog   # optional: malicious/typosquat deps (GuardDog; needs network)
 bash tools/security-audit-kit/scan.sh zizmor     # optional: GitHub Actions security (zizmor; offline)
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash    # optional: check ONE package BEFORE installing it
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
@@ -307,6 +349,47 @@ Automatic triggers (after install):
 > teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next
 > `bootstrap.sh`, and until then pre-push blocks for everyone. Found a real bug? Report it upstream
 > and bump the pin. The kit's own skills carry this as a hard rule.
+
+## The install-time window — `scan.sh pkgcheck` and the agent hook
+
+Every other dependency dimension reads a manifest that is **already in the repo**. That is one step
+too late for a malicious package: `npm i <pkg>` and `pip install <pkg>` run the package's install
+script the moment they resolve it, and the kit's pre-commit hook only sees the changed manifest
+afterwards. Git hooks cannot see an install; an agent tool-call hook can.
+
+```bash
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash react@18.2.0   # ad-hoc, any time
+bash tools/security-audit-kit/install.sh --with-agent-hook               # opt-in: wire it to the agent
+```
+
+`--with-agent-hook` adds a `PreToolUse` hook for the `Bash` tool to `.claude/settings.json` (idempotent;
+it never rewrites anything else). Before the agent runs an install command, the hook takes the package
+names off that command line and asks guarddog about them — while nothing has executed. A flagged
+package blocks the tool call; the agent is told what fired and told not to retry.
+
+**What it blocks, and why the list is short.** guarddog reports two different things under one
+count: `capability-*` rules (what a package *can* do — `requests` fires three) and `threat-*`/metadata
+rules (what looks wrong). Neither maps cleanly to "block". Measured on 2026-08-24 against the 18
+most-installed pypi/npm packages, **15 distinct non-capability rules fired on 8 of them** — including
+`threat-process-download-exec` on pandas and setuptools, and `metadata_mismatch` on typescript. A gate
+that refuses `pip install django` gets uninstalled, and an uninstalled gate protects nothing. So the
+kit blocks on an explicit list of ~24 malice-specific rules (typosquatting, dependency confusion,
+install-time network access, reverse shells, exfiltration, cryptomining, keylogging, maintainer-domain
+takeover) — every one of which fired on **none** of those 18 packages. Everything else is printed as a
+note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in `.security-audit.conf`.
+
+**What it does not do, stated plainly:**
+- It guards the **agent's** tool calls. A human typing `npm i` in a terminal is not covered — nothing
+  in a hook can see that.
+- Anything it cannot inspect is **allowed, loudly**: no network, no `uvx`/`pipx`, a VCS or local-path
+  install, a package the registry 404s. guarddog itself prints *"No risks found"* when the download
+  failed, so the kit treats a failed download as `INDETERMINATE` — never as clean.
+- It is not a CVE check. `pkgcheck` asks "is this package malicious?"; `deps`/`osv` ask "does it have
+  known vulnerabilities?" Both, or neither.
+- First check of a package costs ~15-20s (guarddog downloads and analyses it). Verdicts are cached in
+  `.git/security-audit-cache/` keyed by package, version **and the pinned guarddog version**; an exact
+  `pkg@version` verdict never expires, an unversioned one expires after a day. `scan.sh doctor` prints
+  whether the hook is wired, where the cache is, and how many rules block.
 
 ## Finding loop (end to end)
 
@@ -550,9 +633,18 @@ rules. `scan.sh doctor` prints the resolved set. For customization, one file per
    ```sh
    : "${SAST_PATHS:=backend frontend}"     # narrow source directories
    : "${TF_DIR:=infra/terraform}"          # terraform directory
+   # : "${JS_DIRS:=frontend}"              # js-deps: where the JS app is (see below)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # leave unset = stack-auto; set to override
    ```
 3. `scan.sh` sources it automatically.
+
+**`js-deps` picks its directory by lockfile, not by luck.** Every tracked `package.json` is
+considered, minus vendor paths (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
+`dist`, …) and minus any directory without a lockfile — there are no resolved versions to audit
+there, so it is skipped with a note rather than failed. Every remaining directory is audited, not
+just the first. If your app lives somewhere the heuristic will not find it (or the only
+`package.json` files in the repo are checked-in front-end assets), set **`JS_DIRS`** and the
+search is bypassed entirely.
 
 **Precedence:** `env > .security-audit.conf > default`. Thanks to the `:=` form,
 use env for a one-off override: `SAST_PATHS="lib" bash scan.sh sast`.

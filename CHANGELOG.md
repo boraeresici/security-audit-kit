@@ -4,6 +4,105 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-08-27
+
+### Fixed (gates that silenced themselves)
+
+- **`git ls-files | grep -q` was a silent false negative on any large repo — and it switched whole
+  dimensions off.** `grep -q` exits at the first match, git is still writing, takes SIGPIPE, and
+  `set -o pipefail` turns the pipeline's status into 141 — so the `||` branch ran and the gate
+  reported "not present". It is size-dependent: it passes on every small fixture and starts lying
+  once the repo outgrows a pipe buffer, which is why it shipped. Measured on a 22,972-file
+  production repo, **three** things had quietly switched themselves off while the scan reported
+  green: `py-deps` (pip-audit never ran against a tracked `pyproject.toml` + `requirements.txt`),
+  `zizmor` (12 workflow files, "nothing to scan"), and the **semgrep stack auto-select** — `_hasf`
+  used the same shape, so `p/python`, `p/django` and `p/javascript` were never added and SAST ran
+  with base rules only. `doctor`'s stack list was wrong for the same reason. Every call site now
+  goes through `has_tracked` (command substitution + here-string: no pipe, nothing to kill), the
+  `find | grep -q .` pair became `find -print -quit`, and the pre-commit hook's
+  `git diff --cached --name-only | grep -q` — which would skip the dependency gate exactly when a
+  large vendored tree is landing — was rewritten the same way.
+- **`js-deps` audited the first tracked `package.json`, which in a backend repo is a vendored
+  asset.** In a Django repo that is `static/assets/plugins/fullcalendar/packages/bootstrap/
+  package.json`: no lockfile, so `npm audit` exits ENOLOCK=1 and the gate **blocked every commit
+  that touched any manifest**, over a third-party file nobody in the repo maintains — while the
+  real front-end was never audited, because only the first hit ever was. Directory selection is now
+  by lockfile, not by luck: vendor paths are dropped (`JS_SKIP_RE`), a directory without a lockfile
+  is skipped with a note instead of failed (no resolved versions = nothing to report, and "cannot
+  audit" must not read as "vulnerable"), and **every** remaining directory is audited. New
+  **`JS_DIRS`** bypasses the search outright for a layout the heuristic cannot find.
+- **The pre-commit hook's manifest regex was unanchored**, so `requirements.*\.txt` also matched
+  `requirements.txt.tpl` (a template) and `package\.json` matched `package.json.bak` — each one
+  triggering a dependency scan nothing asked for. Anchored per alternative, matching the form
+  `scan.sh` already used. The same anchoring fixes `scan_py_deps`, which counted a `.tpl` fixture
+  as a Python project.
+- Coverage: **14 new e2e assertions**. A static guard fails the build if a file listing is piped
+  into `grep -q` again; a **>6000-file fixture repo** reproduces the original failure (verified: the
+  old code returns 141 and misses both python and the workflows at that size, the new code detects
+  both); the js-deps cases assert that a lockfile-less vendored asset neither fails the gate nor
+  gets audited, and that `JS_DIRS` overrides the search. e2e: 87 -> 101 assertions, 0 failed.
+
+### Added (#R5.1 — `scan.sh pkgcheck` + an agent hook: the package is checked BEFORE it runs)
+- **The window this closes.** Every other dependency dimension reads a manifest that is already in
+  the repo. `npm i <pkg>` and `pip install <pkg>` run the package's install script the moment they
+  resolve it, so `pre-commit` — which only fires once the changed manifest is staged — sees a
+  malicious package **after** it has executed. The `guarddog` dimension existed to catch exactly
+  that class and was structurally too late. A git hook cannot see an install; an agent tool-call
+  hook can.
+- **`scan.sh pkgcheck <pypi|npm> <pkg>[@version] ...`** checks a named package that is not installed
+  yet (`guarddog <eco> scan`, same pin as the `guarddog` dimension). `--hook` reads an agent
+  PreToolUse payload instead, takes the package names off the install command line and checks those.
+- **`hooks/pre-tool-install.sh`** is the thin `PreToolUse(Bash)` wrapper — fast-path substring test
+  first so an ordinary Bash call never pays for a python start-up; exit 2 (block) only on a flagged
+  package, with the rule names and an instruction not to retry. Wire it with
+  **`install.sh --with-agent-hook`** (idempotent, merges into `.claude/settings.json`, and **opt-in**:
+  it fires on every Bash tool call, and an installer should not silently edit a consumer's agent
+  settings).
+- **The block list is measured, not assumed — and this is the load-bearing decision.** guarddog
+  reports `capability-*` (what a package *can* do; `requests` fires three) and `threat-*`/metadata
+  rules under one `issues` count, and `--exit-non-zero-on-finding` fires on both. Measured on
+  2026-08-24 against the 18 most-installed pypi/npm packages: **15 distinct non-capability rules
+  fired on 8 of them** — `threat-process-download-exec` on pandas and setuptools,
+  `threat-filesystem-destruction` on next, `metadata_mismatch` on typescript and webpack. Blocking
+  on "not a capability rule" would have refused `pip install django`; a gate that blocks Django is
+  a gate that gets uninstalled, and an uninstalled gate protects nothing. So the kit blocks on an
+  explicit list of 24 malice-specific rules (typosquatting, dependency confusion, install-time
+  network, reverse shell, exfiltration, cryptomining, keylogging, maintainer-domain takeover), each
+  of which fired on **none** of those 18 packages; everything else prints as a note. Tunable via
+  `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA`, and the pinned guarddog version means the rule
+  set cannot drift underneath the list.
+- **A failed download is never "clean".** When guarddog cannot fetch the package it prints
+  *"No risks found"*, exits 0 and omits `results` entirely (reproduced with
+  `npm scan flatmap-stream -v 0.1.1`). The kit reads `errors` and reports `INDETERMINATE` — allowed,
+  loudly, never cleared. Same for anything else it cannot inspect: no network, no uvx/pipx, a
+  VCS/local-path install, an unreadable hook payload. Refusing what the kit failed to look at would
+  block ordinary work, and a gate people route around protects nothing.
+- **Verdict cache** in `.git/security-audit-cache/pkgcheck` (never in the repo tree, so it cannot
+  reach `CHECKSUMS`), keyed by ecosystem, package, version **and the pinned guarddog version** — a
+  pin bump can never read an old verdict. An exact `pkg@version` verdict is immutable and never
+  expires; an unversioned one expires after a day. First check ~15-20s, a cache hit ~0.2s.
+- **`doctor` says whether the window is guarded**, where the cache lives and how many rules block —
+  an unwired hook is otherwise invisible, which is the failure mode round 4 named (*forbid nothing,
+  hide nothing*).
+- Coverage: e2e grew by 9 assertions, all offline (fixtures of real guarddog output shapes) —
+  including the FP regression guard that a `threat-*` rule firing on a popular package must report
+  rather than block, and that a failed download is not reported as clean. `uvx`/`pipx run` are
+  deliberately **not** treated as installs: the kit runs every python tool through `uvx`, so it
+  would scan itself on every scan.
+- Docs: READMEs en+tr carry the section (what it blocks, the measurement, and plainly what it does
+  *not* cover — the agent's tool calls only, never a human typing `npm i`).
+  **Not swept yet, for release prep:** `docs/compare/*` row and `landing/`.
+
+### Documentation
+- **"I installed the kit but the skills do not show up in Claude Code."** The READMEs (en+tr) and
+  the `install.sh` summary now say what actually governs it: Claude Code scans only
+  `<working-root>/.claude/skills`, so opening a *container* folder that holds several repos side by
+  side loads none of the skills installed into one of them (`--add-dir` does not extend the scan),
+  and skills are enumerated at session start, so a newly installed one needs a new session. Also
+  states plainly that committing is what carries the skills to TEAMMATES — it is not what makes
+  them visible to you — and that the kit is repo-scoped: a backend and a frontend in two repos
+  need two installs.
+
 ## [1.16.1] - 2026-08-24
 
 ### Fixed (docs — the flow diagrams described less than the kit does)

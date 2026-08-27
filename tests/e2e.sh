@@ -572,6 +572,81 @@ else
   skip "eval harness (node unavailable)"
 fi
 
+echo "-- pkgcheck: the pre-install gate (offline; fixtures, no network) --"
+PKGCHECK="tools/security-audit-kit/lib/pkgcheck.py"
+if have python3; then
+  # 1) command parsing: what gets checked, and what must NOT be mistaken for a package name.
+  PARSED="$(python3 $PKGCHECK --command 'npm i lodash react@18.2.0 && pip install requests==2.32.3 -r reqs.txt')"
+  printf '%s' "$PARSED" | grep -q '^npm	lodash	$' \
+    && printf '%s' "$PARSED" | grep -q '^npm	react	18.2.0$' \
+    && printf '%s' "$PARSED" | grep -q '^pypi	requests	2.32.3$' \
+    && ! printf '%s' "$PARSED" | grep -q 'reqs.txt' \
+    && ok "pkgcheck: parses install targets, ignores -r <file> (that is scan.sh deps' job)" \
+    || no "pkgcheck: install-target parsing wrong"
+  # `npm install` with no argument installs the lockfile that is already in the repo, and a
+  # non-install command must never reach the scanner — otherwise the hook taxes every Bash call.
+  [ -z "$(python3 $PKGCHECK --command 'npm install && npm run build && git commit -m "install"')" ] \
+    && ok "pkgcheck: bare 'npm install' / non-install commands yield no targets" \
+    || no "pkgcheck: false-positive install target"
+
+  # 2) verdicts. The fixtures are real guarddog 3.0.2 output shapes.
+  echo '{"package":"lodahs","issues":1,"errors":{},"results":{"typosquatting":["lodash"],"capability-network-outbound":[]}}' \
+    > gd_block.json
+  # `--classify` exits 1 on BLOCK and 2 on INDETERMINATE by design (the hook reads that code),
+  # and this harness runs with pipefail — so capture the verdict, never grep through the pipe.
+  V_BLOCK="$(python3 $PKGCHECK --classify < gd_block.json || true)"
+  printf '%s' "$V_BLOCK" | grep -q '^BLOCK	typosquatting' \
+    && ok "pkgcheck: typosquat blocks" || no "pkgcheck: typosquat did not block"
+  # The FP guard, and it is the load-bearing one: measured on 18 of the most-installed packages,
+  # threat-* rules fire on django/pandas/next/webpack. Blocking on them would block `pip install
+  # django`, the gate would be uninstalled, and an uninstalled gate protects nothing.
+  echo '{"package":"pandas","issues":2,"errors":{},"results":{"threat-process-download-exec":[{"l":1}],"capability-process-spawn":[{"l":2}]}}' \
+    > gd_note.json
+  V_NOTE="$(python3 $PKGCHECK --classify < gd_note.json || true)"
+  printf '%s' "$V_NOTE" | grep -q '^NOTE' \
+    && ok "pkgcheck: threat-* rules that fire on popular packages report, never block" \
+    || no "pkgcheck: over-blocking — a legitimate package would be refused"
+  # guarddog prints "No risks found" and exits 0 when the DOWNLOAD failed; reporting that as
+  # clean would be a lie the caller cannot detect.
+  echo '{"package":"x","issues":0,"errors":{"download-package":"404"}}' > gd_err.json
+  V_ERR="$(python3 $PKGCHECK --classify < gd_err.json || true)"
+  printf '%s' "$V_ERR" | grep -q '^INDETERMINATE' \
+    && ok "pkgcheck: a failed download is INDETERMINATE, never 'clean'" \
+    || no "pkgcheck: failed download reported as clean"
+  rm -f gd_block.json gd_note.json gd_err.json
+
+  # 3) the hook: allow-by-default, and no scanner start-up for ordinary commands.
+  HOOK="tools/security-audit-kit/hooks/pre-tool-install.sh"
+  echo '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | bash $HOOK >/dev/null 2>&1 \
+    && ok "agent hook: non-install command passes (fast path)" || no "agent hook: fast path broken"
+  echo 'not json at all' | bash $HOOK >/dev/null 2>&1 \
+    && ok "agent hook: unreadable payload is allowed, never blocked" || no "agent hook: fails closed on junk"
+else
+  skip "pkgcheck (no python3)"
+fi
+
+echo "-- agent hook wiring (opt-in) --"
+grep -q 'NOT wired' <($SCAN doctor 2>/dev/null) \
+  && ok "doctor: says the pre-install window is unguarded when the hook is not wired" \
+  || no "doctor: missing/incorrect agent-hook line"
+if have python3; then
+  TAH="$(mktemp -d)"
+  mkdir -p "$TAH/tools/security-audit-kit"
+  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TAH/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TAH/tools/security-audit-kit"/; fi
+  ( cd "$TAH" && git init -q && bash tools/security-audit-kit/install.sh --with-agent-hook \
+      && bash tools/security-audit-kit/install.sh --with-agent-hook ) >/dev/null 2>&1
+  python3 -c "
+import json,sys
+d=json.load(open('$TAH/.claude/settings.json'))
+hooks=[h for m in d['hooks']['PreToolUse'] if m.get('matcher')=='Bash' for h in m['hooks']]
+sys.exit(0 if len(hooks)==1 and 'pre-tool-install.sh' in hooks[0]['command'] else 1)" 2>/dev/null \
+    && ok "--with-agent-hook: PreToolUse(Bash) wired once (idempotent on re-run)" \
+    || no "--with-agent-hook: settings.json wiring wrong"
+  [ -z "$(git -C "$TAH" config core.hooksPath >/dev/null 2>&1; python3 -c "import json;d=json.load(open('$TAH/.claude/settings.json'));print('' if d.get('hooks') else 'x')")" ] \
+    && ok "--with-agent-hook: settings.json remains valid JSON" || no "--with-agent-hook: settings.json broken"
+  rm -rf "$TAH"
+else skip "--with-agent-hook (no python3)"; fi
+
 echo "-- pre-commit framework integration --"
 if have python3; then
   python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \
@@ -585,6 +660,101 @@ if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SR
 [ -f "$TSO/.claude/skills/sec-triage/SKILL.md" ] && ok "--skills-only: skills installed" || no "--skills-only: skills missing"
 [ -z "$(git -C "$TSO" config core.hooksPath 2>/dev/null || true)" ] && ok "--skills-only: core.hooksPath NOT set" || no "--skills-only: hooksPath should be unset"
 rm -rf "$TSO"
+
+echo "-- gate honesty: no file listing piped into 'grep -q' (SIGPIPE -> silent false negative) --"
+# `git ls-files | grep -q` exits at the first match, git takes SIGPIPE, and pipefail turns the
+# pipeline into 141 -> the `||` branch runs and the dimension reports "not present". It is
+# size-dependent, so every small fixture passes. This static guard is the cheap half of the
+# regression; the fixture repo below is the expensive half. Comments are stripped first — the
+# scan.sh comment that NAMES the forbidden pattern must not read as an offence.
+offenders="$(grep -hvE '^[[:space:]]*#' \
+    "$KIT_SRC/scan.sh" "$KIT_SRC/hooks/pre-commit" "$KIT_SRC/hooks/pre-push" 2>/dev/null \
+  | grep -E '\|[[:space:]]*grep -q' | grep -E 'ls-files|--name-only|find ' || true)"
+[ -z "$offenders" ] && ok "no file listing is piped into 'grep -q'" \
+  || no "a file listing is piped into 'grep -q' again: $offenders"
+
+# The hook's manifest regex must be anchored per alternative: unanchored it fires on a template
+# (requirements.txt.tpl) or a backup (package.json.bak) and runs a dependency scan nothing asked for.
+mre="$(grep -m1 '^manifests=' "$KIT_SRC/hooks/pre-commit" | cut -d= -f2- | tr -d "'")"
+grep -qE "$mre" <<<"tools/security-audit-kit/tests/fixtures/stacks/django/requirements.txt.tpl" \
+  && no "hook regex: a .tpl template still triggers a dependency scan" \
+  || ok "hook regex: requirements.txt.tpl does NOT trigger a dependency scan"
+grep -qE "$mre" <<<"backend/requirements-dev.txt" \
+  && ok "hook regex: a real requirements-dev.txt still triggers" \
+  || no "hook regex: requirements-dev.txt no longer triggers (over-anchored)"
+grep -qE "$mre" <<<"apps/web/package.json" \
+  && ok "hook regex: a nested package.json still triggers" \
+  || no "hook regex: nested package.json no longer triggers (over-anchored)"
+
+echo "-- large repo: the gates must not silence themselves (SIGPIPE regression) --"
+# 6000 tracked files is comfortably past a 64 KiB pipe buffer, which is what it takes to reproduce.
+# Every manifest here sorts BEFORE the filler, so a `grep -q` would exit while git is still writing.
+BIG="$(mktemp -d)"
+(
+  cd "$BIG" || exit 1
+  git init -q .
+  mkdir -p tools/security-audit-kit .github/workflows zz_filler
+  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
+  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  printf '[project]\nname = "big"\nversion = "0.1.0"\n' > pyproject.toml
+  printf 'x = 1\n' > app.py
+  # package.json with NO lockfile: enough for stack detection, and js-deps then skips it instead of
+  # reaching for the network — the assertion is about detection at scale, not about npm.
+  mkdir -p frontend && printf '{"name":"big-fe","version":"1.0.0"}\n' > frontend/package.json
+  printf 'name: ok\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n' \
+    > .github/workflows/ok.yml
+  i=0; while [ "$i" -lt 6000 ]; do printf 'x\n' > "zz_filler/f$i.txt"; i=$((i+1)); done
+  git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -c user.email=e2e@test -c user.name=e2e commit -qm big >/dev/null 2>&1
+) || no "large-repo fixture could not be built"
+BIGFILES="$(git -C "$BIG" ls-files | wc -l | tr -d ' ')"
+[ "$BIGFILES" -gt 6000 ] && ok "large-repo fixture: $BIGFILES tracked files" \
+  || no "large-repo fixture too small ($BIGFILES) to reproduce the bug"
+BIGDOC="$(cd "$BIG" && bash tools/security-audit-kit/scan.sh doctor 2>&1)"
+grep -q '^  python'         <<<"$BIGDOC" && ok "large repo: python detected"         || no "large repo: python NOT detected (SIGPIPE regression)"
+grep -q '^  javascript'     <<<"$BIGDOC" && ok "large repo: javascript detected"     || no "large repo: javascript NOT detected (SIGPIPE regression)"
+grep -q '^  github-actions' <<<"$BIGDOC" && ok "large repo: github-actions detected" || no "large repo: github-actions NOT detected (SIGPIPE regression)"
+BIGDEPS="$(cd "$BIG" && bash tools/security-audit-kit/scan.sh deps 2>&1 || true)"
+grep -q 'no Python project' <<<"$BIGDEPS" \
+  && no "large repo: py-deps gate reported 'no Python project' with a tracked pyproject.toml" \
+  || ok "large repo: py-deps gate reaches pip-audit"
+if have uvx || have pipx; then
+  BIGZIZ="$(cd "$BIG" && bash tools/security-audit-kit/scan.sh zizmor 2>&1 || true)"
+  grep -q 'nothing to scan' <<<"$BIGZIZ" \
+    && no "large repo: zizmor skipped itself with 12 workflow files present" \
+    || ok "large repo: zizmor gate reaches the workflows"
+else
+  skip "large repo: zizmor gate (uvx/pipx unavailable)"
+fi
+rm -rf "$BIG"
+
+echo "-- js-deps: audit the app, never a vendored asset, never block on 'cannot audit' --"
+# The reported failure: the first tracked package.json was a checked-in fullcalendar asset with no
+# lockfile, so npm audit exited ENOLOCK=1 and BLOCKED every commit that touched any manifest.
+JSR="$(mktemp -d)"
+(
+  cd "$JSR" || exit 1
+  git init -q .
+  mkdir -p tools/security-audit-kit static/assets/plugins/fullcalendar
+  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
+  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  printf '{"name":"fullcalendar-vendored","version":"1.0.0"}\n' > static/assets/plugins/fullcalendar/package.json
+  git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -c user.email=e2e@test -c user.name=e2e commit -qm js >/dev/null 2>&1
+) || no "js-deps fixture could not be built"
+JSOUT="$(cd "$JSR" && bash tools/security-audit-kit/scan.sh deps 2>&1)"; JSRC=$?
+[ "$JSRC" -eq 0 ] && ok "js-deps: a lockfile-less vendored asset does not fail the gate" \
+  || no "js-deps: gate failed (rc=$JSRC) on a vendored asset — the ENOLOCK block is back"
+grep -q 'none is auditable' <<<"$JSOUT" && ok "js-deps: says WHY it audited nothing" \
+  || no "js-deps: did not explain why nothing was audited"
+grep -qE 'npm audit \(static/' <<<"$JSOUT" \
+  && no "js-deps: audited the vendored asset directory" \
+  || ok "js-deps: vendor path skipped"
+JSOVR="$(cd "$JSR" && JS_DIRS=static/assets/plugins/fullcalendar bash tools/security-audit-kit/scan.sh deps 2>&1 || true)"
+grep -q 'static/assets/plugins/fullcalendar' <<<"$JSOVR" \
+  && ok "js-deps: JS_DIRS overrides the search" \
+  || no "js-deps: JS_DIRS was ignored"
+rm -rf "$JSR"
 
 echo "-- worktree: gitleaks reaches history (no silent false-clean) --"
 if docker_ok; then

@@ -21,3 +21,5 @@ tests/eval/output*.json
 **/.env
 **/.env.local
 **.env**
+__pycache__/
+

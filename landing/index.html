@@ -248,7 +248,7 @@ footer .right{margin-left:auto}
           <span class="badge"><span class="dot"></span> ci <b>passing</b></span>
           <span class="badge"><span class="dot"></span> self-audit <b>passing</b></span>
           <span class="badge">license <b>MIT</b></span>
-          <span class="badge">release <b>v1.16.1</b></span>
+          <span class="badge">release <b>v1.17.0</b></span>
         </div>
         <h1>Security scanning that runs <em>in your repo</em> — not in someone's cloud.</h1>
         <p class="sub">
@@ -271,7 +271,7 @@ footer .right{margin-left:auto}
           <li class="step active">
             <span class="node">1</span>
             <h4>Vendor, pinned</h4>
-            <span class="cmd">$ bash bootstrap.sh v1.16.1</span>
+            <span class="cmd">$ bash bootstrap.sh v1.17.0</span>
             <small>Download → read → run. Tag + resolved SHA land in a committed <b>.kit-version</b>.</small>
           </li>
           <li class="step">
@@ -289,7 +289,7 @@ footer .right{margin-left:auto}
           <li class="step">
             <span class="node">4</span>
             <h4>Triage in Claude</h4>
-            <span class="cmd">/sec-triage → findings-2026-08-24.md</span>
+            <span class="cmd">/sec-triage → findings-2026-08-27.md</span>
             <small>FP → allowlist · REAL → fix or follow-up registry → re-scan clean.</small>
           </li>
         </ol>
@@ -426,7 +426,7 @@ finding       <span class="f">────────────────�
           <tr><td>Secrets detection</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">gitleaks — full history + sub-second staged mode</span></td></tr>
           <tr><td>Dependency CVE scanning (SCA)</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">pip-audit + npm/pnpm/yarn audit + OSV-Scanner (multi-ecosystem)</span></td></tr>
           <tr><td>Reachability analysis for SCA</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m p">◐</span><span class="note">opt-in OSV_CALL_ANALYSIS=go marks whether the vulnerable symbol is actually called, paired with --all-vulns so the gate never loosens; sec-triage treats it as evidence, not a verdict. Python/JS reachability needs a heavier tool and is not shipped. Rust is refused by default: it runs the dependency tree's build scripts</span></td></tr>
-          <tr><td>Malicious package / typosquat detection</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">GuardDog (PyPI + npm)</span></td></tr>
+          <tr><td>Malicious package / typosquat detection</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m y">✓</span><span class="note">GuardDog (PyPI + npm) — plus scan.sh pkgcheck, which checks a named package before it is installed: an opt-in agent PreToolUse hook blocks the install command itself, closing the window where the package's install script has already run by the time a manifest is staged. Blocks on 24 measured malice-specific rules; a package it could not fetch is INDETERMINATE, never "clean"</span></td></tr>
           <tr><td>SBOM generation</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">syft — CycloneDX + SPDX</span></td></tr>
           <tr><td>License scanning</td><td class="m y">✓</td><td class="m y">✓</td><td><span class="m y">✓</span><span class="note">trivy license scanner</span></td></tr>
           <tr><td>License policy gating (block on violation)</td><td class="m y">✓</td><td class="m n">✗</td><td><span class="m n">✗</span><span class="note">under consideration</span></td></tr>
@@ -454,7 +454,7 @@ finding       <span class="f">────────────────�
       </table>
     </div>
     <p class="src rv">
-      Last updated 2026-08 · kit v1.16.1 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
+      Last updated 2026-08 · kit v1.17.0 · Aikido/Semgrep data from Aikido's own comparison page + public docs.
       Aikido and Semgrep are trademarks of their respective owners. Planned rows describe intended work, not commitments.
       Maintained source: <a href="https://github.com/boraeresici/security-audit-kit/blob/main/docs/compare/aikido-semgrep.md">docs/compare/aikido-semgrep.md</a>
     </p>
@@ -533,7 +533,7 @@ finding       <span class="f">────────────────�
 
 <footer>
   <div class="wrap">
-    <span>security-audit-kit v1.16.1</span>
+    <span>security-audit-kit v1.17.0</span>
     <span><a href="https://github.com/boraeresici/security-audit-kit/blob/main/LICENSE">MIT</a></span>
     <span><a href="https://github.com/boraeresici/security-audit-kit/blob/main/SECURITY.md">SECURITY.md</a></span>
     <span class="right">built by <a href="https://studiobinary.co">studiobinary.co</a></span>

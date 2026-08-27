@@ -19,7 +19,9 @@ Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 (trivy), **SBOM** (syft) ve opsiyonel boyutlar: **cok-ekosistem bagimlilik CVE**
 (`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **kotu niyetli/typosquat bagimlilik**
 (`scan.sh guarddog` — GuardDog; bilinen-CVE kor noktasi) ve **GitHub Actions guvenligi**
-(`scan.sh zizmor` — template injection, poisoned pipeline, token asiri-izin). Eksik
+(`scan.sh zizmor` — template injection, poisoned pipeline, token asiri-izin), ayrica bir
+**kurulum-oncesi paket kontrolu** (`scan.sh pkgcheck` — `npm i` paketin kurulum script'ini
+calistirmadan *once* guarddog; ajan hook'u olarak da kullanilabilir). Eksik
 toolchain olan boyut otomatik atlanir.
 
 Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
@@ -96,13 +98,13 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.16.1
-bash bootstrap.sh v1.16.1 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.16.1 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.17.0
+bash bootstrap.sh v1.17.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.17.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.16.1`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.17.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
@@ -128,6 +130,44 @@ cp -R /proje-a/tools/security-audit-kit /proje-b/tools/
 cd /proje-b && bash tools/security-audit-kit/install.sh
 ```
 
+## Kurulumdan sonra: skill'leri Claude Code'da gorunur yapmak
+
+Bes `sec-*` skill'i duz dosyalardir: `<repo-koku>/.claude/skills/<ad>/SKILL.md`. Claude Code
+bunlari diskten okur, yani **senin gormen icin commit gerekmez**. Gorunup gorunmemesini iki
+sey belirler:
+
+1. **Claude Code'un calisma koku, `.claude/skills`'i tutan repo koku OLMALI.** Sadece
+   `<kok>/.claude/skills` taranir — alt klasorler taranmaz, `--add-dir` de taramayi
+   genisletmez. Birden fazla repo'yu yan yana bir kapsayici klasorde tutuyorsan ve
+   editorde **kapsayiciyi** acarsan, repolardan birine kurulan skill'ler yuklenmez:
+
+   ```
+   work/acme/                 <- editorde BUNU acmak: skill yok
+     backend/                 <- BUNU acmak: skill'ler yuklenir
+       tools/security-audit-kit/
+       .claude/skills/sec-*/
+     frontend/                <- kendi kurulumunu ister
+   ```
+
+2. **Yeni bir oturum baslat.** Skill'ler oturum basinda taranir; oturum ortasinda
+   `/skills` icinden ac/kapa yapmak yeni kurulanlari kesfetmez.
+
+`/skills` ile dogrula — `sec-audit`, `sec-triage`, `sec-sast-deep`, `sec-ai-review` ve
+`sec-threat-model` listede olmali.
+
+**Commit senin icin degil, takim arkadaslarin icin.** Skill'ler ekibin geri kalanina
+diger her dosya gibi git uzerinden ulasir:
+
+```bash
+git add .claude/skills tools/security-audit-kit .security-audit.conf .security-exclusions.md
+git commit -m "chore(sec): security-audit-kit ekle"
+```
+
+**Repo basina bir kurulum.** Kit tasarim geregi repo kapsamlidir: hook'lar o repo'nun
+`core.hooksPath`'i uzerinden baglanir, `.security-audit.conf` o repo'nun SAST yollarini
+tasir, bulgular o repo'nun `docs/security/scan-findings/` klasorune duser. Iki ayri repodaki
+backend ile frontend iki ayri kurulum ister — repolar arasi bir mod yoktur.
+
 ## pre-commit framework ile (kitin kendi hook'larina alternatif)
 
 Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari yerine onu
@@ -135,7 +175,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.16.1          # bir tag'e pinle
+  rev: v1.17.0          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -181,8 +221,8 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
    # vendored version : v1.16.0
-   # latest tag       : v1.16.1
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.1
+   # latest tag       : v1.17.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.17.0
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
    `make` hedefine baglanabilir.
@@ -192,9 +232,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.16.1   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.17.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.16.1'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.17.0'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
@@ -270,6 +310,7 @@ bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh osv        # opsiyonel: cok-ekosistem dep CVE (OSV-Scanner)
 bash tools/security-audit-kit/scan.sh guarddog   # opsiyonel: kotu niyetli/typosquat dep (GuardDog; network gerekir)
 bash tools/security-audit-kit/scan.sh zizmor     # opsiyonel: GitHub Actions guvenligi (zizmor; offline)
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash    # opsiyonel: TEK paketi kurulmadan ONCE kontrol et
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
@@ -311,6 +352,47 @@ Otomatik tetik (install sonrasi):
 > takim arkadasin, ne de triyaj sirasinda tarayiciyi "duzelten" bir AI asistani. Duzenleme bir
 > sonraki `bootstrap.sh` ile kaybolur, o ana kadar da pre-push herkesi bloklar. Gercek bir bug mi
 > buldun? Upstream'e bildir ve pini bump et. Kitin kendi skill'leri bunu sert kural olarak tasir.
+
+## Kurulum ani penceresi — `scan.sh pkgcheck` ve ajan hook'u
+
+Diger butun bagimlilik boyutlari **zaten repoda olan** bir manifest'i okur. Kotu niyetli bir paket
+icin bu bir adim gec kalmaktir: `npm i <pkg>` ve `pip install <pkg>`, paketi cozer cozmez kurulum
+script'ini calistirir; kitin pre-commit hook'u degisen manifest'i ancak bundan **sonra** gorur. Bir
+git hook'u kurulumu goremez, ama bir ajan tool-call hook'u gorebilir.
+
+```bash
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash react@18.2.0   # ad-hoc, istedigin zaman
+bash tools/security-audit-kit/install.sh --with-agent-hook               # opt-in: ajana bagla
+```
+
+`--with-agent-hook`, `.claude/settings.json` icine `Bash` araci icin bir `PreToolUse` hook'u ekler
+(idempotent; baska hicbir seyi yeniden yazmaz). Ajan kurulum komutunu calistirmadan once hook, o komut
+satirindaki paket adlarini alip guarddog'a sorar — henuz hicbir sey calismamisken. Isaretlenen paket
+tool cagrisini bloklar; ajana neyin atesledigi ve tekrar denememesi gerektigi soylenir.
+
+**Neyi bloklar, ve liste neden kisa.** guarddog tek bir sayi altinda iki farkli sey raporlar:
+`capability-*` kurallari (paketin ne YAPABILECEGI — `requests` uc tane atesliyor) ve `threat-*`/metadata
+kurallari (neyin yanlis gorundugu). Ikisi de dogrudan "blokla"ya karsilik gelmiyor. 2026-08-24'te en cok
+kurulan 18 pypi/npm paketi uzerinde olculdu: **15 farkli capability-disi kural, 8 pakette atesledi** —
+pandas ve setuptools'ta `threat-process-download-exec`, typescript'te `metadata_mismatch` dahil.
+`pip install django`'yu reddeden bir kapi kaldirilir, kaldirilan kapi da kimseyi korumaz. Bu yuzden kit
+yalnizca ~24 kotu-niyet-spesifik kuralda bloklar (typosquatting, dependency confusion, kurulum aninda
+network, reverse shell, exfiltration, cryptomining, keylogging, maintainer domain devralma) — ve
+bunlarin hicbiri o 18 pakette **atesle(me)di**. Geri kalan her sey not olarak yazilir ve gecirilir.
+`.security-audit.conf` icinde `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` ile ayarlanir.
+
+**Ne YAPMADIGI, acikca:**
+- **Ajanin** tool cagrilarini korur. Terminale elle `npm i` yazan bir insani kapsamaz — hicbir hook
+  bunu goremez.
+- Inceleyemedigi her sey **gecirilir, ama yuksek sesle**: network yoksa, `uvx`/`pipx` yoksa, VCS/yerel
+  yol kurulumuysa, paket registry'de 404 ise. guarddog indirme basarisiz oldugunda bile *"No risks
+  found"* yazar; kit bu yuzden basarisiz indirmeyi `INDETERMINATE` sayar — asla "temiz" degil.
+- Bu bir CVE kontrolu degildir. `pkgcheck` "bu paket kotu niyetli mi?" diye sorar; `deps`/`osv` ise
+  "bilinen zafiyeti var mi?" diye. Ikisi birlikte, ya da hicbiri.
+- Bir paketin ilk kontrolu ~15-20 sn (guarddog indirip analiz eder). Kararlar
+  `.git/security-audit-cache/` altinda paket, surum **ve pinlenmis guarddog surumu** ile anahtarlanip
+  saklanir; tam `pkg@version` karari hic eskimez, surumsuz olan bir gun sonra eskir. `scan.sh doctor`
+  hook'un bagli olup olmadigini, cache'in yerini ve kac kuralin blokladigini yazar.
 
 ## Bulgu dongusu (uctan uca)
 
@@ -546,9 +628,18 @@ secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
    ```sh
    : "${SAST_PATHS:=backend frontend}"     # kaynak dizinleri daralt
    : "${TF_DIR:=infra/terraform}"          # terraform dizini
+   # : "${JS_DIRS:=frontend}"              # js-deps: JS uygulamasi nerede (asagi bak)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # set degil = stack-auto; override icin set et
    ```
 3. `scan.sh` bunu otomatik source eder.
+
+**`js-deps` dizinini sansa gore degil, lockfile'a gore secer.** Tracked her `package.json`
+degerlendirilir; vendor yollari (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
+`dist`, …) ve lockfile'i olmayan dizinler dusulur — lockfile yoksa cozulmus surum yoktur, yani
+denetlenecek bir sey de yoktur: not dusulerek atlanir, hata sayilmaz. Geriye kalan dizinlerin
+**hepsi** denetlenir, sadece ilki degil. Uygulaman bu sezginin bulamayacagi bir yerdeyse (ya da
+repodaki tek `package.json` dosyalari repoya girmis front-end asset'leriyse) **`JS_DIRS`** ayarla,
+arama tumuyle devre disi kalir.
 
 **Onculuk:** `env > .security-audit.conf > default`. `:=` formu sayesinde
 tek-seferlik override icin env kullan: `SAST_PATHS="lib" bash scan.sh sast`.
