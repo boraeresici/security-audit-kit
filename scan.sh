@@ -63,6 +63,13 @@ SYFT_DIGEST="${SYFT_DIGEST:-sha256:a2066c7d582669db5c9191ed8b8055766a63a3c231b41
 OSV_VER="${OSV_VER:-v2.4.0}"
 OSV_DIGEST="${OSV_DIGEST:-sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc109d621a63ac416d475}"
 
+# A dimension that could not LOOK at anything is not a pass. `pass` and `fail` both claim the tool
+# formed an opinion; there has to be a third answer for "it ran and had nothing to read", or the
+# gate goes green on a repo it never inspected. Same principle the pkgcheck gate already uses for a
+# package it could not fetch: allowed, loudly, never cleared. Non-blocking by design — refusing what
+# we failed to look at would block ordinary work, and a gate people route around protects nothing.
+RC_INDETERMINATE=3
+
 # trivy: skip build-output dirs (noise + memory + speed). Comma-separated glob patterns.
 TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelte-kit,**/.turbo}"
 
@@ -226,6 +233,20 @@ sarif_rel(){ printf '%s/%s' "${SARIF_DIR#"$ROOT"/}" "$1"; }
 has_tracked(){ grep -qE "$1" <<<"$(git ls-files 2>/dev/null)"; }
 
 # ---- python deps (pip-audit) ----
+# Tracked python dependency manifests osv-scanner can read STATICALLY, minus the vendored kit's own
+# fixtures (material for a test, not this project's dependencies).
+py_manifests(){
+  local kit_rel="" f out=""
+  case "$KIT_DIR" in "$ROOT"/*) kit_rel="${KIT_DIR#"$ROOT"/}/" ;; esac
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if [ -n "$kit_rel" ]; then case "$f" in "$kit_rel"*) continue ;; esac; fi
+    out="$out $f"
+  done <<<"$(git ls-files -- '*requirements*.txt' '*uv.lock' '*Pipfile.lock' '*poetry.lock' '*pdm.lock' 2>/dev/null)"
+  # shellcheck disable=SC2086
+  printf '%s\n' $out
+}
+
 scan_py_deps(){
   has_tracked '(^|/)(pyproject\.toml|requirements[^/]*\.txt|uv\.lock|Pipfile)$' \
     || { warn deps "no Python project"; return 0; }
@@ -243,14 +264,50 @@ scan_py_deps(){
   elif [ -n "$venv" ] && [ -n "${VIRTUAL_ENV:-}" ] && [ "$VIRTUAL_ENV" != "$venv" ]; then
     warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not this repo's venv -> auditing ${venv#"$ROOT"/}"
   fi
-  if [ -n "$venv" ] && [ -x "$venv/bin/python" ]; then
-    export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
-    say deps "pip-audit --strict (==$PIP_AUDIT_VER, env ${venv#"$ROOT"/})"
-  else
-    say deps "pip-audit --strict (==$PIP_AUDIT_VER) — no project venv found; for lockfile-accurate deps run 'scan.sh osv'"
-  fi
+  if [ -z "$venv" ]; then scan_py_deps_no_env; return $?; fi
+
+  export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
+  say deps "pip-audit --strict (==$PIP_AUDIT_VER, env ${venv#"$ROOT"/})"
   # shellcheck disable=SC2086
   pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags || { [ $? -eq 127 ] && { warn deps "no uvx/pipx -> pip-audit skipped"; return 0; }; return 1; }
+}
+
+# No environment to inspect — the normal shape for a project that runs in a container. Auditing the
+# ambient interpreter here is what produced the failure this exists to prevent: measured on a
+# containerised Django repo, pip-audit reported "No known vulnerabilities found" against an EMPTY
+# environment while the committed requirements.txt carried 208 advisories across 37 packages, one of
+# them CVSS 9.8. A gate is not allowed to be green about something it never looked at.
+#
+# The obvious repair — `pip-audit -r requirements.txt` — is NOT usable here: pip-audit's requirement
+# source creates a virtualenv and installs the file to resolve it (`--no-deps` does not avoid it),
+# so it executes the dependency tree's build scripts. Running untrusted code to decide what to
+# report is the same own-goal the kit already refuses for `OSV_CALL_ANALYSIS=rust`. osv-scanner
+# reads the same manifests statically — no build, no install — and is already pinned in this kit, so
+# the no-venv path delegates to it instead of reaching for a new tool.
+scan_py_deps_no_env(){
+  local man; man="$(py_manifests)"
+  if [ -z "$man" ]; then
+    warn deps "INDETERMINATE — no project venv, and no manifest that can be read without building the project (pyproject.toml alone is not one). pip-audit had nothing to inspect; this is NOT a clean result."
+    return "$RC_INDETERMINATE"
+  fi
+  if ! docker_ok; then
+    warn deps "INDETERMINATE — no project venv, and no docker to read the manifests with osv-scanner. Nothing was inspected; this is NOT a clean result."
+    return "$RC_INDETERMINATE"
+  fi
+  local f targets=""
+  for f in $man; do targets="$targets -L /repo/$f"; done
+  # shellcheck disable=SC2086
+  say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed):$(printf ' %s' $man)"
+  # shellcheck disable=SC2086
+  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+    scan source $targets
+  local rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+    128) warn deps "INDETERMINATE — osv-scanner could not parse any of those manifests; nothing was inspected."; return "$RC_INDETERMINATE" ;;
+    *)  warn deps "INDETERMINATE — osv-scanner exit $rc (scan error, not a finding); nothing was inspected."; return "$RC_INDETERMINATE" ;;
+  esac
 }
 
 # ---- js deps (pnpm/yarn/npm auto) ----
@@ -992,7 +1049,9 @@ REPORT="${REPORT:-}"
 [ "${1:-}" = "pkgcheck" ] && { shift; scan_pkgcheck "$@"; exit $?; }
 
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
-_dim(){ local name="$1"; shift; "$@"; local c=$?; printf '%s\t%s\n' "$name" "$c" >> "$RESULTS_FILE"; [ "$c" -ne 0 ] && return 1; return 0; }
+_dim(){ local name="$1"; shift; "$@"; local c=$?; printf '%s\t%s\n' "$name" "$c" >> "$RESULTS_FILE"
+  # RC_INDETERMINATE is recorded but never blocks: it says "no opinion", not "finding".
+  [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && return 1; return 0; }
 
 run_scans(){
   local rc=0
@@ -1054,7 +1113,9 @@ rc=${PIPESTATUS[0]}
     [ -z "$dim" ] && continue
     [ "$first" = 1 ] || printf ',\n'
     first=0
-    st=pass; [ "$code" -ne 0 ] && st=fail
+    st=pass
+    [ "$code" -ne 0 ] && st=fail
+    [ "$code" -eq "$RC_INDETERMINATE" ] && st=indeterminate
     printf '    {"name": "%s", "exit_code": %s, "status": "%s"}' "$dim" "$code" "$st"
   done < "$RESULTS_FILE"
   printf '\n  ]\n}\n'
@@ -1066,5 +1127,7 @@ printf '\n\033[36m── raw report: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}
 [ "$SARIF" = "1" ] && printf '\033[36m── SARIF: %s/\033[0m\n' "${SARIF_DIR#"$ROOT"/}"
 [ -f "$EVIDENCE" ] && printf '\033[36m── evidence: %s (normalized findings; schema: docs/schema/evidence.md)\033[0m\n' "${EVIDENCE#"$ROOT"/}"
 printf '\033[36m── NEXT STEP — for triage + findings-%s.md, in Claude Code:  /sec-triage\033[0m\n' "$TODAY"
+indet="$(awk -F'\t' -v k="$RC_INDETERMINATE" '$2==k{printf " %s",$1}' "$RESULTS_FILE")"
+[ -n "$indet" ] && printf '\033[33m── INDETERMINATE:%s — the dimension had nothing to inspect. NOT a pass; do not read the green as coverage.\033[0m\n' "$indet"
 [ "$rc" -ne 0 ] && printf '\033[31m── HARD finding (rc=%s): commit/push is blocked; allowlist if FP, fix if real.\033[0m\n' "$rc"
 exit "$rc"

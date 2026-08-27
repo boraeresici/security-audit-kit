@@ -101,6 +101,10 @@ curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main
 bash bootstrap.sh v1.17.0
 bash bootstrap.sh v1.17.0 --scan          # kurulumdan sonra tam tarama da kos
 bash bootstrap.sh v1.17.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+# <sha>, tag'in isaret ettigi COMMIT'tir. Surum tag'leri annotated oldugu icin `git rev-parse <tag>`
+# sana tag NESNESINI verir ve --expect bunu reddeder. Commit'i acikca iste:
+#   git rev-parse v1.17.0^{commit}          # bu repo'nun bir klonunda
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.17.0 --jq .object.sha   # type=tag ise cozmen gerekir
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
@@ -640,6 +644,17 @@ denetlenecek bir sey de yoktur: not dusulerek atlanir, hata sayilmaz. Geriye kal
 **hepsi** denetlenir, sadece ilki degil. Uygulaman bu sezginin bulamayacagi bir yerdeyse (ya da
 repodaki tek `package.json` dosyalari repoya girmis front-end asset'leriyse) **`JS_DIRS`** ayarla,
 arama tumuyle devre disi kalir.
+
+**`py-deps` bulamadigi bir ortam hakkinda asla yesil demez.** Repoda bir `.venv` varsa (ya da aktif
+bir tane varsa) pip-audit onu denetler. Yoksa — konteynerde kosan bir proje icin normal olan sekil —
+ortamdaki bos yorumlayiciyi denetlemek *hicbir seyi* denetlemek demektir; bu yuzden kit commit'lenmis
+manifest'leri (`requirements*.txt`, `uv.lock`, `Pipfile.lock`, `poetry.lock`, `pdm.lock`) bunun
+yerine **osv-scanner** ile okur: statik olarak, hicbir sey build edilmez veya kurulmaz. (`pip-audit -r`
+bilerek kullanilmiyor — bir virtualenv yaratip dosyayi kuruyor, yani bagimlilik agacinin build
+script'lerini calistiriyor; kitin `OSV_CALL_ANALYSIS=rust` icin reddettigi seyin aynisi.) Ne ortam ne
+de okunabilir manifest varsa — ornegin yalin bir `pyproject.toml` — boyut **`indeterminate`** (cikis
+kodu 3) doner: bloklamaz, pass sayilmaz ve kosu bunu yuksek sesle soyler. `summary.json` bunu
+`"status": "indeterminate"` olarak kaydeder.
 
 **Onculuk:** `env > .security-audit.conf > default`. `:=` formu sayesinde
 tek-seferlik override icin env kullan: `SAST_PATHS="lib" bash scan.sh sast`.

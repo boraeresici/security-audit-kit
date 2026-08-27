@@ -8,6 +8,29 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed (gates that silenced themselves)
 
+- **`py-deps` was green on a repo with 208 dependency advisories.** Found while dogfooding
+  `v1.17.0-rc.1`: the consumer runs in a container, so there is no `.venv` in the repo. pip-audit
+  then audited the ambient (empty) interpreter and printed *"No known vulnerabilities found"* — while
+  the committed `requirements.txt` carried **208 advisories across 37 packages, one of them CVSS
+  9.8** (pyopenssl), which `scan.sh osv` found immediately. The dimension warned that it had no venv,
+  but still reported **pass**, and `osv` is not part of `all` — so the default gate was green about a
+  file it never opened. Same class as the SIGPIPE bug in 1.17.0, one layer up.
+  - **No venv now means the committed manifests get read**, statically, with the already-pinned
+    osv-scanner (`requirements*.txt`, `uv.lock`, `Pipfile.lock`, `poetry.lock`, `pdm.lock`).
+    `pip-audit -r` is deliberately NOT used: its requirement source creates a virtualenv and
+    installs the file to resolve it (`--no-deps` does not avoid this), so it executes the dependency
+    tree's build scripts — the same own-goal the kit already refuses for `OSV_CALL_ANALYSIS=rust`.
+    Verified against the same repo: the default `scan.sh deps` now blocks with the real findings.
+  - **New third verdict: `indeterminate`** (exit code 3). When there is neither an environment nor a
+    manifest readable without building the project (a bare `pyproject.toml`, or no docker to read
+    them with), the dimension reports `indeterminate` instead of `pass`. It does not block — refusing
+    what we failed to look at would block ordinary work — but it is never counted as coverage:
+    `summary.json` records `"status": "indeterminate"` and the run prints a banner saying the green
+    is not coverage. Documented in `docs/schema/evidence.md`.
+  - Coverage: 6 new e2e assertions (INDETERMINATE is reported, does not block, reaches
+    `summary.json`, prints the banner; and a committed manifest is read statically and its
+    known-vulnerable pin reported).
+
 - **`git ls-files | grep -q` was a silent false negative on any large repo — and it switched whole
   dimensions off.** `grep -q` exits at the first match, git is still writing, takes SIGPIPE, and
   `set -o pipefail` turns the pipeline's status into 141 — so the `||` branch ran and the gate
@@ -94,6 +117,12 @@ All notable changes to this project are documented here. The format is based on
   **Not swept yet, for release prep:** `docs/compare/*` row and `landing/`.
 
 ### Documentation
+
+- **`--expect=<sha>` now says where the SHA comes from.** Release tags are annotated, so the obvious
+  `git rev-parse <tag>` returns the tag OBJECT and `bootstrap.sh` correctly refuses it — which reads
+  like a tag-repoint alarm and invites `--allow-ref-change`, defeating the pin. README (en+tr) and
+  RELEASING.md now show `git rev-parse <tag>^{commit}` (and the `gh api` equivalent). Hit during the
+  v1.17.0-rc.1 dogfood.
 - **"I installed the kit but the skills do not show up in Claude Code."** The READMEs (en+tr) and
   the `install.sh` summary now say what actually governs it: Claude Code scans only
   `<working-root>/.claude/skills`, so opening a *container* folder that holds several repos side by

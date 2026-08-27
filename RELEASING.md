@@ -68,8 +68,11 @@ gh release create ${VER}-rc.1 --prerelease \
 ### 4. Dogfood the RC in real projects (the actual gate)
 In **≥1 real consumer project** (ideally 2–3 across stacks), pin to the RC and exercise it:
 ```sh
-# in the consumer repo — point the vendored kit at the RC tag + verify the exact SHA
-bash tools/security-audit-kit/bootstrap.sh ${VER}-rc.1 --expect=<rc_sha>
+# get the COMMIT the RC tag points at — `git rev-parse ${VER}-rc.1` returns the annotated tag
+# OBJECT, which --expect will (correctly) refuse:
+git rev-parse ${VER}-rc.1^{commit}
+# in the consumer repo — point the vendored kit at the RC tag + verify that exact SHA
+bash tools/security-audit-kit/bootstrap.sh ${VER}-rc.1 --expect=<rc_commit_sha>
 bash tools/security-audit-kit/scan.sh all
 bash tools/security-audit-kit/scan.sh doctor
 # run at least one skill pass (e.g. /sec-audit) if the change touches the AI layer

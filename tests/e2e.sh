@@ -728,6 +728,49 @@ else
 fi
 rm -rf "$BIG"
 
+echo "-- py-deps: a dimension that inspected nothing is INDETERMINATE, never a pass --"
+# Measured failure this guards: on a containerised repo (no local .venv) pip-audit audited the empty
+# ambient interpreter and printed "No known vulnerabilities found" while the committed
+# requirements.txt carried 208 advisories, one CVSS 9.8.
+PYR="$(mktemp -d)"
+(
+  cd "$PYR" || exit 1
+  git init -q .
+  mkdir -p tools/security-audit-kit
+  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
+  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  printf '[project]\nname = "noenv"\nversion = "0.1.0"\n' > pyproject.toml
+  git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -c user.email=e2e@test -c user.name=e2e commit -qm py >/dev/null 2>&1
+) || no "py-deps fixture could not be built"
+# (a) pyproject.toml only, no venv: nothing can be read without building the project.
+PYOUT="$(cd "$PYR" && bash tools/security-audit-kit/scan.sh deps 2>&1)"; PYRC=$?
+grep -q 'INDETERMINATE' <<<"$PYOUT" && ok "py-deps: no venv + no readable manifest -> INDETERMINATE" \
+  || no "py-deps: reported a verdict without inspecting anything"
+[ "$PYRC" -eq 0 ] && ok "py-deps: INDETERMINATE does not block the gate" \
+  || no "py-deps: INDETERMINATE blocked the gate (rc=$PYRC) — it is 'no opinion', not a finding"
+PYSUM="$(cat "$PYR/docs/security/scan-findings/summary.json" 2>/dev/null || echo '')"
+grep -q '"status": "indeterminate"' <<<"$PYSUM" \
+  && ok "py-deps: summary.json records indeterminate, not pass" \
+  || no "py-deps: summary.json still calls it pass/fail"
+grep -q 'NOT a pass' <<<"$PYOUT" && ok "py-deps: the run says out loud that green is not coverage" \
+  || no "py-deps: no INDETERMINATE banner on the run"
+# (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
+#     build a venv and install it, i.e. run the dependency tree's build scripts).
+printf 'requests==2.19.0\n' > "$PYR/requirements.txt"
+git -C "$PYR" -c user.email=e2e@test -c user.name=e2e add requirements.txt >/dev/null 2>&1
+if docker_ok; then
+  REQOUT="$(cd "$PYR" && bash tools/security-audit-kit/scan.sh deps 2>&1 || true)"
+  grep -q 'osv-scanner reads the committed manifests' <<<"$REQOUT" \
+    && ok "py-deps: no venv + a manifest -> read statically instead of reporting nothing" \
+    || no "py-deps: a committed requirements.txt was still not inspected"
+  grep -qE 'requests' <<<"$REQOUT" && ok "py-deps: the manifest's known-vulnerable pin is reported" \
+    || no "py-deps: requests==2.19.0 (known vulnerable) was not reported"
+else
+  skip "py-deps: manifest fallback (docker unavailable)"
+fi
+rm -rf "$PYR"
+
 echo "-- js-deps: audit the app, never a vendored asset, never block on 'cannot audit' --"
 # The reported failure: the first tracked package.json was a checked-in fullcalendar asset with no
 # lockfile, so npm audit exited ENOLOCK=1 and BLOCKED every commit that touched any manifest.
