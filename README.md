@@ -100,6 +100,10 @@ curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main
 bash bootstrap.sh v1.17.0
 bash bootstrap.sh v1.17.0 --scan          # also run a full scan after install
 bash bootstrap.sh v1.17.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+# <sha> is the COMMIT the tag points at. Release tags are annotated, so `git rev-parse <tag>` gives
+# you the tag OBJECT and --expect will refuse it. Ask for the commit explicitly:
+#   git rev-parse v1.17.0^{commit}          # in a clone of this repo
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.17.0 --jq .object.sha   # then resolve if type=tag
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
@@ -196,7 +200,8 @@ Why this shape (consistent with the kit's own ethos):
 - **Pinning is required in practice.** A moving ref (`main`) breaks the "no drift vs.
   CI" promise; bootstrap warns if you don't pass a tag/SHA. It writes a `.kit-version`
   (ref + resolved SHA) you can commit so the whole team shares one pinned version. Pass
-  `--expect=<sha>` to **enforce** the pin (refuse if the ref resolves elsewhere), and a
+  `--expect=<sha>` — the **commit** the tag resolves to, not the annotated tag's own object id
+  (`git rev-parse <tag>^{commit}`) — to **enforce** the pin (refuse if the ref resolves elsewhere), and a
   re-vendor of an already-pinned ref that now points to a different commit is refused
   (tag-repoint guard) unless you pass `--allow-ref-change`.
 - **Auto-scan is opt-in** (`--scan`), not the default — it respects the kit's split
@@ -645,6 +650,17 @@ there, so it is skipped with a note rather than failed. Every remaining director
 just the first. If your app lives somewhere the heuristic will not find it (or the only
 `package.json` files in the repo are checked-in front-end assets), set **`JS_DIRS`** and the
 search is bypassed entirely.
+
+**`py-deps` never reports green about an environment it could not find.** With a `.venv` in the
+repo (or an active one), pip-audit audits it. Without one — the normal shape for a project that
+runs in a container — auditing the ambient interpreter would mean auditing *nothing*, so the kit
+reads the committed manifests (`requirements*.txt`, `uv.lock`, `Pipfile.lock`, `poetry.lock`,
+`pdm.lock`) with **osv-scanner** instead: statically, nothing is built or installed. (`pip-audit -r`
+is deliberately not used — it creates a virtualenv and installs the file, i.e. runs the dependency
+tree's build scripts, which is the same thing the kit refuses for `OSV_CALL_ANALYSIS=rust`.) If
+there is neither an environment nor a readable manifest — a bare `pyproject.toml`, say — the
+dimension reports **`indeterminate`** (exit code 3): it does not block, it does not count as a pass,
+and the run says so out loud. `summary.json` records it as `"status": "indeterminate"`.
 
 **Precedence:** `env > .security-audit.conf > default`. Thanks to the `:=` form,
 use env for a one-off override: `SAST_PATHS="lib" bash scan.sh sast`.

@@ -47,6 +47,10 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
     "exit_code": 1,
     "raw_log": "docs/security/scan-findings/raw-2026-08-12.log",
     "dimensions": [{"name": "sast", "exit_code": 0, "status": "pass"}]
+    // status is "pass" | "fail" | "indeterminate". "indeterminate" (exit_code 3) means the
+    // dimension RAN but had nothing to inspect — e.g. py-deps with no environment and no manifest
+    // readable without building the project. It never blocks, and it must never be read as
+    // coverage: treat it as an unanswered question, not a clean result.
   },
   "counts": {
     "total": 3,
