@@ -57,6 +57,16 @@ All notable changes to this project are documented here. The format is based on
   *not* cover — the agent's tool calls only, never a human typing `npm i`).
   **Not swept yet, for release prep:** `docs/compare/*` row and `landing/`.
 
+### Documentation
+- **"I installed the kit but the skills do not show up in Claude Code."** The READMEs (en+tr) and
+  the `install.sh` summary now say what actually governs it: Claude Code scans only
+  `<working-root>/.claude/skills`, so opening a *container* folder that holds several repos side by
+  side loads none of the skills installed into one of them (`--add-dir` does not extend the scan),
+  and skills are enumerated at session start, so a newly installed one needs a new session. Also
+  states plainly that committing is what carries the skills to TEAMMATES — it is not what makes
+  them visible to you — and that the kit is repo-scoped: a backend and a frontend in two repos
+  need two installs.
+
 ## [1.16.1] - 2026-08-24
 
 ### Fixed (docs — the flow diagrams described less than the kit does)

@@ -130,6 +130,44 @@ cp -R /proje-a/tools/security-audit-kit /proje-b/tools/
 cd /proje-b && bash tools/security-audit-kit/install.sh
 ```
 
+## Kurulumdan sonra: skill'leri Claude Code'da gorunur yapmak
+
+Bes `sec-*` skill'i duz dosyalardir: `<repo-koku>/.claude/skills/<ad>/SKILL.md`. Claude Code
+bunlari diskten okur, yani **senin gormen icin commit gerekmez**. Gorunup gorunmemesini iki
+sey belirler:
+
+1. **Claude Code'un calisma koku, `.claude/skills`'i tutan repo koku OLMALI.** Sadece
+   `<kok>/.claude/skills` taranir — alt klasorler taranmaz, `--add-dir` de taramayi
+   genisletmez. Birden fazla repo'yu yan yana bir kapsayici klasorde tutuyorsan ve
+   editorde **kapsayiciyi** acarsan, repolardan birine kurulan skill'ler yuklenmez:
+
+   ```
+   work/acme/                 <- editorde BUNU acmak: skill yok
+     backend/                 <- BUNU acmak: skill'ler yuklenir
+       tools/security-audit-kit/
+       .claude/skills/sec-*/
+     frontend/                <- kendi kurulumunu ister
+   ```
+
+2. **Yeni bir oturum baslat.** Skill'ler oturum basinda taranir; oturum ortasinda
+   `/skills` icinden ac/kapa yapmak yeni kurulanlari kesfetmez.
+
+`/skills` ile dogrula — `sec-audit`, `sec-triage`, `sec-sast-deep`, `sec-ai-review` ve
+`sec-threat-model` listede olmali.
+
+**Commit senin icin degil, takim arkadaslarin icin.** Skill'ler ekibin geri kalanina
+diger her dosya gibi git uzerinden ulasir:
+
+```bash
+git add .claude/skills tools/security-audit-kit .security-audit.conf .security-exclusions.md
+git commit -m "chore(sec): security-audit-kit ekle"
+```
+
+**Repo basina bir kurulum.** Kit tasarim geregi repo kapsamlidir: hook'lar o repo'nun
+`core.hooksPath`'i uzerinden baglanir, `.security-audit.conf` o repo'nun SAST yollarini
+tasir, bulgular o repo'nun `docs/security/scan-findings/` klasorune duser. Iki ayri repodaki
+backend ile frontend iki ayri kurulum ister — repolar arasi bir mod yoktur.
+
 ## pre-commit framework ile (kitin kendi hook'larina alternatif)
 
 Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari yerine onu

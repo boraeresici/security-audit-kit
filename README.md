@@ -129,6 +129,45 @@ cp -R /project-a/tools/security-audit-kit /project-b/tools/
 cd /project-b && bash tools/security-audit-kit/install.sh
 ```
 
+## After install: making the skills visible in Claude Code
+
+The five `sec-*` skills are plain files at `<repo-root>/.claude/skills/<name>/SKILL.md`.
+Claude Code reads them off disk, so **you do not need to commit anything to see them**.
+Two things decide whether they show up:
+
+1. **Claude Code's working root must BE the repo root** that holds `.claude/skills`. Only
+   `<root>/.claude/skills` is scanned — subdirectories are not, and `--add-dir` does not
+   extend the scan. If you keep several repos side by side under a container folder and
+   open the **container** in your editor, skills installed into one of the repos will not
+   load:
+
+   ```
+   work/acme/                 <- opening THIS in the editor: no skills
+     backend/                 <- opening THIS: skills load
+       tools/security-audit-kit/
+       .claude/skills/sec-*/
+     frontend/                <- needs its own install
+   ```
+
+2. **Start a new session.** Skills are enumerated at session start; toggling them in
+   `/skills` mid-session does not discover newly installed ones.
+
+Confirm with `/skills` — `sec-audit`, `sec-triage`, `sec-sast-deep`, `sec-ai-review` and
+`sec-threat-model` should all be listed.
+
+**Committing is for your teammates, not for you.** The skills reach the rest of the team
+the way any other file does, through git:
+
+```bash
+git add .claude/skills tools/security-audit-kit .security-audit.conf .security-exclusions.md
+git commit -m "chore(sec): add security-audit-kit"
+```
+
+**One install per repository.** The kit is repo-scoped by design: hooks are wired through
+that repo's `core.hooksPath`, `.security-audit.conf` carries that repo's SAST paths, and
+findings land in that repo's `docs/security/scan-findings/`. A backend and a frontend in
+two repos need two installs — there is no cross-repo mode.
+
 ## Using the pre-commit framework (alternative to the kit's own hooks)
 
 Already on [pre-commit](https://pre-commit.com)? Add the kit to your `.pre-commit-config.yaml`

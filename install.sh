@@ -150,6 +150,10 @@ cat <<EOF
   AI/LLM review : /sec-ai-review in Claude (prompt injection/agency; if the code calls an LLM)
   threat model  : /sec-threat-model in Claude (STRIDE/data-flow; new subsystem / design review)
   one-command   : /sec-audit in Claude (orchestrator: scan + triage + signal-gated deep passes)
+  skills visible: open THIS repo root in Claude Code (not a parent folder) and start a NEW
+                  session — only <root>/.claude/skills is scanned; confirm with /skills
+  share w/ team : git add .claude/skills tools/security-audit-kit .security-audit.conf \\
+                  .security-exclusions.md   (uncommitted works for YOU; teammates need the commit)
   pre-commit fw : already use pre-commit? add this repo via .pre-commit-hooks.yaml instead of
                   the kit's hooks; run 'install.sh --skills-only' for the skills (no hooksPath)
   agent hook    : install.sh --with-agent-hook -> checks a package BEFORE the agent installs it
