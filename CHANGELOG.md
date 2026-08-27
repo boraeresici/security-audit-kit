@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added (#R5.2, slice A — a run lock, so two scans cannot write one record)
+- **The failure it removes.** `raw-<date>.log` is appended by every run and `summary.json` is
+  truncated and rewritten by every run. Two overlapping scans — a pre-push `all` while someone runs
+  a dimension by hand, or a pre-commit firing during a push — interleaved their lines into one log
+  and could truncate `summary.json` while `/sec-triage` was reading it. Nothing warned; the record
+  simply disagreed with itself.
+- **`mkdir` as the lock.** It either creates the directory or fails, with no window between the
+  check and the create — the same primitive `spotify/git-test` uses. The lock lives in
+  `.git/security-audit-cache/scan.lock` (never in the repo tree, never in `CHECKSUMS`) and carries
+  its owner's pid, timestamp and command so a wait message can name who holds it.
+- **The lock serializes writers, it does not gate scans.** A second run waits `SCAN_LOCK_WAIT`
+  seconds (30); if it still cannot take the lock it **runs anyway**, into its own
+  `raw-<date>.<pid>.log`, and says so twice. Blocking a push because a colleague's scan is running
+  would be a security gate failing for a reason that has nothing to do with security.
+- **`summary.json` is written then renamed.** `rename(2)` is atomic, so a reader gets the previous
+  record or the new one — never half of one — even in the unlocked-concurrent case.
+- **A crashed run cannot leave a permanent lock**: the directory outlives the process, so it is
+  reclaimed when the owner PID is gone or after `SCAN_LOCK_STALE_MIN` (60) minutes, with a line
+  saying which lock was reclaimed.
+- **`doctor` shows the lock** as free / held by whom / held-but-stale, plus the wait setting — an
+  invisible lock is how a stale one becomes permanent.
+- Coverage: 8 new e2e assertions — released after a normal run, valid JSON summary with no temp
+  files left, a live holder pushes the second run into its own log **without skipping its scan** and
+  without touching the shared log, a dead owner's lock is reclaimed rather than waited on, and
+  `doctor` reports it.
+- Deliberately **not** in this slice: the per-dimension result cache (#R5.2 slice B). v1.17.0 found
+  three dimensions that had silently switched themselves off — a cache is a machine for making a
+  false "clean" sticky, so it ships separately, opt-in, and only for dimensions whose input set can
+  be proven. The lock was always independent of it.
+
 ## [1.17.0] - 2026-08-27
 
 ### Fixed (gates that silenced themselves)
