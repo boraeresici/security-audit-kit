@@ -352,6 +352,17 @@ Otomatik tetik (install sonrasi):
   kit ise anlamlidir.
 - Bypass (acil): `SKIP_SECURITY=1 git commit` / `git push --no-verify`.
 
+**Ayni anda iki tarama.** Pre-push `all` kosarken senin elle `scan.sh sast` kosman siradan bir
+durum; ikisi de ayni `raw-<tarih>.log` dosyasina yaziyordu (satirlar birbirine giriyordu) ve ayni
+`summary.json`'i — ki `/sec-triage` onu yarim halde okuyabiliyordu. Artik `.git/security-audit-cache/`
+altinda `mkdir` tabanli bir kilit *yazicilari* siraya sokuyor: `summary.json` once gecici dosyaya
+yazilip rename ediliyor (okuyan ya eski ya yeni kaydi gorur, asla yarisini degil) ve ikinci kosu
+kilit icin `SCAN_LOCK_WAIT` saniye (varsayilan 30) bekliyor. Alamazsa **tarama yine de kosar** —
+baskasi tarama yapiyor diye bir push asla bloklanmaz — sadece kendi `raw-<tarih>.<pid>.log` dosyasina
+yazar ve bunu soyler. Oldurulen bir taramadan kalan kilit, sahibinin PID'i olu ise ya da
+`SCAN_LOCK_STALE_MIN` (60) dakika sonra geri alinir; `scan.sh doctor` kilidin bos/tutulu/bayat
+oldugunu yazar.
+
 > **Vendor'daki kit salt-okunurdur.** `tools/security-audit-kit/` elle duzenlenmez — ne sen, ne bir
 > takim arkadasin, ne de triyaj sirasinda tarayiciyi "duzelten" bir AI asistani. Duzenleme bir
 > sonraki `bootstrap.sh` ile kaybolur, o ana kadar da pre-push herkesi bloklar. Gercek bir bug mi

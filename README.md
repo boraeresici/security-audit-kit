@@ -350,6 +350,16 @@ Automatic triggers (after install):
   produced it is the one you pinned.
 - Bypass (emergency): `SKIP_SECURITY=1 git commit` / `git push --no-verify`.
 
+**Two scans at once.** A pre-push running `all` while you run `scan.sh sast` by hand is ordinary,
+and both used to write the same `raw-<date>.log` (interleaved lines) and the same `summary.json` —
+which `/sec-triage` could read mid-write. A `mkdir`-based lock in `.git/security-audit-cache/` now
+serializes the *writers*: `summary.json` is written to a temp file and renamed (a reader sees the old
+record or the new one, never half of one), and a second run waits `SCAN_LOCK_WAIT` seconds (30 by
+default) for the lock. If it cannot take it, **the scan still runs** — a push is never blocked because
+someone else is scanning — it just writes its own `raw-<date>.<pid>.log` and says so. A lock left
+behind by a killed scan is reclaimed on a dead owner PID or after `SCAN_LOCK_STALE_MIN` (60) minutes;
+`scan.sh doctor` prints whether the lock is free, held, or stale.
+
 > **The vendored kit is read-only.** Don't hand-edit `tools/security-audit-kit/` — not you, not a
 > teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next
 > `bootstrap.sh`, and until then pre-push blocks for everyone. Found a real bug? Report it upstream

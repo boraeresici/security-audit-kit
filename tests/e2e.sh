@@ -572,6 +572,41 @@ else
   skip "eval harness (node unavailable)"
 fi
 
+echo "-- run lock (one writer for raw-<date>.log + summary.json) --"
+LOCK=".git/security-audit-cache/scan.lock"
+DAYLOG="docs/security/scan-findings/raw-$(date +%F).log"
+$SCAN iac >/dev/null 2>&1
+[ ! -d "$LOCK" ] && ok "lock: released after a normal run" || no "lock: left behind after a run"
+python3 -c "import json;json.load(open('docs/security/scan-findings/summary.json'))" 2>/dev/null \
+  && ok "lock: summary.json is valid JSON after a run" || no "lock: summary.json unreadable"
+ls docs/security/scan-findings/summary.json.*.tmp >/dev/null 2>&1 \
+  && no "lock: a summary temp file was left behind" \
+  || ok "lock: no summary temp files left (write-then-rename)"
+
+# A live holder must NOT make the second run skip its scan — it must scan into its own log, so
+# the shared record stays coherent while the gate keeps working.
+mkdir -p "$LOCK" && printf 'pid=%s date=%s cmd=all\n' "$$" "$(date +%FT%T)" > "$LOCK/owner"
+BEFORE="$(wc -c < "$DAYLOG" 2>/dev/null || echo 0)"
+LOCKOUT="$(SCAN_LOCK_WAIT=1 $SCAN iac 2>&1)"
+AFTER="$(wc -c < "$DAYLOG" 2>/dev/null || echo 0)"
+printf '%s' "$LOCKOUT" | grep -q 'SEPARATE log' \
+  && [ "$BEFORE" = "$AFTER" ] \
+  && ls docs/security/scan-findings/raw-"$(date +%F)".*.log >/dev/null 2>&1 \
+  && ok "lock: a second run scans anyway, into its own log (shared log untouched)" \
+  || no "lock: contention handling wrong (interleaved or scan skipped)"
+rm -rf "$LOCK"; rm -f docs/security/scan-findings/raw-"$(date +%F)".*.log
+
+# A lock directory outlives a killed scan; if that were permanent, every later run would be
+# pushed out of the shared record forever.
+mkdir -p "$LOCK" && printf 'pid=999999 date=2020-01-01T00:00:00 cmd=all\n' > "$LOCK/owner"
+# Capture, then grep: `| grep -q` exits at the first match, the scan takes SIGPIPE and pipefail
+# turns that into 141 — the exact false-negative shape v1.17.0 removed from the kit itself.
+STALEOUT="$(SCAN_LOCK_WAIT=1 $SCAN iac 2>&1 || true)"
+printf '%s' "$STALEOUT" | grep -q 'stale lock reclaimed' \
+  && ok "lock: a dead owner's lock is reclaimed, not waited on" || no "lock: stale lock not reclaimed"
+[ ! -d "$LOCK" ] && ok "lock: released again after the reclaiming run" || no "lock: not released after reclaim"
+grep -q 'run lock' <($SCAN doctor 2>/dev/null) && ok "doctor: reports the run lock" || no "doctor: no run-lock line"
+
 echo "-- pkgcheck: the pre-install gate (offline; fixtures, no network) --"
 PKGCHECK="tools/security-audit-kit/lib/pkgcheck.py"
 if have python3; then

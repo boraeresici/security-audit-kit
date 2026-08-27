@@ -83,3 +83,9 @@
 # pkg@version verdict is immutable; an unversioned one expires after this many minutes.
 # PKGCHECK_CACHE=off
 # PKGCHECK_CACHE_TTL_MIN=1440
+
+# --- run lock: one writer at a time for raw-<date>.log + summary.json --------------------------
+# A second run waits this many seconds for the lock, then scans anyway into its own log (the scan
+# is never skipped for a lock). A lock left by a killed scan is reclaimed on a dead PID or on age.
+# SCAN_LOCK_WAIT=30
+# SCAN_LOCK_STALE_MIN=60

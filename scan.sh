@@ -200,6 +200,8 @@ SEMGREP_CONFIGS="$SEMGREP_CONFIGS_BASE$SEMGREP_CONFIGS_LOCAL"
 have(){ command -v "$1" >/dev/null 2>&1; }
 say(){ printf '\033[36m[scan:%s]\033[0m %s\n' "$1" "$2"; }
 warn(){ printf '\033[33m[scan:%s] SKIP: %s\033[0m\n' "$1" "$2"; }
+# Same colour, no "SKIP:" — for things that were not skipped but must not go unread (the lock).
+note(){ printf '\033[33m[scan:%s] %s\033[0m\n' "$1" "$2"; }
 
 # Run a pinned Python CLI on-demand via uvx OR pipx (different spec flags).
 # args: <package> <version> <command> [args...]
@@ -771,6 +773,23 @@ scan_doctor(){
     printf '  !!  audit: expired entries or a cross-path gap -> run: scan.sh allowlist\n'
   fi
 
+  # Two overlapping runs used to interleave the same raw log and truncate summary.json under a
+  # reader. Whether a lock is held right now (or left behind by a crash) is otherwise invisible.
+  printf '\nrun lock (one writer for raw-<date>.log + summary.json):\n'
+  local lk lkowner
+  lk="$(scan_lock_path)"
+  if [ -d "$lk" ]; then
+    lkowner="$(cat "$lk/owner" 2>/dev/null || echo 'owner unknown')"
+    if [ -n "$(find "$lk" -maxdepth 0 -mmin "+$SCAN_LOCK_STALE_MIN" 2>/dev/null)" ]; then
+      printf '  !!  HELD but stale (>%s min): %s — next run reclaims it\n' "$SCAN_LOCK_STALE_MIN" "$lkowner"
+    else
+      printf '  ok  held right now by %s\n' "$lkowner"
+    fi
+  else
+    printf '  ok  free (%s)\n' "${lk#"$ROOT"/}"
+  fi
+  printf '      a second run waits %ss, then scans anyway into its own raw-<date>.<pid>.log\n' "$SCAN_LOCK_WAIT"
+
   # The git hooks cannot see `npm i <pkg>`: the install script has already run by the time a
   # manifest reaches the index. Whether that window is guarded is invisible unless it is said.
   printf '\nagent pre-install check (pkgcheck):\n'
@@ -1038,6 +1057,68 @@ scan_report(){
 }
 
 SARIF="${SARIF:-0}"
+CMD="${1:-all}"
+TODAY="$(date +%F)"
+LOG_DIR="$ROOT/docs/security/scan-findings"
+
+# ---- run lock — one writer at a time for the shared record ----------------------------------
+# Two scans can overlap for entirely ordinary reasons: a pre-push runs `all` while someone runs
+# `scan.sh sast` by hand, or a pre-commit fires while the previous push is still scanning. They
+# then write the SAME `raw-<date>.log` (interleaved lines) and the same `summary.json` (one
+# truncates it while /sec-triage is reading it — a half-written record the reader cannot detect).
+# The lock serializes the writers; it deliberately does NOT gate the scan itself: refusing to scan
+# because someone else is scanning would block a push for a reason that has nothing to do with
+# security. If the lock cannot be taken, the run continues into its OWN log and says so.
+SCAN_LOCK_WAIT="${SCAN_LOCK_WAIT:-30}"            # seconds to wait for the other run
+SCAN_LOCK_STALE_MIN="${SCAN_LOCK_STALE_MIN:-60}"  # a lock older than this is a crashed run
+LOCK_DIR=""
+LOCK_HELD=0
+
+scan_lock_path(){
+  local common
+  if common="$(git rev-parse --git-common-dir 2>/dev/null)"; then
+    case "$common" in /*) ;; *) common="$ROOT/$common" ;; esac
+    printf '%s/security-audit-cache/scan.lock' "$common"
+  else
+    # No .git (a tarball checkout): keep the lock beside the artifacts it protects.
+    printf '%s/.scan.lock' "$LOG_DIR"
+  fi
+}
+
+# `mkdir` is the atomic primitive here: it either creates the directory or fails, with no window
+# between the check and the create that a second process could slip through.
+scan_lock_acquire(){
+  local owner pid waited=0
+  LOCK_DIR="$(scan_lock_path)"
+  mkdir -p "$(dirname "$LOCK_DIR")" 2>/dev/null || return 1
+  while :; do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      printf 'pid=%s date=%s cmd=%s\n' "$$" "$(date +%FT%T)" "$CMD" > "$LOCK_DIR/owner" 2>/dev/null
+      LOCK_HELD=1
+      return 0
+    fi
+    owner="$(cat "$LOCK_DIR/owner" 2>/dev/null || echo 'owner unknown')"
+    pid="$(printf '%s' "$owner" | sed -n 's/^pid=\([0-9]*\).*/\1/p')"
+    # A lock directory outlives the process that made it — a killed scan, a closed terminal, a
+    # crashed container. Reclaim on a dead pid, or on age, so a stale lock cannot become permanent.
+    if { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } \
+       || [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin "+$SCAN_LOCK_STALE_MIN" 2>/dev/null)" ]; then
+      note lock "stale lock reclaimed ($owner)"
+      rm -rf "$LOCK_DIR" 2>/dev/null
+      continue
+    fi
+    if [ "$waited" -ge "$SCAN_LOCK_WAIT" ]; then return 1; fi
+    [ "$waited" -eq 0 ] && say lock "another scan holds the lock ($owner) — waiting up to ${SCAN_LOCK_WAIT}s"
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+scan_lock_release(){
+  [ "$LOCK_HELD" = "1" ] && [ -n "$LOCK_DIR" ] && rm -rf "$LOCK_DIR" 2>/dev/null
+  LOCK_HELD=0
+}
+
 REPORT="${REPORT:-}"
 
 [ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
@@ -1077,9 +1158,6 @@ run_scans(){
 # Every scan: write raw output to a per-day file (persistent trail) + a machine-readable
 # summary.json + (opt-in) SARIF, then print a triage instruction. raw-*.log/summary.json
 # are transient (gitignored); the persistent record is the triage's findings-*.md.
-CMD="${1:-all}"
-TODAY="$(date +%F)"
-LOG_DIR="$ROOT/docs/security/scan-findings"
 LOG="$LOG_DIR/raw-$TODAY.log"
 SUMMARY="$LOG_DIR/summary.json"
 SARIF_DIR="$LOG_DIR/sarif"
@@ -1087,9 +1165,18 @@ EVIDENCE="$LOG_DIR/evidence.json"
 FINDINGS_MD="$LOG_DIR/findings-$TODAY.md"
 REPORT_HTML="$LOG_DIR/report-$TODAY.html"
 RESULTS_FILE="$(mktemp)"
-trap 'rm -f "$RESULTS_FILE"' EXIT
+trap 'rm -f "$RESULTS_FILE"; scan_lock_release' EXIT INT TERM
 mkdir -p "$LOG_DIR"
 [ "$SARIF" = "1" ] && mkdir -p "$SARIF_DIR"
+
+# Take the writer lock before ANY artifact is touched — `evidence`/`report` included, since they
+# read summary.json + sarif/ and would otherwise be able to read a record mid-write.
+if ! scan_lock_acquire; then
+  note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> running anyway, into a SEPARATE log"
+  note lock "(the scan is never skipped for a lock; only the shared record is kept coherent)"
+  LOG="$LOG_DIR/raw-$TODAY.$$.log"
+fi
+
 # Rebuild the record / re-render the report from what is already on disk, without re-scanning.
 [ "$CMD" = "evidence" ] && { scan_evidence; exit $?; }
 [ "$CMD" = "report" ]   && { scan_report; exit $?; }
@@ -1119,7 +1206,7 @@ rc=${PIPESTATUS[0]}
     printf '    {"name": "%s", "exit_code": %s, "status": "%s"}' "$dim" "$code" "$st"
   done < "$RESULTS_FILE"
   printf '\n  ]\n}\n'
-} > "$SUMMARY"
+} > "$SUMMARY.$$.tmp" && mv -f "$SUMMARY.$$.tmp" "$SUMMARY"
 
 [ "$SARIF" = "1" ] && scan_evidence
 
