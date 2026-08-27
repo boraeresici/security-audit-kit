@@ -1,6 +1,6 @@
 # How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-08-24 · kit **v1.16.1**
+> **Last updated:** 2026-08-27 · kit **v1.17.0**
 >
 > Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
 > (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
@@ -39,7 +39,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | Secrets detection | ✓ | ✓ | ✓ gitleaks — full history + sub-second staged mode |
 | Dependency CVE scanning (SCA) | ✓ | ✓ | ✓ pip-audit + npm/pnpm/yarn audit + OSV-Scanner (multi-ecosystem) |
 | Reachability analysis for SCA | ✓ | ✗ | Partial — opt-in `OSV_CALL_ANALYSIS=go` marks whether the vulnerable symbol is actually called, paired with `--all-vulns` so the gate never loosens; `sec-triage` treats it as evidence, not a verdict. Python/JS reachability needs a heavier tool and is not shipped. Rust is refused by default: it runs the dependency tree's build scripts |
-| Malicious package / typosquat detection | ✓ | ✗ | ✓ GuardDog (PyPI + npm) |
+| Malicious package / typosquat detection | ✓ | ✗ | ✓ GuardDog (PyPI + npm) — plus `scan.sh pkgcheck`, which checks a named package **before** it is installed: an opt-in agent `PreToolUse` hook blocks the install command itself, closing the window where the package's install script has already run by the time a manifest is staged. Blocks on 24 measured malice-specific rules; a package it could not fetch is INDETERMINATE, never "clean" |
 | SBOM generation | ✓ | ✓ | ✓ syft — CycloneDX + SPDX |
 | License scanning | ✓ | ✓ | ✓ trivy license scanner |
 | License policy gating (block on violation) | ✓ | ✗ | ✗ under consideration |

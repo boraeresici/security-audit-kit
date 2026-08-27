@@ -97,13 +97,13 @@ re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, revie
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.16.1
-bash bootstrap.sh v1.16.1 --scan          # also run a full scan after install
-bash bootstrap.sh v1.16.1 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.17.0
+bash bootstrap.sh v1.17.0 --scan          # also run a full scan after install
+bash bootstrap.sh v1.17.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.16.1`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.17.0`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
@@ -175,7 +175,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.16.1          # pin a tag
+  rev: v1.17.0          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -219,8 +219,8 @@ repo — it won't tell you upstream changed. Two ways to find out:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
    # vendored version : v1.16.0
-   # latest tag       : v1.16.1
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.16.1
+   # latest tag       : v1.17.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.17.0
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
    periodic check or a `make` target.
@@ -230,9 +230,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.16.1   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.17.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.16.1"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.17.0"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
