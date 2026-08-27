@@ -572,6 +572,81 @@ else
   skip "eval harness (node unavailable)"
 fi
 
+echo "-- pkgcheck: the pre-install gate (offline; fixtures, no network) --"
+PKGCHECK="tools/security-audit-kit/lib/pkgcheck.py"
+if have python3; then
+  # 1) command parsing: what gets checked, and what must NOT be mistaken for a package name.
+  PARSED="$(python3 $PKGCHECK --command 'npm i lodash react@18.2.0 && pip install requests==2.32.3 -r reqs.txt')"
+  printf '%s' "$PARSED" | grep -q '^npm	lodash	$' \
+    && printf '%s' "$PARSED" | grep -q '^npm	react	18.2.0$' \
+    && printf '%s' "$PARSED" | grep -q '^pypi	requests	2.32.3$' \
+    && ! printf '%s' "$PARSED" | grep -q 'reqs.txt' \
+    && ok "pkgcheck: parses install targets, ignores -r <file> (that is scan.sh deps' job)" \
+    || no "pkgcheck: install-target parsing wrong"
+  # `npm install` with no argument installs the lockfile that is already in the repo, and a
+  # non-install command must never reach the scanner — otherwise the hook taxes every Bash call.
+  [ -z "$(python3 $PKGCHECK --command 'npm install && npm run build && git commit -m "install"')" ] \
+    && ok "pkgcheck: bare 'npm install' / non-install commands yield no targets" \
+    || no "pkgcheck: false-positive install target"
+
+  # 2) verdicts. The fixtures are real guarddog 3.0.2 output shapes.
+  echo '{"package":"lodahs","issues":1,"errors":{},"results":{"typosquatting":["lodash"],"capability-network-outbound":[]}}' \
+    > gd_block.json
+  # `--classify` exits 1 on BLOCK and 2 on INDETERMINATE by design (the hook reads that code),
+  # and this harness runs with pipefail — so capture the verdict, never grep through the pipe.
+  V_BLOCK="$(python3 $PKGCHECK --classify < gd_block.json || true)"
+  printf '%s' "$V_BLOCK" | grep -q '^BLOCK	typosquatting' \
+    && ok "pkgcheck: typosquat blocks" || no "pkgcheck: typosquat did not block"
+  # The FP guard, and it is the load-bearing one: measured on 18 of the most-installed packages,
+  # threat-* rules fire on django/pandas/next/webpack. Blocking on them would block `pip install
+  # django`, the gate would be uninstalled, and an uninstalled gate protects nothing.
+  echo '{"package":"pandas","issues":2,"errors":{},"results":{"threat-process-download-exec":[{"l":1}],"capability-process-spawn":[{"l":2}]}}' \
+    > gd_note.json
+  V_NOTE="$(python3 $PKGCHECK --classify < gd_note.json || true)"
+  printf '%s' "$V_NOTE" | grep -q '^NOTE' \
+    && ok "pkgcheck: threat-* rules that fire on popular packages report, never block" \
+    || no "pkgcheck: over-blocking — a legitimate package would be refused"
+  # guarddog prints "No risks found" and exits 0 when the DOWNLOAD failed; reporting that as
+  # clean would be a lie the caller cannot detect.
+  echo '{"package":"x","issues":0,"errors":{"download-package":"404"}}' > gd_err.json
+  V_ERR="$(python3 $PKGCHECK --classify < gd_err.json || true)"
+  printf '%s' "$V_ERR" | grep -q '^INDETERMINATE' \
+    && ok "pkgcheck: a failed download is INDETERMINATE, never 'clean'" \
+    || no "pkgcheck: failed download reported as clean"
+  rm -f gd_block.json gd_note.json gd_err.json
+
+  # 3) the hook: allow-by-default, and no scanner start-up for ordinary commands.
+  HOOK="tools/security-audit-kit/hooks/pre-tool-install.sh"
+  echo '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | bash $HOOK >/dev/null 2>&1 \
+    && ok "agent hook: non-install command passes (fast path)" || no "agent hook: fast path broken"
+  echo 'not json at all' | bash $HOOK >/dev/null 2>&1 \
+    && ok "agent hook: unreadable payload is allowed, never blocked" || no "agent hook: fails closed on junk"
+else
+  skip "pkgcheck (no python3)"
+fi
+
+echo "-- agent hook wiring (opt-in) --"
+grep -q 'NOT wired' <($SCAN doctor 2>/dev/null) \
+  && ok "doctor: says the pre-install window is unguarded when the hook is not wired" \
+  || no "doctor: missing/incorrect agent-hook line"
+if have python3; then
+  TAH="$(mktemp -d)"
+  mkdir -p "$TAH/tools/security-audit-kit"
+  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TAH/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TAH/tools/security-audit-kit"/; fi
+  ( cd "$TAH" && git init -q && bash tools/security-audit-kit/install.sh --with-agent-hook \
+      && bash tools/security-audit-kit/install.sh --with-agent-hook ) >/dev/null 2>&1
+  python3 -c "
+import json,sys
+d=json.load(open('$TAH/.claude/settings.json'))
+hooks=[h for m in d['hooks']['PreToolUse'] if m.get('matcher')=='Bash' for h in m['hooks']]
+sys.exit(0 if len(hooks)==1 and 'pre-tool-install.sh' in hooks[0]['command'] else 1)" 2>/dev/null \
+    && ok "--with-agent-hook: PreToolUse(Bash) wired once (idempotent on re-run)" \
+    || no "--with-agent-hook: settings.json wiring wrong"
+  [ -z "$(git -C "$TAH" config core.hooksPath >/dev/null 2>&1; python3 -c "import json;d=json.load(open('$TAH/.claude/settings.json'));print('' if d.get('hooks') else 'x')")" ] \
+    && ok "--with-agent-hook: settings.json remains valid JSON" || no "--with-agent-hook: settings.json broken"
+  rm -rf "$TAH"
+else skip "--with-agent-hook (no python3)"; fi
+
 echo "-- pre-commit framework integration --"
 if have python3; then
   python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \

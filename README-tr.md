@@ -19,7 +19,9 @@ Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
 (trivy), **SBOM** (syft) ve opsiyonel boyutlar: **cok-ekosistem bagimlilik CVE**
 (`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **kotu niyetli/typosquat bagimlilik**
 (`scan.sh guarddog` — GuardDog; bilinen-CVE kor noktasi) ve **GitHub Actions guvenligi**
-(`scan.sh zizmor` — template injection, poisoned pipeline, token asiri-izin). Eksik
+(`scan.sh zizmor` — template injection, poisoned pipeline, token asiri-izin), ayrica bir
+**kurulum-oncesi paket kontrolu** (`scan.sh pkgcheck` — `npm i` paketin kurulum script'ini
+calistirmadan *once* guarddog; ajan hook'u olarak da kullanilabilir). Eksik
 toolchain olan boyut otomatik atlanir.
 
 Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
@@ -270,6 +272,7 @@ bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh osv        # opsiyonel: cok-ekosistem dep CVE (OSV-Scanner)
 bash tools/security-audit-kit/scan.sh guarddog   # opsiyonel: kotu niyetli/typosquat dep (GuardDog; network gerekir)
 bash tools/security-audit-kit/scan.sh zizmor     # opsiyonel: GitHub Actions guvenligi (zizmor; offline)
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash    # opsiyonel: TEK paketi kurulmadan ONCE kontrol et
 bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edilen projeler
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
@@ -311,6 +314,47 @@ Otomatik tetik (install sonrasi):
 > takim arkadasin, ne de triyaj sirasinda tarayiciyi "duzelten" bir AI asistani. Duzenleme bir
 > sonraki `bootstrap.sh` ile kaybolur, o ana kadar da pre-push herkesi bloklar. Gercek bir bug mi
 > buldun? Upstream'e bildir ve pini bump et. Kitin kendi skill'leri bunu sert kural olarak tasir.
+
+## Kurulum ani penceresi — `scan.sh pkgcheck` ve ajan hook'u
+
+Diger butun bagimlilik boyutlari **zaten repoda olan** bir manifest'i okur. Kotu niyetli bir paket
+icin bu bir adim gec kalmaktir: `npm i <pkg>` ve `pip install <pkg>`, paketi cozer cozmez kurulum
+script'ini calistirir; kitin pre-commit hook'u degisen manifest'i ancak bundan **sonra** gorur. Bir
+git hook'u kurulumu goremez, ama bir ajan tool-call hook'u gorebilir.
+
+```bash
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash react@18.2.0   # ad-hoc, istedigin zaman
+bash tools/security-audit-kit/install.sh --with-agent-hook               # opt-in: ajana bagla
+```
+
+`--with-agent-hook`, `.claude/settings.json` icine `Bash` araci icin bir `PreToolUse` hook'u ekler
+(idempotent; baska hicbir seyi yeniden yazmaz). Ajan kurulum komutunu calistirmadan once hook, o komut
+satirindaki paket adlarini alip guarddog'a sorar — henuz hicbir sey calismamisken. Isaretlenen paket
+tool cagrisini bloklar; ajana neyin atesledigi ve tekrar denememesi gerektigi soylenir.
+
+**Neyi bloklar, ve liste neden kisa.** guarddog tek bir sayi altinda iki farkli sey raporlar:
+`capability-*` kurallari (paketin ne YAPABILECEGI — `requests` uc tane atesliyor) ve `threat-*`/metadata
+kurallari (neyin yanlis gorundugu). Ikisi de dogrudan "blokla"ya karsilik gelmiyor. 2026-08-24'te en cok
+kurulan 18 pypi/npm paketi uzerinde olculdu: **15 farkli capability-disi kural, 8 pakette atesledi** —
+pandas ve setuptools'ta `threat-process-download-exec`, typescript'te `metadata_mismatch` dahil.
+`pip install django`'yu reddeden bir kapi kaldirilir, kaldirilan kapi da kimseyi korumaz. Bu yuzden kit
+yalnizca ~24 kotu-niyet-spesifik kuralda bloklar (typosquatting, dependency confusion, kurulum aninda
+network, reverse shell, exfiltration, cryptomining, keylogging, maintainer domain devralma) — ve
+bunlarin hicbiri o 18 pakette **atesle(me)di**. Geri kalan her sey not olarak yazilir ve gecirilir.
+`.security-audit.conf` icinde `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` ile ayarlanir.
+
+**Ne YAPMADIGI, acikca:**
+- **Ajanin** tool cagrilarini korur. Terminale elle `npm i` yazan bir insani kapsamaz — hicbir hook
+  bunu goremez.
+- Inceleyemedigi her sey **gecirilir, ama yuksek sesle**: network yoksa, `uvx`/`pipx` yoksa, VCS/yerel
+  yol kurulumuysa, paket registry'de 404 ise. guarddog indirme basarisiz oldugunda bile *"No risks
+  found"* yazar; kit bu yuzden basarisiz indirmeyi `INDETERMINATE` sayar — asla "temiz" degil.
+- Bu bir CVE kontrolu degildir. `pkgcheck` "bu paket kotu niyetli mi?" diye sorar; `deps`/`osv` ise
+  "bilinen zafiyeti var mi?" diye. Ikisi birlikte, ya da hicbiri.
+- Bir paketin ilk kontrolu ~15-20 sn (guarddog indirip analiz eder). Kararlar
+  `.git/security-audit-cache/` altinda paket, surum **ve pinlenmis guarddog surumu** ile anahtarlanip
+  saklanir; tam `pkg@version` karari hic eskimez, surumsuz olan bir gun sonra eskir. `scan.sh doctor`
+  hook'un bagli olup olmadigini, cache'in yerini ve kac kuralin blokladigini yazar.
 
 ## Bulgu dongusu (uctan uca)
 

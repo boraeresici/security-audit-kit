@@ -15,6 +15,7 @@
 #   osv       Broad multi-ecosystem dep CVE (osv-scanner)    [HARD]  optional (not in 'all')
 #   guarddog  Malicious/typosquat deps (guarddog verify)     [HARD]  optional (not in 'all'; needs network)
 #   zizmor    GitHub Actions security (zizmor, if workflows) [HARD]  optional (not in 'all')
+#   pkgcheck  ONE named package BEFORE install (guarddog)   [HARD]  optional; agent-hook entry point
 #   fast      staged + deps  (pre-commit / package install)
 #   all       secret + sast + deps + container + iac         (pre-push / pre-PR)
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
@@ -414,6 +415,109 @@ EOF
   return $rc
 }
 
+# ---- pkgcheck — ONE named package, BEFORE it is installed (agent hook / ad-hoc) ----
+# Every other dependency dimension reads a manifest that is already in the repo, i.e. after
+# `npm i <pkg>` has already run the package's install script. This one takes the name off the
+# install command and asks guarddog about it while nothing has executed yet.
+#   scan.sh pkgcheck npm lodash react@18.2.0      # explicit
+#   scan.sh pkgcheck --hook  < payload.json        # agent tool-call hook (hooks/pre-tool-install.sh)
+# Exit: 1 if any target BLOCKS, else 0. Never blocks on "could not scan" — see below.
+PKGCHECK_CACHE_TTL_MIN="${PKGCHECK_CACHE_TTL_MIN:-1440}"
+
+pkgcheck_cache_dir(){
+  [ "${PKGCHECK_CACHE:-on}" = "off" ] && return 1
+  local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  case "$common" in /*) ;; *) common="$ROOT/$common" ;; esac
+  printf '%s/security-audit-cache/pkgcheck' "$common"
+}
+
+# One target -> a verdict line on stdout ("BLOCK\t<rules>"), exit 1 when it blocks.
+pkgcheck_one(){
+  local eco="$1" name="$2" ver="$3" out verdict rc dir key f
+  # The key carries the pinned tool version: bumping guarddog must not read old verdicts.
+  if dir="$(pkgcheck_cache_dir)"; then
+    key="$(printf '%s__%s__%s__%s' "$eco" "$name" "${ver:-latest}" "$GUARDDOG_VER" | tr -c 'A-Za-z0-9_.@-' '_')"
+    f="$dir/$key"
+    # An unversioned request means "whatever the registry serves now", which changes under us —
+    # those entries expire; an exact version is immutable on both registries, so it does not.
+    if [ -f "$f" ] && { [ -n "$ver" ] || [ -z "$(find "$f" -mmin "+$PKGCHECK_CACHE_TTL_MIN" 2>/dev/null)" ]; }; then
+      out="$(cat "$f")"
+      printf '%s (cached)\n' "$out"
+      case "$out" in BLOCK*) return 1 ;; *) return 0 ;; esac
+    fi
+  fi
+  say pkgcheck "guarddog ==$GUARDDOG_VER scan (needs network)"
+  local gargs="scan $name"
+  [ -n "$ver" ] && gargs="$gargs -v $ver"
+  # shellcheck disable=SC2086
+  out="$(pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" $gargs --output-format json 2>/dev/null \
+        | python3 "$KIT_DIR/lib/pkgcheck.py" --classify \
+            --block-extra "${PKGCHECK_BLOCK_EXTRA:-}" --report-extra "${PKGCHECK_REPORT_EXTRA:-}")"
+  rc=$?
+  [ -z "$out" ] && { out="INDETERMINATE	guarddog produced no output"; rc=2; }
+  verdict="${out%%	*}"
+  # Only a real verdict is worth remembering; INDETERMINATE is a failure to look, not an answer.
+  if [ -n "${f:-}" ] && [ "$verdict" != "INDETERMINATE" ]; then
+    mkdir -p "$dir" 2>/dev/null && printf '%s' "$out" > "$f" 2>/dev/null || true
+  fi
+  printf '%s\n' "$out"
+  [ "$verdict" = "BLOCK" ] && return 1
+  return 0
+}
+
+scan_pkgcheck(){
+  have python3 || { warn pkgcheck "no python3 -> package pre-install check skipped"; return 0; }
+  [ -f "$KIT_DIR/lib/pkgcheck.py" ] || { warn pkgcheck "lib/pkgcheck.py missing -> skipped"; return 0; }
+
+  local targets=""
+  if [ "${1:-}" = "--hook" ]; then
+    targets="$(python3 "$KIT_DIR/lib/pkgcheck.py" --parse 2>/dev/null)"
+  elif [ "${1:-}" = "--command" ]; then
+    shift
+    targets="$(python3 "$KIT_DIR/lib/pkgcheck.py" --command "${1:-}" 2>/dev/null)"
+  else
+    local eco="${1:-}"; shift 2>/dev/null || true
+    case "$eco" in
+      pypi|npm) ;;
+      *) echo "usage: scan.sh pkgcheck <pypi|npm> <package>[@version] ...   |   scan.sh pkgcheck --hook" >&2; return 2 ;;
+    esac
+    local spec name ver
+    for spec in "$@"; do
+      case "$eco" in
+        npm) name="${spec%@*}"; ver="${spec##*@}"; [ "$name" = "$spec" ] && ver="" ;;
+        *)   name="${spec%%[=><~]*}"; ver="${spec##*==}"; [ "$ver" = "$spec" ] && ver="" ;;
+      esac
+      [ -n "$name" ] && targets="$targets$eco	$name	$ver
+"
+    done
+  fi
+  [ -n "$(printf '%s' "$targets" | tr -d '[:space:]')" ] || return 0
+
+  { have uvx || have pipx; } || { warn pkgcheck "no uvx/pipx -> guarddog unavailable, package NOT checked"; return 0; }
+
+  local rc=0 eco name ver line
+  while IFS='	' read -r eco name ver; do
+    [ -n "$eco" ] || continue
+    if [ "$eco" = "unverifiable" ]; then
+      # Fail OPEN, loudly: refusing an install the kit cannot inspect would block ordinary local
+      # and VCS installs, and a gate people route around protects nothing.
+      warn pkgcheck "$name -> NOT a registry package ($ver) — nothing was checked"
+      continue
+    fi
+    say pkgcheck "$eco/$name${ver:+@$ver}"
+    line="$(pkgcheck_one "$eco" "$name" "$ver")" || rc=1
+    case "$line" in
+      BLOCK*)         printf '\033[31m  BLOCK\033[0m %s/%s%s -> %s\n' "$eco" "$name" "${ver:+@$ver}" "${line#*	}" ;;
+      INDETERMINATE*) warn pkgcheck "$eco/$name: ${line#*	} (allowed — not checked, not cleared)" ;;
+      NOTE*)          printf '  note  %s/%s%s -> %s\n' "$eco" "$name" "${ver:+@$ver}" "${line#*	}" ;;
+      *)              printf '  ok    %s/%s%s -> clean\n' "$eco" "$name" "${ver:+@$ver}" ;;
+    esac
+  done <<EOF
+$targets
+EOF
+  return $rc
+}
+
 # ---- zizmor — GitHub Actions security, OPTIONAL (not in 'all') ----
 # Static analysis of GitHub Actions workflows/actions (template injection, dangerous triggers,
 # token over-permissioning, unpinned actions). Runs OFFLINE by default (no GitHub API), so it is
@@ -552,6 +656,26 @@ scan_doctor(){
   else
     printf '  !!  audit: expired entries or a cross-path gap -> run: scan.sh allowlist\n'
   fi
+
+  # The git hooks cannot see `npm i <pkg>`: the install script has already run by the time a
+  # manifest reaches the index. Whether that window is guarded is invisible unless it is said.
+  printf '\nagent pre-install check (pkgcheck):\n'
+  if grep -q 'pre-tool-install\.sh' "$ROOT/.claude/settings.json" 2>/dev/null; then
+    printf '  ok  wired: .claude/settings.json PreToolUse(Bash) -> hooks/pre-tool-install.sh\n'
+  else
+    printf '  --  NOT wired — an agent can install a package before any kit gate sees it.\n'
+    printf '      enable: install.sh --with-agent-hook   ad-hoc: scan.sh pkgcheck npm <pkg>\n'
+  fi
+  printf '      guards the AGENT tool call only; a human typing npm i is not covered\n'
+  local pcd
+  if pcd="$(pkgcheck_cache_dir)"; then
+    printf '  ok  verdict cache: %s (unversioned entries expire after %s min)\n' \
+      "${pcd#"$ROOT"/}" "$PKGCHECK_CACHE_TTL_MIN"
+  else
+    printf '  --  verdict cache off (PKGCHECK_CACHE=off or not a git repo) — every check re-scans\n'
+  fi
+  printf '      blocks on %s malice-specific guarddog rules; everything else prints as a note\n' \
+    "$(PYTHONDONTWRITEBYTECODE=1 python3 -B -c 'import sys;sys.path.insert(0,"'"$KIT_DIR"'/lib");import pkgcheck;print(len(pkgcheck.BLOCK_RULES))' 2>/dev/null || echo '?')"
 }
 
 # ---- allowlist audit: the decay detector ----
@@ -808,6 +932,7 @@ REPORT="${REPORT:-}"
 [ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
 [ "${1:-}" = "allowlist" ] && { scan_allowlist; exit $?; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
+[ "${1:-}" = "pkgcheck" ] && { shift; scan_pkgcheck "$@"; exit $?; }
 
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
 _dim(){ local name="$1"; shift; "$@"; local c=$?; printf '%s\t%s\n' "$name" "$c" >> "$RESULTS_FILE"; [ "$c" -ne 0 ] && return 1; return 0; }

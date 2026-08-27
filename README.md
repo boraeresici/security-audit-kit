@@ -19,7 +19,9 @@ Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE
 **SBOM** (syft), plus optional dimensions: **broad multi-ecosystem dependency CVE**
 (`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **malicious/typosquat dependencies**
 (`scan.sh guarddog` — GuardDog; the known-CVE blind spot), and **GitHub Actions security**
-(`scan.sh zizmor` — template injection, poisoned pipelines, token over-permissioning). Any
+(`scan.sh zizmor` — template injection, poisoned pipelines, token over-permissioning), plus a
+**pre-install package check** (`scan.sh pkgcheck` — guarddog on a package *before* `npm i` runs its
+install script; also available as an agent hook). Any
 dimension whose toolchain is missing is skipped automatically.
 
 On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
@@ -266,6 +268,7 @@ bash tools/security-audit-kit/scan.sh secret|sast|deps|iac|container|sbom
 bash tools/security-audit-kit/scan.sh osv        # optional: broad multi-ecosystem dep CVE (OSV-Scanner)
 bash tools/security-audit-kit/scan.sh guarddog   # optional: malicious/typosquat deps (GuardDog; needs network)
 bash tools/security-audit-kit/scan.sh zizmor     # optional: GitHub Actions security (zizmor; offline)
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash    # optional: check ONE package BEFORE installing it
 bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detected projects
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
@@ -307,6 +310,47 @@ Automatic triggers (after install):
 > teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next
 > `bootstrap.sh`, and until then pre-push blocks for everyone. Found a real bug? Report it upstream
 > and bump the pin. The kit's own skills carry this as a hard rule.
+
+## The install-time window — `scan.sh pkgcheck` and the agent hook
+
+Every other dependency dimension reads a manifest that is **already in the repo**. That is one step
+too late for a malicious package: `npm i <pkg>` and `pip install <pkg>` run the package's install
+script the moment they resolve it, and the kit's pre-commit hook only sees the changed manifest
+afterwards. Git hooks cannot see an install; an agent tool-call hook can.
+
+```bash
+bash tools/security-audit-kit/scan.sh pkgcheck npm lodash react@18.2.0   # ad-hoc, any time
+bash tools/security-audit-kit/install.sh --with-agent-hook               # opt-in: wire it to the agent
+```
+
+`--with-agent-hook` adds a `PreToolUse` hook for the `Bash` tool to `.claude/settings.json` (idempotent;
+it never rewrites anything else). Before the agent runs an install command, the hook takes the package
+names off that command line and asks guarddog about them — while nothing has executed. A flagged
+package blocks the tool call; the agent is told what fired and told not to retry.
+
+**What it blocks, and why the list is short.** guarddog reports two different things under one
+count: `capability-*` rules (what a package *can* do — `requests` fires three) and `threat-*`/metadata
+rules (what looks wrong). Neither maps cleanly to "block". Measured on 2026-08-24 against the 18
+most-installed pypi/npm packages, **15 distinct non-capability rules fired on 8 of them** — including
+`threat-process-download-exec` on pandas and setuptools, and `metadata_mismatch` on typescript. A gate
+that refuses `pip install django` gets uninstalled, and an uninstalled gate protects nothing. So the
+kit blocks on an explicit list of ~24 malice-specific rules (typosquatting, dependency confusion,
+install-time network access, reverse shells, exfiltration, cryptomining, keylogging, maintainer-domain
+takeover) — every one of which fired on **none** of those 18 packages. Everything else is printed as a
+note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in `.security-audit.conf`.
+
+**What it does not do, stated plainly:**
+- It guards the **agent's** tool calls. A human typing `npm i` in a terminal is not covered — nothing
+  in a hook can see that.
+- Anything it cannot inspect is **allowed, loudly**: no network, no `uvx`/`pipx`, a VCS or local-path
+  install, a package the registry 404s. guarddog itself prints *"No risks found"* when the download
+  failed, so the kit treats a failed download as `INDETERMINATE` — never as clean.
+- It is not a CVE check. `pkgcheck` asks "is this package malicious?"; `deps`/`osv` ask "does it have
+  known vulnerabilities?" Both, or neither.
+- First check of a package costs ~15-20s (guarddog downloads and analyses it). Verdicts are cached in
+  `.git/security-audit-cache/` keyed by package, version **and the pinned guarddog version**; an exact
+  `pkg@version` verdict never expires, an unversioned one expires after a day. `scan.sh doctor` prints
+  whether the hook is wired, where the cache is, and how many rules block.
 
 ## Finding loop (end to end)
 

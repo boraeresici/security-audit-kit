@@ -62,3 +62,15 @@
 # : "${SYFT_DIGEST:=sha256:a2066c7d582669db5c9191ed8b8055766a63a3c231b4134a5c75e65a70f30b23}"
 # : "${OSV_VER:=v2.4.0}"   # optional 'scan.sh osv' dimension (broad multi-ecosystem dep CVE)
 # : "${OSV_DIGEST:=sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc109d621a63ac416d475}"
+
+# --- pkgcheck: the pre-install package check (scan.sh pkgcheck / agent hook) -------------------
+# Blocks only on malice-specific guarddog rules (typosquatting, install-time network, exfil,
+# maintainer-domain takeover, ...); everything else prints as a note. Measured against the 18
+# most-installed pypi/npm packages so a legitimate `pip install django` is never refused.
+# Add a rule name here to make it blocking, or move a noisy one to report-only. Comma separated.
+# PKGCHECK_BLOCK_EXTRA="threat-runtime-obfuscation-dynamic-eval"
+# PKGCHECK_REPORT_EXTRA="typosquatting"
+# Verdict cache lives in .git/security-audit-cache/pkgcheck (never in the repo tree). An exact
+# pkg@version verdict is immutable; an unversioned one expires after this many minutes.
+# PKGCHECK_CACHE=off
+# PKGCHECK_CACHE_TTL_MIN=1440
