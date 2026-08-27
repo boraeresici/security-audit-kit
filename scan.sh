@@ -66,6 +66,12 @@ OSV_DIGEST="${OSV_DIGEST:-sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc10
 # trivy: skip build-output dirs (noise + memory + speed). Comma-separated glob patterns.
 TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelte-kit,**/.turbo}"
 
+# js-deps: which directories hold a JS project. JS_DIRS (space separated) overrides the search
+# outright; otherwise every tracked package.json is considered except the paths JS_SKIP_RE drops —
+# vendored front-end assets checked into a backend repo are third-party files nobody here maintains.
+JS_DIRS="${JS_DIRS:-}"
+JS_SKIP_RE="${JS_SKIP_RE:-(^|/)(node_modules|bower_components|vendor|third[_-]party|static|assets|public|dist|build|coverage|\.venv|site-packages)/}"
+
 # Python tools — pinned by version (no drift vs. CI). Empty = latest (not recommended).
 SEMGREP_VER="${SEMGREP_VER:-1.166.0}"
 CHECKOV_VER="${CHECKOV_VER:-3.3.1}"
@@ -108,8 +114,10 @@ detect_semgrep_configs(){
   local manifests mtext=""
   manifests="$(printf '%s\n' "$files" | grep -E '(^|/)(requirements[^/]*\.txt|pyproject\.toml|Pipfile|package\.json|composer\.json|Gemfile)$')"
   [ -n "$manifests" ] && mtext="$(printf '%s\n' "$manifests" | while IFS= read -r m; do [ -f "$m" ] && cat "$m"; done)"
-  _hasf(){ printf '%s\n' "$files" | grep -qE "$1"; }
-  _dep(){ printf '%s' "$mtext" | grep -qiE "$1"; }
+  # here-strings, not pipes — see has_tracked: `printf | grep -q` loses the same way, and losing
+  # here means semgrep silently drops p/python, p/django, p/javascript and scans with base rules.
+  _hasf(){ grep -qE "$1" <<<"$files"; }
+  _dep(){ grep -qiE "$1" <<<"$mtext"; }
 
   if _hasf '\.py$' || _hasf '(^|/)(pyproject\.toml|requirements[^/]*\.txt|Pipfile|uv\.lock)$'; then
     cfg="$cfg --config p/python"
@@ -204,9 +212,23 @@ img(){ if [ -n "${3:-}" ]; then printf '%s@%s' "$1" "$3"; else printf '%s:%s' "$
 # SARIF (opt-in): repo-relative path of a SARIF file under the findings dir.
 sarif_rel(){ printf '%s/%s' "${SARIF_DIR#"$ROOT"/}" "$1"; }
 
+# ---- tracked-file matching: never `git ls-files | grep -q` --------------------------------------
+# That pipeline is a SILENT FALSE NEGATIVE on a large repo, and it silences whole dimensions.
+# `grep -q` exits at the FIRST match; git is still writing, gets SIGPIPE, and `set -o pipefail`
+# (line 38) turns the pipeline's status into 141 -> the `||` branch runs -> "no Python project".
+# It is size-dependent, so it PASSES on every small fixture repo and starts lying once a real repo
+# outgrows the pipe buffer: measured on a 22,972-file repo, py-deps (pip-audit), zizmor AND the
+# semgrep stack auto-select had all quietly switched themselves off while the scan reported green.
+# The rule this file follows now: whatever decides that a dimension runs must CONSUME its input.
+# A command substitution reads git to completion, and a here-string feeds grep from a temp file —
+# no pipe anywhere, so nothing can be killed out from under the match. tests/e2e.sh enforces both
+# the rule (a static guard) and the behaviour (a >6000-file fixture repo).
+has_tracked(){ grep -qE "$1" <<<"$(git ls-files 2>/dev/null)"; }
+
 # ---- python deps (pip-audit) ----
 scan_py_deps(){
-  git ls-files | grep -qE 'pyproject\.toml|requirements.*\.txt|uv\.lock|Pipfile' || { warn deps "no Python project"; return 0; }
+  has_tracked '(^|/)(pyproject\.toml|requirements[^/]*\.txt|uv\.lock|Pipfile)$' \
+    || { warn deps "no Python project"; return 0; }
   local flags=""
   [ -f .pip-audit-ignore ] && flags="$(awk '/^[^#]/{printf " --ignore-vuln %s",$1}' .pip-audit-ignore)"
   # Audit THIS repo's environment — not uvx's ephemeral one, and not whatever venv the caller
@@ -232,17 +254,52 @@ scan_py_deps(){
 }
 
 # ---- js deps (pnpm/yarn/npm auto) ----
+# WHICH directory gets audited is a correctness question, not a detail. Taking the first tracked
+# package.json walks straight into vendored front-end assets — in a Django repo that is
+# `static/assets/plugins/fullcalendar/packages/bootstrap/package.json`, a third-party file with no
+# lockfile, so `npm audit` exits ENOLOCK=1 and the gate BLOCKS EVERY COMMIT that touches a manifest
+# over a package nobody in the repo owns. Worse, it hides the real front-end: only the first hit was
+# ever audited. Two rules now: vendor paths are dropped (JS_SKIP_RE), and a directory is auditable
+# only if it carries a LOCKFILE — without one there are no resolved versions, so there is nothing to
+# report and "cannot audit" must not read as "vulnerable". Every remaining directory is audited, not
+# just the first. JS_DIRS overrides the search entirely.
+js_dirs(){
+  # shellcheck disable=SC2086  # word splitting is the point: a space-separated list -> one per line
+  [ -n "$JS_DIRS" ] && { printf '%s\n' $JS_DIRS; return 0; }
+  local pj dir out=""
+  while IFS= read -r pj; do
+    [ -n "$pj" ] || continue
+    grep -qE "$JS_SKIP_RE" <<<"$pj" && continue
+    dir="$(dirname "$pj")"
+    [ -f "$ROOT/$dir/pnpm-lock.yaml" ] || [ -f "$ROOT/$dir/yarn.lock" ] || [ -f "$ROOT/$dir/package-lock.json" ] || continue
+    case " $out " in *" $dir "*) ;; *) out="$out $dir" ;; esac
+  done <<<"$(git ls-files '*package.json' 2>/dev/null)"
+  # shellcheck disable=SC2086
+  printf '%s\n' $out
+}
+
 scan_js_deps(){
-  local pj; pj="$(git ls-files '*package.json' | grep -v node_modules | head -1)"
-  [ -z "$pj" ] && { warn deps "no JS project"; return 0; }
-  local dir; dir="$(dirname "$pj")"
-  ( cd "$dir" || exit 1
-    # Audit ALL deps (incl. dev/build) — vulns in build tooling (vite/undici/…) are real; the
-    # triage layer decides reachability. (Previously --prod/--omit=dev hid them.)
-    if [ -f pnpm-lock.yaml ] && have pnpm;  then say deps "pnpm audit ($dir)";  pnpm audit --audit-level high
-    elif [ -f yarn.lock ] && have yarn;     then say deps "yarn audit ($dir)";  yarn npm audit --severity high
-    elif have npm;                          then say deps "npm audit ($dir)";   npm audit --audit-level=high
-    else warn deps "no JS package manager"; fi )
+  local dirs; dirs="$(js_dirs)"
+  if [ -z "$dirs" ]; then
+    if has_tracked '(^|/)package\.json$'; then
+      warn deps "package.json found but none is auditable (vendor path, or no lockfile) -> set JS_DIRS to point at the real JS project"
+    else
+      warn deps "no JS project"
+    fi
+    return 0
+  fi
+  local rc=0 dir
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    ( cd "$ROOT/$dir" || exit 1
+      # Audit ALL deps (incl. dev/build) — vulns in build tooling (vite/undici/…) are real; the
+      # triage layer decides reachability. (Previously --prod/--omit=dev hid them.)
+      if   [ -f pnpm-lock.yaml ]    && have pnpm; then say deps "pnpm audit ($dir)"; pnpm audit --audit-level high
+      elif [ -f yarn.lock ]         && have yarn; then say deps "yarn audit ($dir)"; yarn npm audit --severity high
+      elif [ -f package-lock.json ] && have npm;  then say deps "npm audit ($dir)";  npm audit --audit-level=high
+      else warn deps "$dir: no lockfile with an installed package manager (pnpm/yarn/npm) -> skipped"; fi ) || rc=1
+  done <<<"$dirs"
+  return $rc
 }
 
 # Extra docker mounts so gitleaks can reach git history in a git WORKTREE — whose .git is a
@@ -524,7 +581,7 @@ EOF
 # deterministic and air-gap friendly. Standalone + opt-in. Tune with ZIZMOR_ARGS (e.g. --min-severity).
 scan_zizmor(){
   { have uvx || have pipx; } || { warn zizmor "no uvx/pipx -> zizmor skipped"; return 0; }
-  git ls-files | grep -qE '^\.github/workflows/.*\.(yml|yaml)$' \
+  has_tracked '^\.github/workflows/.*\.(yml|yaml)$' \
     || { warn zizmor "no .github/workflows -> nothing to scan"; return 0; }
   say zizmor "zizmor --offline (.github, ==$ZIZMOR_VER)"
   local rc
@@ -551,7 +608,7 @@ scan_rules_test(){
     # semgrep's test runner skips hidden paths: rules under `.semgrep/` scan normally but their
     # fixtures are invisible to `--test`, which would report "all clear" while testing nothing.
     case "$p" in
-      .*) if find "$ROOT/$p" -type f ! -name '*.yml' ! -name '*.yaml' 2>/dev/null | grep -q .; then
+      .*) if [ -n "$(find "$ROOT/$p" -type f ! -name '*.yml' ! -name '*.yaml' -print -quit 2>/dev/null)" ]; then
             warn rules-test "$p is HIDDEN — semgrep --test cannot discover fixtures there; move rules+tests to semgrep-rules/"
             continue
           fi ;;
@@ -608,10 +665,10 @@ scan_doctor(){
   printf '  guarddog   %s\n' "${GUARDDOG_VER:-<latest>}"
   printf '  zizmor     %s\n' "${ZIZMOR_VER:-<latest>}"
   printf '\ndetected in this repo:\n'
-  git ls-files 2>/dev/null | grep -qE 'pyproject\.toml|requirements.*\.txt|Pipfile|uv\.lock' && echo "  python"     || true
-  git ls-files 2>/dev/null | grep -q  'package\.json'                                        && echo "  javascript" || true
-  git ls-files 2>/dev/null | grep -q  '\.tf$'                                                && echo "  terraform"  || true
-  git ls-files 2>/dev/null | grep -qE '^\.github/workflows/.*\.(yml|yaml)$'                   && echo "  github-actions (zizmor)" || true
+  has_tracked '(^|/)(pyproject\.toml|requirements[^/]*\.txt|Pipfile|uv\.lock)$' && echo "  python"     || true
+  has_tracked '(^|/)package\.json$'                                            && echo "  javascript" || true
+  has_tracked '\.tf$'                                                          && echo "  terraform"  || true
+  has_tracked '^\.github/workflows/.*\.(yml|yaml)$'                            && echo "  github-actions (zizmor)" || true
 
   # Allowlists are per-TOOL while a triage decision is per-FINDING, and the dependency-CVE
   # dimensions overlap: pip-audit, osv-scanner and trivy read the same lockfiles and report the
@@ -637,7 +694,7 @@ scan_doctor(){
       # this line you would believe a rule guards you while it silently never fails a scan.
       printf '  !!  %s rule(s) NOT at ERROR -> WILL NOT GATE: %s\n' "$nogate" "$names"
     fi
-    if [ -n "$(local_rules_files)" ] && find $(local_rules_paths) -type f ! -name '*.yml' ! -name '*.yaml' 2>/dev/null | grep -q .; then
+    if [ -n "$(local_rules_files)" ] && [ -n "$(find $(local_rules_paths) -type f ! -name '*.yml' ! -name '*.yaml' -print -quit 2>/dev/null)" ]; then
       printf '  ok  rule tests present -> verify with: scan.sh rules-test\n'
     else
       printf '  --  no rule tests found (a rule with no test decays silently) -> scan.sh rules-test\n'
@@ -774,7 +831,7 @@ EOF
       ids_b="$(allowlist_entries "$b" | cut -f1 || true)"
       while IFS= read -r id; do
         [ -n "${id:-}" ] || continue
-        printf '%s\n' "$ids_b" | grep -qxF "$id" || {
+        grep -qxF "$id" <<<"$ids_b" || {
           printf '  !!  %s is suppressed in %s but not in %s\n' "$id" "$a" "$b"
           missing_any=1
         }

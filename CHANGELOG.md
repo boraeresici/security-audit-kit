@@ -6,6 +6,42 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (gates that silenced themselves)
+
+- **`git ls-files | grep -q` was a silent false negative on any large repo — and it switched whole
+  dimensions off.** `grep -q` exits at the first match, git is still writing, takes SIGPIPE, and
+  `set -o pipefail` turns the pipeline's status into 141 — so the `||` branch ran and the gate
+  reported "not present". It is size-dependent: it passes on every small fixture and starts lying
+  once the repo outgrows a pipe buffer, which is why it shipped. Measured on a 22,972-file
+  production repo, **three** things had quietly switched themselves off while the scan reported
+  green: `py-deps` (pip-audit never ran against a tracked `pyproject.toml` + `requirements.txt`),
+  `zizmor` (12 workflow files, "nothing to scan"), and the **semgrep stack auto-select** — `_hasf`
+  used the same shape, so `p/python`, `p/django` and `p/javascript` were never added and SAST ran
+  with base rules only. `doctor`'s stack list was wrong for the same reason. Every call site now
+  goes through `has_tracked` (command substitution + here-string: no pipe, nothing to kill), the
+  `find | grep -q .` pair became `find -print -quit`, and the pre-commit hook's
+  `git diff --cached --name-only | grep -q` — which would skip the dependency gate exactly when a
+  large vendored tree is landing — was rewritten the same way.
+- **`js-deps` audited the first tracked `package.json`, which in a backend repo is a vendored
+  asset.** In a Django repo that is `static/assets/plugins/fullcalendar/packages/bootstrap/
+  package.json`: no lockfile, so `npm audit` exits ENOLOCK=1 and the gate **blocked every commit
+  that touched any manifest**, over a third-party file nobody in the repo maintains — while the
+  real front-end was never audited, because only the first hit ever was. Directory selection is now
+  by lockfile, not by luck: vendor paths are dropped (`JS_SKIP_RE`), a directory without a lockfile
+  is skipped with a note instead of failed (no resolved versions = nothing to report, and "cannot
+  audit" must not read as "vulnerable"), and **every** remaining directory is audited. New
+  **`JS_DIRS`** bypasses the search outright for a layout the heuristic cannot find.
+- **The pre-commit hook's manifest regex was unanchored**, so `requirements.*\.txt` also matched
+  `requirements.txt.tpl` (a template) and `package\.json` matched `package.json.bak` — each one
+  triggering a dependency scan nothing asked for. Anchored per alternative, matching the form
+  `scan.sh` already used. The same anchoring fixes `scan_py_deps`, which counted a `.tpl` fixture
+  as a Python project.
+- Coverage: **14 new e2e assertions**. A static guard fails the build if a file listing is piped
+  into `grep -q` again; a **>6000-file fixture repo** reproduces the original failure (verified: the
+  old code returns 141 and misses both python and the workflows at that size, the new code detects
+  both); the js-deps cases assert that a lockfile-less vendored asset neither fails the gate nor
+  gets audited, and that `JS_DIRS` overrides the search. e2e: 87 -> 101 assertions, 0 failed.
+
 ### Added (#R5.1 — `scan.sh pkgcheck` + an agent hook: the package is checked BEFORE it runs)
 - **The window this closes.** Every other dependency dimension reads a manifest that is already in
   the repo. `npm i <pkg>` and `pip install <pkg>` run the package's install script the moment they

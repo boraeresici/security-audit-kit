@@ -628,9 +628,18 @@ secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
    ```sh
    : "${SAST_PATHS:=backend frontend}"     # kaynak dizinleri daralt
    : "${TF_DIR:=infra/terraform}"          # terraform dizini
+   # : "${JS_DIRS:=frontend}"              # js-deps: JS uygulamasi nerede (asagi bak)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # set degil = stack-auto; override icin set et
    ```
 3. `scan.sh` bunu otomatik source eder.
+
+**`js-deps` dizinini sansa gore degil, lockfile'a gore secer.** Tracked her `package.json`
+degerlendirilir; vendor yollari (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
+`dist`, …) ve lockfile'i olmayan dizinler dusulur — lockfile yoksa cozulmus surum yoktur, yani
+denetlenecek bir sey de yoktur: not dusulerek atlanir, hata sayilmaz. Geriye kalan dizinlerin
+**hepsi** denetlenir, sadece ilki degil. Uygulaman bu sezginin bulamayacagi bir yerdeyse (ya da
+repodaki tek `package.json` dosyalari repoya girmis front-end asset'leriyse) **`JS_DIRS`** ayarla,
+arama tumuyle devre disi kalir.
 
 **Onculuk:** `env > .security-audit.conf > default`. `:=` formu sayesinde
 tek-seferlik override icin env kullan: `SAST_PATHS="lib" bash scan.sh sast`.

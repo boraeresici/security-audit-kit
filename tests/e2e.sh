@@ -661,6 +661,101 @@ if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SR
 [ -z "$(git -C "$TSO" config core.hooksPath 2>/dev/null || true)" ] && ok "--skills-only: core.hooksPath NOT set" || no "--skills-only: hooksPath should be unset"
 rm -rf "$TSO"
 
+echo "-- gate honesty: no file listing piped into 'grep -q' (SIGPIPE -> silent false negative) --"
+# `git ls-files | grep -q` exits at the first match, git takes SIGPIPE, and pipefail turns the
+# pipeline into 141 -> the `||` branch runs and the dimension reports "not present". It is
+# size-dependent, so every small fixture passes. This static guard is the cheap half of the
+# regression; the fixture repo below is the expensive half. Comments are stripped first — the
+# scan.sh comment that NAMES the forbidden pattern must not read as an offence.
+offenders="$(grep -hvE '^[[:space:]]*#' \
+    "$KIT_SRC/scan.sh" "$KIT_SRC/hooks/pre-commit" "$KIT_SRC/hooks/pre-push" 2>/dev/null \
+  | grep -E '\|[[:space:]]*grep -q' | grep -E 'ls-files|--name-only|find ' || true)"
+[ -z "$offenders" ] && ok "no file listing is piped into 'grep -q'" \
+  || no "a file listing is piped into 'grep -q' again: $offenders"
+
+# The hook's manifest regex must be anchored per alternative: unanchored it fires on a template
+# (requirements.txt.tpl) or a backup (package.json.bak) and runs a dependency scan nothing asked for.
+mre="$(grep -m1 '^manifests=' "$KIT_SRC/hooks/pre-commit" | cut -d= -f2- | tr -d "'")"
+grep -qE "$mre" <<<"tools/security-audit-kit/tests/fixtures/stacks/django/requirements.txt.tpl" \
+  && no "hook regex: a .tpl template still triggers a dependency scan" \
+  || ok "hook regex: requirements.txt.tpl does NOT trigger a dependency scan"
+grep -qE "$mre" <<<"backend/requirements-dev.txt" \
+  && ok "hook regex: a real requirements-dev.txt still triggers" \
+  || no "hook regex: requirements-dev.txt no longer triggers (over-anchored)"
+grep -qE "$mre" <<<"apps/web/package.json" \
+  && ok "hook regex: a nested package.json still triggers" \
+  || no "hook regex: nested package.json no longer triggers (over-anchored)"
+
+echo "-- large repo: the gates must not silence themselves (SIGPIPE regression) --"
+# 6000 tracked files is comfortably past a 64 KiB pipe buffer, which is what it takes to reproduce.
+# Every manifest here sorts BEFORE the filler, so a `grep -q` would exit while git is still writing.
+BIG="$(mktemp -d)"
+(
+  cd "$BIG" || exit 1
+  git init -q .
+  mkdir -p tools/security-audit-kit .github/workflows zz_filler
+  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
+  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  printf '[project]\nname = "big"\nversion = "0.1.0"\n' > pyproject.toml
+  printf 'x = 1\n' > app.py
+  # package.json with NO lockfile: enough for stack detection, and js-deps then skips it instead of
+  # reaching for the network — the assertion is about detection at scale, not about npm.
+  mkdir -p frontend && printf '{"name":"big-fe","version":"1.0.0"}\n' > frontend/package.json
+  printf 'name: ok\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n' \
+    > .github/workflows/ok.yml
+  i=0; while [ "$i" -lt 6000 ]; do printf 'x\n' > "zz_filler/f$i.txt"; i=$((i+1)); done
+  git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -c user.email=e2e@test -c user.name=e2e commit -qm big >/dev/null 2>&1
+) || no "large-repo fixture could not be built"
+BIGFILES="$(git -C "$BIG" ls-files | wc -l | tr -d ' ')"
+[ "$BIGFILES" -gt 6000 ] && ok "large-repo fixture: $BIGFILES tracked files" \
+  || no "large-repo fixture too small ($BIGFILES) to reproduce the bug"
+BIGDOC="$(cd "$BIG" && bash tools/security-audit-kit/scan.sh doctor 2>&1)"
+grep -q '^  python'         <<<"$BIGDOC" && ok "large repo: python detected"         || no "large repo: python NOT detected (SIGPIPE regression)"
+grep -q '^  javascript'     <<<"$BIGDOC" && ok "large repo: javascript detected"     || no "large repo: javascript NOT detected (SIGPIPE regression)"
+grep -q '^  github-actions' <<<"$BIGDOC" && ok "large repo: github-actions detected" || no "large repo: github-actions NOT detected (SIGPIPE regression)"
+BIGDEPS="$(cd "$BIG" && bash tools/security-audit-kit/scan.sh deps 2>&1 || true)"
+grep -q 'no Python project' <<<"$BIGDEPS" \
+  && no "large repo: py-deps gate reported 'no Python project' with a tracked pyproject.toml" \
+  || ok "large repo: py-deps gate reaches pip-audit"
+if have uvx || have pipx; then
+  BIGZIZ="$(cd "$BIG" && bash tools/security-audit-kit/scan.sh zizmor 2>&1 || true)"
+  grep -q 'nothing to scan' <<<"$BIGZIZ" \
+    && no "large repo: zizmor skipped itself with 12 workflow files present" \
+    || ok "large repo: zizmor gate reaches the workflows"
+else
+  skip "large repo: zizmor gate (uvx/pipx unavailable)"
+fi
+rm -rf "$BIG"
+
+echo "-- js-deps: audit the app, never a vendored asset, never block on 'cannot audit' --"
+# The reported failure: the first tracked package.json was a checked-in fullcalendar asset with no
+# lockfile, so npm audit exited ENOLOCK=1 and BLOCKED every commit that touched any manifest.
+JSR="$(mktemp -d)"
+(
+  cd "$JSR" || exit 1
+  git init -q .
+  mkdir -p tools/security-audit-kit static/assets/plugins/fullcalendar
+  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
+  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  printf '{"name":"fullcalendar-vendored","version":"1.0.0"}\n' > static/assets/plugins/fullcalendar/package.json
+  git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -c user.email=e2e@test -c user.name=e2e commit -qm js >/dev/null 2>&1
+) || no "js-deps fixture could not be built"
+JSOUT="$(cd "$JSR" && bash tools/security-audit-kit/scan.sh deps 2>&1)"; JSRC=$?
+[ "$JSRC" -eq 0 ] && ok "js-deps: a lockfile-less vendored asset does not fail the gate" \
+  || no "js-deps: gate failed (rc=$JSRC) on a vendored asset — the ENOLOCK block is back"
+grep -q 'none is auditable' <<<"$JSOUT" && ok "js-deps: says WHY it audited nothing" \
+  || no "js-deps: did not explain why nothing was audited"
+grep -qE 'npm audit \(static/' <<<"$JSOUT" \
+  && no "js-deps: audited the vendored asset directory" \
+  || ok "js-deps: vendor path skipped"
+JSOVR="$(cd "$JSR" && JS_DIRS=static/assets/plugins/fullcalendar bash tools/security-audit-kit/scan.sh deps 2>&1 || true)"
+grep -q 'static/assets/plugins/fullcalendar' <<<"$JSOVR" \
+  && ok "js-deps: JS_DIRS overrides the search" \
+  || no "js-deps: JS_DIRS was ignored"
+rm -rf "$JSR"
+
 echo "-- worktree: gitleaks reaches history (no silent false-clean) --"
 if docker_ok; then
   AK="AKIA"; PLANT="${AK}1234567890ABCDEF"

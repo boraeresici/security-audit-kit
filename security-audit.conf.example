@@ -35,6 +35,15 @@
 # OSV_ALLOW_BUILD_SCRIPTS=1 is set as well.
 # : "${OSV_CALL_ANALYSIS:=go}"
 
+# --- dependencies (js) ---
+# js-deps: which directory holds the JS project. Left empty, every TRACKED package.json is
+# considered, minus the vendor paths JS_SKIP_RE drops, minus any directory with no lockfile
+# (nothing to resolve versions against = nothing to audit, so it is skipped, never a failure).
+# Set this when the auto-detection cannot find your app — e.g. the only package.json files in the
+# repo are checked-in front-end assets. Space separated, repo-relative.
+# : "${JS_DIRS:=frontend apps/web}"
+# : "${JS_SKIP_RE:=(^|/)(node_modules|bower_components|vendor|third[_-]party|static|assets|public|dist|build|coverage)/}"
+
 # --- IaC (checkov) ---
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.
 # : "${TF_DIR:=infra/terraform}"

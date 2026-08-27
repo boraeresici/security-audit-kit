@@ -8,7 +8,10 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 KIT="$ROOT/tools/security-audit-kit"
-manifests='pyproject\.toml|uv\.lock|requirements.*\.txt|Pipfile|package\.json|pnpm-lock\.yaml|yarn\.lock|package-lock\.json'
+# Anchored per alternative: unanchored, `requirements.*\.txt` also matches requirements.txt.tpl
+# (a template, not a manifest) and `package\.json` matches package.json.bak — each one triggering a
+# dependency scan nothing asked for. scan.sh:110 already used the anchored form; this was behind.
+manifests='(^|/)(pyproject\.toml|uv\.lock|requirements[^/]*\.txt|Pipfile|package\.json|pnpm-lock\.yaml|yarn\.lock|package-lock\.json)$'
 
 # 1) Staged-secret gate (every commit). Catches a secret in ANY staged file before it
 #    is ever committed — not just at push time.
@@ -18,7 +21,10 @@ if ! bash "$KIT/scan.sh" staged; then
 fi
 
 # 2) Dependency CVE gate (only when a manifest changed).
-if git diff --cached --name-only | grep -qE "$manifests"; then
+# here-string, not a pipe: `git … | grep -q` lets grep exit at the first match, git takes SIGPIPE
+# and pipefail (line 6) reports 141 -> the gate would silently skip on a large staged changeset,
+# which is exactly when a vendored dependency tree is landing. See has_tracked in scan.sh.
+if grep -qE "$manifests" <<<"$(git diff --cached --name-only)"; then
   echo "[pre-commit] Dependency manifest changed -> scan.sh deps"
   if ! bash "$KIT/scan.sh" deps; then
     echo "[pre-commit] BLOCKED: dependency finding. Fix it or bypass with SKIP_SECURITY=1."

@@ -633,9 +633,18 @@ rules. `scan.sh doctor` prints the resolved set. For customization, one file per
    ```sh
    : "${SAST_PATHS:=backend frontend}"     # narrow source directories
    : "${TF_DIR:=infra/terraform}"          # terraform directory
+   # : "${JS_DIRS:=frontend}"              # js-deps: where the JS app is (see below)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # leave unset = stack-auto; set to override
    ```
 3. `scan.sh` sources it automatically.
+
+**`js-deps` picks its directory by lockfile, not by luck.** Every tracked `package.json` is
+considered, minus vendor paths (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
+`dist`, …) and minus any directory without a lockfile — there are no resolved versions to audit
+there, so it is skipped with a note rather than failed. Every remaining directory is audited, not
+just the first. If your app lives somewhere the heuristic will not find it (or the only
+`package.json` files in the repo are checked-in front-end assets), set **`JS_DIRS`** and the
+search is bypassed entirely.
 
 **Precedence:** `env > .security-audit.conf > default`. Thanks to the `:=` form,
 use env for a one-off override: `SAST_PATHS="lib" bash scan.sh sast`.
