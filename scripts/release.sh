@@ -18,7 +18,7 @@ set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 cd "$KIT_DIR"
 
-REQUIRED_CHECKS="shellcheck checksums self-audit"   # our CI jobs (ci.yml + self-audit.yml)
+REQUIRED_CHECKS="shellcheck pytest e2e checksums self-audit"   # our CI jobs (ci.yml + self-audit.yml)
 MAIN_BRANCH="main"
 
 say(){  printf '\033[36m[release]\033[0m %s\n' "$*"; }

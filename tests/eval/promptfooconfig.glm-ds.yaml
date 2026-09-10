@@ -1,0 +1,29 @@
+# GLM-5.1 via DashScope Standard — Tier-L candidate comparison (see promptfooconfig.yaml
+# for the Claude baseline; same prompt, same corpus, same grader — only the provider differs,
+# so results are directly comparable).
+#
+# Run:   EVAL_CONFIG=promptfooconfig.glm-ds.yaml bash run.sh
+# Needs: DASHSCOPE_API_KEY (DashScope Standard, OpenAI-compatible endpoint).
+#        GLM-5.1 on DashScope replaces GLM-5.2 on NVIDIA NIM (EOL Aug 2026).
+#        Keep the model pinned; bump deliberately.
+description: "sec-triage REAL/FP judgment eval — GLM-5.1 (DashScope) backend"
+
+prompts:
+  - file://triage_prompt.md
+
+providers:
+  - id: openai:chat:glm-5.1
+    config:
+      apiBaseUrl: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      apiKeyEnvar: DASHSCOPE_API_KEY
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://grade.mjs   # shared by every backend config — keep scores comparable
+
+# Both splits are loaded; run.sh selects one via --filter-metadata split=<dev|holdout>.
+# Default runs score the dev split. cases.holdout.yaml must not be read while tuning the prompt.
+tests:
+  - file://cases.yaml
+  - file://cases.holdout.yaml

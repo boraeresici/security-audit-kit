@@ -24,7 +24,7 @@ low-friction release model:
 ## The flow
 
 ### 1. Land the work on `main`
-Feature branches → PR → CI green (shellcheck / self-audit / checksums) → merge. (Same as today.)
+Feature branches → PR → CI green (shellcheck / pytest / e2e / self-audit / checksums) → merge. (Same as today.)
 
 ### 2. Prep the release commit — through a PR, like any other change
 `main` is protected (PR + required checks). The release prep is a change like any other: branch it,
@@ -121,7 +121,7 @@ when they choose. Nothing is forced on them.
 ## Branch protection (recommended, one-time)
 On GitHub → Settings → Rules/Branch protection for `main`:
 - Require a pull request before merging.
-- Require status checks to pass (shellcheck, self-audit, checksums).
+- Require status checks to pass (shellcheck, pytest, e2e, self-audit, checksums).
 - Disallow direct pushes / force-pushes to `main`.
 Tags are not protected by default; only maintainers should push `v*` tags.
 

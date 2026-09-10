@@ -47,9 +47,14 @@ directly comparable. Set the matching key in `tests/eval/.env.local` (gitignored
 | Backend | Config | Key env var | Run (add `EVAL_SPLIT=holdout` for the reportable number) |
 |---|---|---|---|
 | Anthropic Claude (default) | `promptfooconfig.yaml` | `ANTHROPIC_API_KEY` | `bash tests/eval/run.sh` |
-| GLM-5.2 via NVIDIA NIM | `promptfooconfig.nim.yaml` | `NVIDIA_API_KEY` | `EVAL_CONFIG=promptfooconfig.nim.yaml bash tests/eval/run.sh` |
+| Qwen 3.7 Max (DashScope) | `promptfooconfig.qwen.yaml` | `DASHSCOPE_API_KEY` | `EVAL_CONFIG=promptfooconfig.qwen.yaml bash tests/eval/run.sh` |
+| GLM-5.1 (DashScope) | `promptfooconfig.glm-ds.yaml` | `DASHSCOPE_API_KEY` | `EVAL_CONFIG=promptfooconfig.glm-ds.yaml bash tests/eval/run.sh` |
 | GLM-5.2 via Z.ai | `promptfooconfig.glm.yaml` | `ZAI_API_KEY` | `EVAL_CONFIG=promptfooconfig.glm.yaml bash tests/eval/run.sh` |
 | Mistral Large 3 | `promptfooconfig.mistral.yaml` | `MISTRAL_API_KEY` | `EVAL_CONFIG=promptfooconfig.mistral.yaml bash tests/eval/run.sh` |
+
+> **Note:** `promptfooconfig.nim.yaml` (GLM-5.2 via NVIDIA NIM) is deprecated — the model reached
+> end-of-life in August 2026 (410 Gone). Use `promptfooconfig.glm-ds.yaml` (GLM-5.1 via DashScope)
+> as the GLM replacement.
 
 All configs point at ONE grader (`grade.mjs` via `file://`), so a scoring change can never land on
 some backends and not others — that would silently make cross-backend scores non-comparable.
@@ -58,12 +63,12 @@ native promptfoo provider id: `run.sh`'s clean-skip guard only recognises the an
 declared key-env-var line, so a native id hard-fails instead of skipping when the key is absent.
 
 ### Dev / held-out split
-The corpus is 61 cases in two files, and the split is enforced mechanically — every config loads
+The corpus is 67 cases in two files, and the split is enforced mechanically — every config loads
 both and `run.sh` selects one with `--filter-metadata split=<dev|holdout>`:
 
 - **`cases.yaml`** — 31-case **dev split** (`EVAL_SPLIT=dev`, the default). The tuning surface: you
   may iterate the prompt against these. Scores here are training scores, optimistically biased.
-- **`cases.holdout.yaml`** — 30-case **held-out split** (`EVAL_SPLIT=holdout`, writes
+- **`cases.holdout.yaml`** — 36-case **held-out split** (`EVAL_SPLIT=holdout`, writes
   `output.holdout.json`). The reportable number. **Do not read it while tuning the prompt** — the
   moment you edit the prompt in response to a holdout failure, it stops being held out. Fix the
   prompt against a *new* dev case that captures the same rule, then re-measure.
@@ -122,6 +127,8 @@ Grow coverage: more vuln classes, real-CVE snippets, and (later) separate corpor
 - `triage_prompt.md` — the judgment prompt (mirrors `sec-triage` Pass 1/2).
 - `promptfooconfig.yaml` — prompts + provider + grader ref (`promptfooconfig.<backend>.yaml` for variants).
 - `grade.mjs` — the shared REAL/FP grader every config points at (`export default (output, context)`).
-- `score.mjs` — precision/recall from promptfoo output; excludes provider errors (zero deps).
+- `score.mjs` — precision/recall + **calibration metrics** (Brier, ECE, reliability table, 0.7
+  threshold cost) from promptfoo output; excludes provider errors; handles chain-of-thought
+  reasoning prefixes (Qwen, GLM); zero deps.
 - `run.sh` — env-gated orchestration (`EVAL_SPLIT`, `EVAL_CONFIG`, `EVAL_CONCURRENCY`, `EVAL_MIN_*`).
 - `output.json` / `output.holdout.json` — the last run's raw results per split (gitignored).

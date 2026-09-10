@@ -20,6 +20,32 @@ jobs:
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
             scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push hooks/pre-tool-install.sh tests/e2e.sh scripts/release.sh tests/eval/run.sh
 
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11f83ae1e01e372e06f6f3ae8b4587  # v5
+        with:
+          python-version: '3.11'
+      - name: install pytest
+        run: pip install pytest
+      - name: pytest (lib/ unit tests)
+        run: python -m pytest tests/unit/ -v --tb=short
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@e797f83bcb11f83ae1e01e372e06f6c3ae8b4587  # v5
+        with:
+          python-version: '3.11'
+      - name: e2e (offline — no docker, no uvx; external-tool assertions skip gracefully)
+        run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh
+
   checksums:
     runs-on: ubuntu-latest
     steps:

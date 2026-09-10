@@ -1,0 +1,31 @@
+# Qwen (DashScope Coding Plan) backend variant of the eval — Tier-L candidate comparison
+# (see promptfooconfig.yaml for the Claude baseline; same prompt, same corpus, same grader —
+# only the provider differs, so results are directly comparable).
+#
+# Run:   EVAL_CONFIG=promptfooconfig.qwen.yaml EVAL_OUT=output.qwen.json bash run.sh
+# Needs: DASHSCOPE_API_KEY (DashScope Standard, OpenAI-compatible endpoint).
+#        Model id verified against /v1/models (2026-09). Keep the model pinned; bump deliberately.
+#
+# Declared as an OpenAI-compatible provider (promptfoo's generic openAI id) so run.sh's
+# key-resolution and --filter-providers logic picks it up correctly.
+description: "sec-triage REAL/FP judgment eval — Qwen 3.7 Max backend"
+
+prompts:
+  - file://triage_prompt.md
+
+providers:
+  - id: openai:chat:qwen3.7-max
+    config:
+      apiBaseUrl: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      apiKeyEnvar: DASHSCOPE_API_KEY
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://grade.mjs   # shared by every backend config — keep scores comparable
+
+# Both splits are loaded; run.sh selects one via --filter-metadata split=<dev|holdout>.
+# Default runs score the dev split. cases.holdout.yaml must not be read while tuning the prompt.
+tests:
+  - file://cases.yaml
+  - file://cases.holdout.yaml

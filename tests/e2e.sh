@@ -548,6 +548,29 @@ if have node; then
 JSON
   node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null | grep -q 'recall:     50.0%' \
     && ok "eval: score.mjs precision/recall math" || no "eval: score.mjs math wrong"
+  # Mock without confidence must print "not available" and NOT crash.
+  node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null | grep -q 'calibration: not available' \
+    && ok "eval: score.mjs handles missing confidence gracefully" || no "eval: score.mjs crashes on no-confidence mock"
+  # Calibration metrics: a mock with known confidence values must produce correct Brier, ECE, and
+  # threshold-cost numbers. 6 cases: 2 TP@0.9, 1 TP@0.6(suppressed), 1 FN@0.3, 1 TN@0.1, 1 FP@0.8(noise).
+  cat > eval_cal_mock.json <<'JSON'
+{"results":{"results":[
+ {"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"REAL\",\"confidence\":0.90}"}},
+ {"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"REAL\",\"confidence\":0.95}"}},
+ {"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"REAL\",\"confidence\":0.60}"}},
+ {"vars":{"expected":"REAL"},"response":{"output":"{\"verdict\":\"FP\",\"confidence\":0.30}"}},
+ {"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"FP\",\"confidence\":0.10}"}},
+ {"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"REAL\",\"confidence\":0.80}"}}
+]}}
+JSON
+  CALOUT="$(node tools/security-audit-kit/tests/eval/score.mjs eval_cal_mock.json 2>/dev/null)"
+  printf '%s' "$CALOUT" | grep -q 'Brier:' \
+    && printf '%s' "$CALOUT" | grep -q 'ECE:' \
+    && printf '%s' "$CALOUT" | grep -q 'suppressed REALs: 1' \
+    && printf '%s' "$CALOUT" | grep -q 'noise FPs:        1' \
+    && ok "eval: score.mjs calibration metrics (Brier, ECE, threshold cost)" \
+    || no "eval: score.mjs calibration metrics wrong"
+  rm -f eval_cal_mock.json
   # Head-to-head: results MUST be grouped per provider — pooling two backends into one confusion
   # matrix reports a model that does not exist. A dead backend is "not measured", never 0%.
   cat > eval_matrix_mock.json <<'JSON'

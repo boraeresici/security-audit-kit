@@ -36,6 +36,37 @@ All notable changes to this project are documented here. The format is based on
   false "clean" sticky, so it ships separately, opt-in, and only for dimensions whose input set can
   be proven. The lock was always independent of it.
 
+### Added (eval harness — calibration scoring and thinking-model support)
+- **Calibration metrics in `score.mjs`** (F12a): Brier score, ECE, reliability table (5 confidence
+  bins), and threshold-cost analysis at the 0.7 cutoff (suppressed REALs, noise FPs). These answer
+  "is the model's confidence a trustworthy probability?" and "does the 0.7 threshold hurt users?" —
+  questions that were previously unmeasured. Calibration is appended to the existing precision/recall
+  output; `grade.mjs` is untouched so past runs remain comparable.
+- **`extractJsonBlock()` in `score.mjs`**: models with chain-of-thought reasoning (Qwen, GLM)
+  prepend free-text thinking before the structured JSON verdict. The scorer now locates the last
+  balanced `{...}` block in the output, so confidence is correctly parsed even when the model
+  reasons out loud. Regex-fallback verdicts (no JSON) still work as before.
+- **Eval backend configs**: `promptfooconfig.qwen.yaml` (Qwen 3.7 Max via DashScope Standard) and
+  `promptfooconfig.glm-ds.yaml` (GLM-5.1 via DashScope Standard, replacing the EOL NVIDIA NIM
+  GLM-5.2 endpoint). Same corpus, same prompt, same grader — only the provider differs.
+- Coverage: 2 new e2e assertions — missing-confidence mock prints "not available" without crashing;
+  calibration mock with known confidence values produces correct Brier, ECE, and threshold-cost
+  numbers.
+
+### Fixed (eval harness — failed-run artifact protection)
+- **`run.sh` no longer destroys the previous good output on a failed run.** Writes to a temp file
+  first (`output.*.tmp.$$.json`), moves to the target only on success. The old `rm -f "$OUT"` wiped
+  the only copy of a measured run when the API key expired (observed 2026-08-11: Claude 401).
+- Temp file suffix goes before `.json` (not after) so promptfoo's extension validation accepts it.
+
+### Added (CI — PR test gates)
+- **`pytest` job** in CI: runs `tests/unit/` against `lib/` modules (evidence, report_html,
+  kit_sarif, pkgcheck). Pure stdlib + pytest, no external tools needed.
+- **`e2e` job** in CI: runs `tests/e2e.sh` with a restricted `PATH` (no docker, no uvx) so
+  external-tool assertions skip gracefully. This is the offline deterministic gate that was
+  previously only run locally before releases.
+- Both added to branch protection required checks (`main.json`) and PR template checklist.
+
 ## [1.17.0] - 2026-08-27
 
 ### Fixed (gates that silenced themselves)

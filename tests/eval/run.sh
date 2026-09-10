@@ -134,12 +134,26 @@ fi
 pass=()
 for a in "$@"; do [ "$a" = "#" ] && break; pass+=("$a"); done
 
-rm -f "$OUT"   # never let score.mjs read a stale result from a previous run
+# Write to a temp file first: a failed run (401, network, bad model id) must NOT destroy the
+# previous good artifact. Only on success do we move the temp over the target. This prevents the
+# realistic scenario where an expired API key wipes the only copy of a measured run.
+# promptfoo requires the output path to end with a known extension (.json, .yaml, …),
+# so the temp suffix goes BEFORE the extension, not after: output.qwen.json -> output.qwen.tmp.$$.json
+OUT_BASE="${OUT%.*}"
+OUT_EXT="${OUT##*.}"
+OUT_TMP="${OUT_BASE}.tmp.$$.${OUT_EXT}"
+rm -f "$OUT_TMP"
+trap 'rm -f "$OUT_TMP"' EXIT
 # Concurrency: free-tier endpoints (NIM / z.ai) rate-limit at the default 4, which shows up as
 # provider errors, not a bad score (score.mjs excludes them). Override with EVAL_CONCURRENCY.
 CONC="${EVAL_CONCURRENCY:-4}"
 echo "[eval] promptfoo@$PROMPTFOO_VER — grading $SPLIT split via $CONFIG -> $OUT (concurrency $CONC)"
 # shellcheck disable=SC2086  # FILTER_ARGS is a deliberate word-split (flag + regex, or empty)
-npx -y "promptfoo@$PROMPTFOO_VER" eval -c "$CONFIG" -o "$OUT" --no-progress-bar \
+npx -y "promptfoo@$PROMPTFOO_VER" eval -c "$CONFIG" -o "$OUT_TMP" --no-progress-bar \
   --filter-metadata "split=$SPLIT" $FILTER_ARGS -j "$CONC" ${pass[@]+"${pass[@]}"} || true
+# Move the temp to the target only if it exists (promptfoo may not create it on total failure).
+# score.mjs reads the target — if the move didn't happen, it reports the error honestly.
+if [ -f "$OUT_TMP" ]; then
+  mv -- "$OUT_TMP" "$OUT"
+fi
 node score.mjs "$OUT"
