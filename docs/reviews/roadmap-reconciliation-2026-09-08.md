@@ -12,7 +12,7 @@ CLI yürütme çekirdeği korunur. Mevcut HTML raporu yeniden yazılmaz; arama/f
 
 R13, SkillSpector başarılı olmasa da gerçek UI ihtiyacında açılabilir; F01–F05 ve F11/F24 sınırları önkoşuldur. UI'den AI inceleme R04'e, karar yazma F19'a bağlı ayrı işlerdir. Wizard R09 son planlı özellik olarak kalır; UI ile aynı onboarding sorununu iki kez çözmeden önce ihtiyacı yeniden değerlendirilir.
 
-RC kontrolünde temiz `ca36413` arşivinde 234 unit test ve 93 offline e2e assertion geçti. Uzak RC.1 CI'da iki iş geçersiz `actions/setup-python` pinleri nedeniyle test başlamadan başarısızdı; uzak ruleset de pytest/e2e'yi zorunlu tutmuyordu. F23 tamamlandı. F09, RC.2 düzeltmesi CI'da yeşil olduktan ve uzak required-check listesi yerel ruleset ile eşleştikten sonra kapanır.
+RC kontrolünde 234 unit test ve 93 offline e2e assertion geçti. RC.1'in geçersiz `actions/setup-python` pinleri RC.2'de v6'ya düzeltildi; post-merge CI yeşil çalıştı ve uzak required-check listesi yerel ruleset ile eşlendi. F09 ve F23 tamamlandı. RC.2 gerçek tüketici dogfood'unda eski bootstrap'ın iki alanlı pin kontrolü CHANGELOG `Unreleased` olduğu için kurulumu reddetti. RC.3 bölüm başlığını `1.18.0` olarak hazırlar, release scriptinin eşleşmeyen CHANGELOG ile tag kesmesini engeller ve legacy RC pinini E2E'de doğrular.
 
 ## Temel karar
 

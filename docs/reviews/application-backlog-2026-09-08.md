@@ -6,7 +6,7 @@ Kaynak: [8 Eylül 2026 çok rollü değerlendirme](application-review-2026-09-08
 
 **Güncelleme — 14 Eylül 2026:** SkillSpector ve UI değerlendirmesi plana işlendi: **F26** sunucusuz HTML rapor kullanılabilirliği (P2), **R12** isteğe bağlı SkillSpector pilotu (P2 aday), **R13** tarama başlatan yerel UI (koşullu). Yeni işlerin kendi sırası F26 → R12 → ihtiyaç varsa R13; mevcut P0/P1 güvenilirlik işleri önce gelir. CLI ortak yürütme katmanı olarak korunur. Önceki kart sayıları 10 Eylül kaydıdır; bu güncelleme bir F ve iki R kartı ekler.
 
-**RC durum kontrolü — 14 Eylül 2026:** `tests/unit/` altında dört modülün testleri ve `.github/workflows/ci.yml` içinde pytest/e2e işleri mevcut. Temiz `ca36413` arşivinde 234 unit test ve 93 offline e2e assertion geçti. Buna karşılık RC.1'in iki işi geçersiz `actions/setup-python` SHA'ları yüzünden test başlamadan başarısız oldu; uzak ruleset de yalnız shellcheck/checksums/self-audit'i zorunlu tutuyordu. RC.2 hazırlığında action pini düzeltildi. F23 uygulaması tamam; F09 ancak düzeltme CI'da yeşil çalışıp uzak ruleset'e pytest/e2e eklendiğinde kapanır.
+**RC durum kontrolü — 14 Eylül 2026:** F23'ün 234 unit testi ve 93 offline e2e assertion'ı geçti. RC.1'in geçersiz `actions/setup-python` pinleri RC.2'de v6'ya düzeltildi; uzak ruleset pytest/e2e dahil beş kontrolle eşlendi ve post-merge CI yeşil çalıştı. F09 ve F23 tamamlandı. RC.2 gerçek tüketici dogfood'unda eski bootstrap'ın iki alanlı pin fallback'i, CHANGELOG hâlâ `Unreleased` olduğu için doğru biçimde reddedildi. RC.3 CHANGELOG sürümünü hazırlar ve release scriptine tag öncesi sürüm eşleşme kapısı ekler.
 
 P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki güvenilirlik ve kullanılabilirlik paketi. P2: ölçüm ve talebe göre geliştirme. P0 etiketi CVSS veya istismar şiddeti değildir. Efor: K ≈ 0,5–2, O ≈ 3–5, B ≈ 6–10 mühendis-gün; test ve doküman dahil kaba tahmin, takvim sözü değil.
 
@@ -22,7 +22,7 @@ P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki gü
 | F06 | Paket cache kararlarını politika değişiminde yenile | Risk / K | P1 | Güvenlik | O | — |
 | F07 | Stabil release'te doğrulanamayan CI'ı durdur | Risk / K | P1 | Release | K | — |
 | F08 | Stabil/RC güncelleme kanallarını ayır | Risk / K | P1 | Release | K | — |
-| F09 | Deterministik e2e'yi PR kapısı yap | Kalite / K | P1 | QA + CI | O | —; P0 testleri eklenecek |
+| F09 | Deterministik e2e'yi PR kapısı yap | Kalite / K | Tamamlandı | QA + CI | O | 5 zorunlu check uzakta etkin |
 | F10 | Mevcut hook'ları koruyan kurulum ve geri alma | UX / K | P1 | DX | O | — |
 | F11 | Kitin kendi güven sınırlarını ve hardening seçeneklerini çıkar | Risk / K | P1 | Güvenlik | O | — |
 | F12 | Kalibrasyon hazırlığı → ölçüm → karar sözleşmesi | Araştırma / K | P1 | AI + güvenlik | B | a: yok; b: erişilebilir backend; c: ölçüm |
@@ -322,7 +322,7 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | Sıra | Teslimat | Neden şimdi / bitiş kapısı |
 |---|---|---|
 | 0 | **F22 tamamlandı** | Tek sıra ve roadmap eşlemesi hazır |
-| 1 | **F09'u kapat; F23 tamamlandı** | RC.2'de düzeltme CI'ı yeşil çalıştırmalı ve uzak ruleset'e pytest/e2e eklenmeli. F01–F06 regresyonları ilgili düzeltmeyle eklenir |
+| 1 | **F09 + F23 tamamlandı** | 234 unit test, 93+ offline e2e assertion; pytest/e2e dahil beş required check uzakta etkin. F01–F06 regresyonları ilgili düzeltmeyle eklenir |
 | 2 | **F01 → F05** çalıştırma izolasyonu ve kilit sahipliği | Cache ve rapor öncesi ortak kayıt yarışlarını gider |
 | 3 | **F02 → F03 → F04** durum, güncel kanıt, doğru rapor | Eksik/eskimiş tarama temiz görünmesin; F01 ve F02 schema tasarımı beraber yapılır. F23'teki unit test fixture'ları F02–F04 düzeltmeleriyle genişletilir |
 | 4 | **F06 → F07 → F08 → F25** cache politikası, release, kanal ve geçiş rehberi | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
