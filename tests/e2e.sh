@@ -462,23 +462,46 @@ echo "-- bootstrap SHA-verify (--expect enforcement, offline local repo) --"
 KITREPO="$(mktemp -d)"
 if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$KITREPO"/; else cp -R "$KIT_SRC"/. "$KITREPO"/ && rm -rf "$KITREPO/.git"; fi
 ( cd "$KITREPO" && git init -q && git -c user.email=e2e@test -c user.name=e2e add -A \
-    && git -c user.email=e2e@test -c user.name=e2e commit -qm kit && git tag v0.0.0-test )
+    && git -c user.email=e2e@test -c user.name=e2e commit -qm kit && git tag v1.18.0-rc.99 )
 GOOD="$(git -C "$KITREPO" rev-parse HEAD)"
 # wrong --expect -> must REFUSE and must NOT vendor
 T1="$(mktemp -d)"; ( cd "$T1" && git init -q )
-if ( cd "$T1" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v0.0.0-test --expect=deadbeefdeadbeef ) >/dev/null 2>&1; then
+if ( cd "$T1" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v1.18.0-rc.99 --expect=deadbeefdeadbeef ) >/dev/null 2>&1; then
   no "bootstrap: wrong --expect should be REFUSED"
 else
   [ -d "$T1/tools/security-audit-kit" ] && no "bootstrap: refused but still vendored" || ok "bootstrap: wrong --expect refused (no vendor)"
 fi
 # correct --expect -> succeeds + vendors
 T2="$(mktemp -d)"; ( cd "$T2" && git init -q )
-if ( cd "$T2" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v0.0.0-test --expect="$GOOD" ) >/dev/null 2>&1; then
+if ( cd "$T2" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v1.18.0-rc.99 --expect="$GOOD" ) >/dev/null 2>&1; then
   [ -f "$T2/tools/security-audit-kit/.kit-version" ] && ok "bootstrap: correct --expect succeeds + vendors" || no "bootstrap: succeeded but no vendor"
 else
   no "bootstrap: correct --expect should succeed"
 fi
+if [ -f "$T2/tools/security-audit-kit/.kit-version" ]; then
+  awk 'NR==1{print $1, $2}' "$T2/tools/security-audit-kit/.kit-version" > "$T2/tools/security-audit-kit/.kit-version.legacy"
+  mv "$T2/tools/security-audit-kit/.kit-version.legacy" "$T2/tools/security-audit-kit/.kit-version"
+  if ( cd "$T2" && bash tools/security-audit-kit/scan.sh verify ) >/dev/null 2>&1; then
+    ok "bootstrap: legacy two-field RC pin matches the released CHANGELOG version"
+  else
+    no "bootstrap: legacy two-field RC pin rejected the matching released files"
+  fi
+fi
 rm -rf "$KITREPO" "$T1" "$T2"
+
+echo "-- release metadata gate --"
+RELTEST="$(mktemp -d)"
+mkdir -p "$RELTEST/scripts"
+cp "$KIT_SRC/scripts/release.sh" "$RELTEST/scripts/release.sh"
+cp "$KIT_SRC/scan.sh" "$RELTEST/scan.sh"
+awk '!done && $0 == "## [1.18.0]" {$0="## [Unreleased]"; done=1} {print}' \
+  "$KIT_SRC/CHANGELOG.md" > "$RELTEST/CHANGELOG.md"
+( cd "$RELTEST" && git init -q )
+ROUT="$(cd "$RELTEST" && bash scripts/release.sh rc 1.18.0 --yes --no-gh 2>&1 || true)"
+printf '%s' "$ROUT" | grep -q "CHANGELOG top version is '1.17.0', expected '1.18.0'" \
+  && ok "release: refuses an RC while CHANGELOG still stops at Unreleased" \
+  || no "release: accepted an RC without its CHANGELOG version section"
+rm -rf "$RELTEST"
 
 echo "-- osv (OSV-Scanner optional dimension) --"
 if docker_ok; then

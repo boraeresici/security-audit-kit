@@ -4,7 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.18.0]
+
+### Fixed (v1.18.0-rc.3 — release metadata and legacy upgrade verification)
+- **RC tags now require a matching top-level CHANGELOG version before they can be cut.** RC.2
+  passed maintainer preflight but failed `scan.sh verify` after a real consumer upgraded from an
+  older bootstrap: that bootstrap writes a legacy two-field `.kit-version`, whose fallback check
+  correctly rejected the vendored files because the CHANGELOG still stopped at `Unreleased`.
+- Release preflight now refuses `rc X.Y.Z` and `final X.Y.Z` unless the newest version section is
+  exactly `X.Y.Z`. Offline e2e covers both the refusal and a legacy-pin RC upgrade that verifies.
 
 ### Fixed (v1.18.0-rc.2 — CI action pin)
 - **The `pytest` and `e2e` jobs can start on GitHub Actions.** `v1.18.0-rc.1` pinned

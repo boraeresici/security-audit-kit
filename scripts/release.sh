@@ -42,6 +42,12 @@ CMD="${ARGS[0]:-}"
 
 valid_ver(){ printf '%s' "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; }
 changelog_top_version(){ grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'; }
+require_changelog_version(){
+  local want="$1" top
+  top="$(changelog_top_version || true)"
+  [ "$top" = "$want" ] \
+    || die "CHANGELOG top version is '${top:-none}', expected '$want' — replace [Unreleased] with [$want] before cutting a tag"
+}
 
 # CHANGELOG section body for a version (between "## [X.Y.Z]" and the next "## [").
 release_notes(){
@@ -102,6 +108,7 @@ cmd_rc(){
   [ -n "$ver" ] || die "could not infer version from CHANGELOG; pass X.Y.Z"
   valid_ver "$ver" || die "invalid version '$ver' (want X.Y.Z)"
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "final tag v$ver already exists"
+  require_changelog_version "$ver"
   preflight
   local n=1 t
   while git rev-parse -q --verify "refs/tags/v${ver}-rc.$n" >/dev/null; do n=$((n+1)); done
@@ -125,6 +132,7 @@ cmd_final(){
   [ -n "$ver" ] || die "usage: scripts/release.sh final X.Y.Z"
   valid_ver "$ver" || die "invalid version '$ver' (want X.Y.Z)"
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "tag v$ver already exists"
+  require_changelog_version "$ver"
   local last_rc; last_rc="$(git tag -l "v${ver}-rc.*" | sort -V | tail -1)"
   [ -n "$last_rc" ] || die "no RC for v$ver — cut & test one first:  scripts/release.sh rc $ver"
   preflight
