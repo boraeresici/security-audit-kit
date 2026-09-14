@@ -4,6 +4,10 @@ Kaynak: [8 Eylül 2026 çok rollü değerlendirme](application-review-2026-09-08
 
 **Güncelleme — 10 Eylül 2026:** 8 Eylül değerlendirmesinin ardından 3 yeni F kartı (F23–F25) ve 1 koşullu R kartı (R11) eklendi. F22 tamamlandı; kalan 24 F kartı ve 11 R kartı aşağıda yer alıyor. F23–F25 mevcut kartların boşluklarını kapatır: Python modül testleri (F09'un ön koşulu), config doğrulama (F11'in uygulama uzantısı) ve tüketici geçiş rehberi (F08'in tamamlayıcısı). R11 araç pin güncelleme otomasyonudur ve koşullu bırakılmıştır. F12 ölçüm notu eklendi: kalibrasyon skorlayıcısı implementasyonu, Qwen 3.7 Max + GLM-5.1 ilk ölçüm sonuçları ve karar kaydı. [Roadmap eşleme ve karar gerekçeleri](roadmap-reconciliation-2026-09-08.md).
 
+**Güncelleme — 14 Eylül 2026:** SkillSpector ve UI değerlendirmesi plana işlendi: **F26** sunucusuz HTML rapor kullanılabilirliği (P2), **R12** isteğe bağlı SkillSpector pilotu (P2 aday), **R13** tarama başlatan yerel UI (koşullu). Yeni işlerin kendi sırası F26 → R12 → ihtiyaç varsa R13; mevcut P0/P1 güvenilirlik işleri önce gelir. CLI ortak yürütme katmanı olarak korunur. Önceki kart sayıları 10 Eylül kaydıdır; bu güncelleme bir F ve iki R kartı ekler.
+
+**RC durum kontrolü — 14 Eylül 2026:** `tests/unit/` altında dört modülün testleri ve `.github/workflows/ci.yml` içinde pytest/e2e işleri mevcut. Temiz `ca36413` arşivinde 234 unit test ve 93 offline e2e assertion geçti. Buna karşılık RC.1'in iki işi geçersiz `actions/setup-python` SHA'ları yüzünden test başlamadan başarısız oldu; uzak ruleset de yalnız shellcheck/checksums/self-audit'i zorunlu tutuyordu. RC.2 hazırlığında action pini düzeltildi. F23 uygulaması tamam; F09 ancak düzeltme CI'da yeşil çalışıp uzak ruleset'e pytest/e2e eklendiğinde kapanır.
+
 P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki güvenilirlik ve kullanılabilirlik paketi. P2: ölçüm ve talebe göre geliştirme. P0 etiketi CVSS veya istismar şiddeti değildir. Efor: K ≈ 0,5–2, O ≈ 3–5, B ≈ 6–10 mühendis-gün; test ve doküman dahil kaba tahmin, takvim sözü değil.
 
 ## Öncelik tablosu
@@ -32,9 +36,10 @@ P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki gü
 | F20 | Yerel performans ve kapsam metrikleri | Geliştirme / Ö | P2 | Operasyon + ürün | O | F02, F03 |
 | F21 | a: boyut cache; b: monorepo kapsamı | Geliştirme / Ö | P2 | Performans | B | a: F03, F05, F06, F20; b: a + ihtiyaç |
 | F22 | Yol haritalarını tek güncel iş listesine bağla | Bakım / K | Tamamlandı | Ürün + bakım | K | 8 Eylül: bu belge + eşleme |
-| F23 | Python modülleri için unit test altyapısı | Kalite / K | P1 | QA + backend | K | F09 ile birlikte |
+| F23 | Python modülleri için unit test altyapısı | Kalite / K | Tamamlandı | QA + backend | K | F09 ile birlikte; 234 test |
 | F24 | Config dosyası doğrulama ve güvenli kaynaklama | Risk / K | P1 | Güvenlik + DX | K | F11 |
 | F25 | Sürüm geçiş rehberi ve breaking change bildirimi | DX / Ö | P1 | Release + DX | K | F08 |
+| F26 | Sunucusuz HTML raporda arama, filtre ve bulgu detayları | Geliştirme / Ö | P2 | Raporlama + UX | K–O | F04, F14; F16 kapsam/eksiklik sözleşmesi |
 
 ## Roadmap'ten gelen ek / koşullu kartlar
 
@@ -53,6 +58,9 @@ Bu tablo yukarıdaki F maddelerini tekrar etmez. “Koşullu” işler, belirtil
 | R09 | CLI wizard | Son planlı özellik | DX + UX | O | Öncelikli aktif işler bittiğinde F14 verisiyle tasarım yenileme |
 | R10 | T3.2 / B.1 skill extraction | Ertelendi | AI + bakım | O | R04 veya ölçülmüş bakım sorunu |
 | R11 | Araç pin güncelleme otomasyonu | Koşullu | Tedarik zinciri + bakım | O | R06, F07; 3+ araç sürümü eskidiğinde veya CVE bildirildiğinde |
+
+| R12 | SkillSpector: skill güvenliği tarama boyutu | P2 pilot adayı | Güvenlik + veri | K pilot; O entegrasyon | F11/F13; entegrasyon F02/F03/F16; varsayılan sıra F26 sonrası |
+| R13 | CLI üstünde tarama başlatan yerel UI | Koşullu P2 | Backend + UX | O–B | F26 kullanım verisi; F01–F05, F11/F24; R12 kararı sonrası |
 
 ## İş kartları / kabul kriterleri
 
@@ -173,9 +181,10 @@ Boyut bazında süre, durum nedeni, kapsam ve cache hit bilgisi yerelde üretilm
 
 ### F23 — Python modülleri için unit test altyapısı
 
-`lib/` altındaki dört Python modülü (`evidence.py`, `kit_sarif.py`, `pkgcheck.py`, `report_html.py`) yalnız e2e testlerle dolaylı olarak sınanıyor. Severity normalization, SARIF ayrıştırma, HTML escape ve pkgcheck sınıflandırma mantığı için doğrudan unit testleri bulunmuyor.
+**Tamamlandı — 14 Eylül 2026:** `lib/` altındaki dört Python modülü (`evidence.py`, `kit_sarif.py`, `pkgcheck.py`, `report_html.py`) için `tests/unit/` altında doğrudan testler ve CI pytest işi mevcut. 234 test yerelde geçti. RC.1'de pytest işi action çözümleme sırasında başlamadı; test koduyla ilgisiz pin hatası RC.2'de düzeltildi. F09'un uzak required-check uygulaması ayrı açık kalır.
 
 **Kabul kriterleri:**
+
 - `lib/` modülleri için `tests/unit/` dizininde pytest tabanlı test altyapısı kurulmalı; dış bağımlılık eklenmemeli (yalnız stdlib + pytest).
 - CI'a `pytest` adımı eklenmeli; F09 PR kapısının zorunlu kontrollerinden biri olmalı.
 - Her modül için en az şu senaryolar sınanmalı: `evidence.py` — severity normalization tablosu (CVSS bantları, SARIF level, tool default), dedup mantığı, eksik/bozuk SARIF davranışı; `report_html.py` — HTML escape, eksik `exit_code` durumu (F04 ile bağlantılı), sıfır bulgu çıktısı; `kit_sarif.py` — boş finding listesi (yazılmamalı), suppression rendering; `pkgcheck.py` — install komut ayrıştırma, block/report sınıflandırma.
@@ -188,6 +197,7 @@ Boyut bazında süre, durum nedeni, kapsam ve cache hit bilgisi yerelde üretilm
 `.security-audit.conf` dosyası `scan.sh` içinde `source` ile yükleniyor (`scan.sh:48`). Bu, dosyanın çalıştırılabilir bash kodu olduğu anlamına gelir — F11'de belirtilen tehdit modelinin bir parçası. Mevcut durumda syntax hatası, geçersiz değişken ataması veya beklenmeyen komut satırı kullanıcıya anlamlı bir hata üretmiyor; sessizce yanlış değerlerle tarama devam edebiliyor.
 
 **Kabul kriterleri:**
+
 - `scan.sh doctor` komutu aktif config'i çözümlemeli; tanınmayan değişken, syntax hatası ve tehlikeli komut (`rm`, `curl`, `eval` gibi) içeriyorsa uyarı vermeli.
 - Config'deki her değişken bilinen değişken listesiyle (`security-audit.conf.example`'dan üretilmiş) karşılaştırılmalı; bilinmeyen değişken `WARN` olarak raporlanmalı.
 - `scan.sh verify` kapsamına config dosyası eklenmeli — örnek dosyadan yapısal sapma (eksik zorunlu alan, tip uyumsuzluğu) tespit edilmeli.
@@ -200,12 +210,25 @@ Boyut bazında süre, durum nedeni, kapsam ve cache hit bilgisi yerelde üretilm
 Tüketiciler `bootstrap.sh` ile sürüm güncelliyor ancak sürümler arası breaking change'ler (evidence schema değişikliği, kaldırılan komut, değişen config değişkeni, yeni zorunlu araç) yalnız CHANGELOG'da yazılı. `bootstrap.sh --check` yeni sürüm olduğunu bildiriyor ancak neyin değiştiğini veya tüketicinin ne yapması gerektiğini söylemiyor. F08 kanal ayrımı tamamlandığında RC/stabil ayrımı netleşecek; ancak stabil sürümler arası geçişte de rehber eksik.
 
 **Kabul kriterleri:**
+
 - Her release PR'ında CHANGELOG'a ek olarak `MIGRATION.md` veya CHANGELOG içine gömülü **upgrade notes** bölümü hazırlanmalı. Bu bölüm yalnız breaking change'leri ve gerekli tüketici eylemlerini listelemeli.
 - `bootstrap.sh --check` çıktısı, mevcut `.kit-version` ile hedef sürüm arasındaki breaking change'leri özet olarak göstermeli (CHANGELOG'dan otomatik çıkarılabilir veya elle hazırlanmış bir `UPGRADE-NOTES` dosyasından okunabilir).
 - Evidence schema sürümü (`security-audit-kit/evidence@1`) değiştiğinde eski `evidence.json` dosyasının ne olacağı belgelenmeli; migrasyon script'i gerekiyorsa aynı PR'da teslim edilmeli.
 - Kaldırılan veya yeniden adlandırılan `scan.sh` komutları için en az bir sürüm boyunca deprecation uyarısı verilmeli; komut kaldırıldığında eski ad çağrıldığında yeni karşılığına yönlendirme yapılmalı.
 - `install.sh` tekrar çalıştırıldığında config dosyasının üzerine yazmadan önceki ve sonraki sürüm farkını göstermeli (F10 ile örtüşür).
 - F08 ile aynı teslimat diliminde (sıra 4) veya hemen ardından teslim edilmeli; ilk stabil yayın öncesi hazır olmalı.
+
+### F26 — Sunucusuz HTML rapor kullanılabilirliği
+
+Mevcut `lib/report_html.py` ve `evidence.json` üzerine kurulur. Amaç ilk görsel kullanım ihtiyacını küçük bir teslimatla karşılamak; tarayıcıları veya AI runner'ı yeniden yazmak değil. P2 olarak güvenilirlik teslimatlarından sonra, F14 ilk kullanım akışının devamında ele alınır. F04 doğru rapor sözleşmesi önkoşuldur; F16'nın kapsam/eksiklik gösterimi kullanılır. F19 karar yazma modeli ve F21 cache bu salt okunur görünüm için önkoşul değildir.
+
+**Kabul kriterleri:**
+
+- Tek HTML dosyası `file://` ile açılır; sunucu, veritabanı, harici CDN/font, frontend build sistemi veya yeni runtime bağımlılığı gerektirmez.
+- Metin arama; severity, araç ve karar filtreleri; açılır bulgu/kanıt ayrıntısı sağlanır. Filtrelenen adet toplamdan ayrılır; tüm filtreleri sıfırlama vardır.
+- Çalıştırma kimliği/tarihi, taranan ve atlanan/hatalı boyutlar görünür kalır. “Filtreye uyan bulgu yok” temiz tarama anlamına gelmez.
+- JS kapalıyken bulgular okunabilir; klavye kullanımı, dar ekran ve yazdırma desteklenir. Mevcut HTML escaping korunur; bulgu metni çalıştırılabilir HTML olarak eklenmez.
+- Mevcut rapor komutu ve offline çıktı korunur. Sentetik bulgularla filtrelerin doğruluğu, kötü amaçlı metin ve eksik kanıt durumları kontrol edilir; gerçek ilk kullanımda bulguya ulaşma kolaylığı F14 ile değerlendirilir.
 
 ### R01 — Remediation compute kapsam kararı
 
@@ -252,6 +275,7 @@ Sürekli token tasarrufu gerekçesiyle açılmaz. R04 tüketicisi veya ölçülm
 Kit 7+ dış aracı pin'liyor (gitleaks, trivy, syft, osv-scanner, semgrep, checkov, pip-audit, guarddog, zizmor). Bu araçların sürüm/digest güncellemeleri tamamen manuel; Dependabot/Renovate entegrasyonu yok. Zamanla eski sürümler güvenlik açığı, uyumsuzluk veya performans kaybı riski oluşturur. `scan.sh`'in üstündeki `*_VER` / `*_DIGEST` değişkenleri tek güncelleme noktasıdır, ancak güncelleme sonrası `CHECKSUMS` yeniden üretimi, self-audit ve e2e koşumları manuel tetikleniyor.
 
 **Kabul kriterleri:**
+
 - Pin güncellemeleri için checklist veya GitHub Action hazırlanmalı: sürüm değişimi → `CHECKSUMS` yeniden üret → `scan.sh verify` → e2e → self-audit → PR.
 - Dependabot/Renovate yerine kit'e özel hafif bir `scripts/check-pins.sh` yazılabilir; her aracın upstream release'ini sorgulayıp mevcut pin'le karşılaştırmalı (GitHub API, PyPI JSON, Docker Hub). Ağ erişimi gerektirdiğinden CI'da zamanlanmış iş (haftalık) olarak çalışmalı.
 - Güncelleme PR'ı otomatik açılıyorsa template'de dogfood checklist (RELEASING.md'deki liste) zorunlu olmalı.
@@ -260,6 +284,37 @@ Kit 7+ dış aracı pin'liyor (gitleaks, trivy, syft, osv-scanner, semgrep, chec
 - R06 (Python hash-pin) kararı sonrası Python araçları için de aynı mekanizma genişletilmeli.
 - **Açılma koşulu:** 3+ araç sürümü upstream'den 2+ minor geride kaldığında veya pinli araçlardan birinde güvenlik bildirimi (CVE) yayınlandığında. F07 release kapısı ve R06 hash-pin kararı tamamlandıktan sonra önceliklendirilir.
 
+### R12 — SkillSpector pilotu ve isteğe bağlı entegrasyon
+
+Agent'a yüklenen skill paketlerinin güvenliği, mevcut uygulama SAST/SCA ve `sec-ai-review` kapsamını tamamlayan somut adaydır. R08'den ayrı bu kartta izlenir; aynı iş için ikinci genel scanner kartı açılmaz. Kaynaklar: [SkillSpector README](https://github.com/NVIDIA/SkillSpector) ve [paket tanımı](https://github.com/NVIDIA/SkillSpector/blob/main/pyproject.toml), 14 Eylül 2026 incelemesi. Statik ve isteğe bağlı LLM analizi, JSON/SARIF çıktıları mevcut; Python 3.12+ ve LLM/YARA bağımlılıkları izole kurulum gereksinimini destekliyor. Uygulama öncesi seçilen commit'in lisans, bağımlılık ve çıktı sözleşmesi yeniden doğrulanır. Bu planlama turunda araç kurulmadı veya çalıştırılmadı; kalite ölçümü yok.
+
+**R12a — Pilot (K):** F26 sonrasında, F11/F13 veri ve güven sınırlarıyla kitin `skills/` içeriği ve sentetik benign/kötücül skill fixture'ları üzerinde sabit sürüm/commit ile statik tarama ölçülür. Özellikle saldırı örneği anlatan güvenlik skill'lerinin yanlış pozitifleri, bilinen kötü örneklerin kaçırılması, süre ve kurulum maliyeti kaydedilir. Fixture taranan veri olarak kalır, içindeki talimatlar yürütülmez. Pilotun ölçülebilir kabul eşikleri koşumdan önce yazılır; yetersiz faydada entegrasyon ertelenir. Bu ayrı pilot tüm F16 adaptörlerinin bitmesini gerektirmez.
+
+**R12b — Adaptör (O, pilot başarılıysa):**
+
+- Önerilen `scan.sh skills` girişi isteğe bağlıdır; ilk sürüm `all`, pre-push ve otomatik kurulum kapısına eklenmez. Komut henüz mevcut değildir.
+- Araç ayrı, pinli ortamda çalışır; kitin temel kurulumuna Python/LLM bağımlılıkları yüklenmez. Eksik araç, hedef yokluğu, hata ve bulgu durumları F02 sözleşmesiyle ayrılır.
+- İlk kapsam repo içindeki açıkça seçilmiş skill dizinleridir; kullanıcının global skill/config/env dosyaları otomatik taranmaz. Skill yalnız `SKILL.md` değil, ilişkili paket dosyalarıyla ele alınır.
+- Varsayılan `--no-llm`; dış model kullanımı açık seçimdir. Statik analiz tamamen ağsız diye sunulmaz: OSV dahil ağ/veri davranışı F13'e yazılır.
+- JSON/SARIF sonuçları F03/F16 üzerinden aynı çalıştırmanın `evidence.json` ve HTML çıktısına normalize edilir. Araç/rule, dosya/satır, tarama modu ve özgün risk bilgisi korunur; risk skoru CVSS veya kitin REAL kararı yerine geçmez.
+- Başlangıç yalnız raporlama. Baseline otomatik toplu kabul edilmez; pre-install/hard gate ancak ayrı politika kararı ve yanlış pozitif/kaçırma ölçümüyle açılır. LLM modu eklenirse kalite ve belirsizlik F12 ile ayrıca değerlendirilir.
+
+### R13 — Tarama başlatan yerel UI (koşullu)
+
+F26 raporu günlük kullanımı karşılamaz ve kullanıcı tarama başlatma/ilerleme takibinde somut ihtiyaç gösterirse açılır. Varsayılan plan sırası R12 pilot kararından sonradır; SkillSpector'ın entegrasyonu teknik önkoşul değildir, pilot elenirse UI engellenmez. CLI ve hook/CI davranışları ortak yürütme yolu olarak kalır.
+
+**İlk dilim:** Tek repo, tek aktif tarama, sabit kapsam seçenekleri, başlat/durum/log/sonuç ekranı. Küçük yerel Python servis mevcut `scan.sh` komutlarını çağırır; ekran ortak evidence çıktısını okur. Framework seçimi uygulama sırasında yapılır. İlk sürümde merkezi hosting, kullanıcı yönetimi, çok-repo paneli, veritabanı ve UI'den suppression/fix yazma yoktur.
+
+**Kabul kriterleri:**
+
+- F01–F05 çalışma izolasyonu, iptal/hata ve son tamamlanan sonuç ayrımı doğrulanmıştır. Canlı çalışma ile eski sonuç aynı tarama gibi gösterilmez.
+- Servis yalnız loopback'e bağlanır; Host/Origin ve oturum token'ı kontrolleriyle başka web sayfalarının tarama başlatması engellenir. Sabit komut/argüman listesi kullanılır; UI girdisi shell komutuna birleştirilmez.
+- Repo kökü başlangıçta açıkça seçilir; API keyfi dosya okuma veya config/env içeriği sunmaz. F11/F24'teki çalıştırılabilir repo config sınırı kullanıcı akışında ele alınır; sözdizimi kontrolü sandbox sayılmaz.
+- Temiz/bulgulu/hatalı/atlanan tarama, eşzamanlı başlatma ve yetkisiz istek akışları sınanır. Kurulum ve ilk sonuç akışı belgelenir; isteğe bağlı UI bağımlılıkları CLI kurulumunu büyütmez.
+- `sec-triage`/deep review otomatik UI kapsamına girmez. Agent çalıştırma ihtiyacı oluşursa R04 ayrı kalite/runner kararıdır; bulgu kararı yazmak F19'a bağlı ayrı teslimattır.
+
+F26/R13 ile R09 wizard aynı onboarding ihtiyacına iki çözüm olarak otomatik geliştirilmez. UI kullanım verisi wizard gereğini yeniden değerlendirir; R09 son planlı özellik konumunu korur.
+
 ## Güncel teslim sırası — ana planlama kaynağı
 
 Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki işler tek PR olmak zorunda değil. Koşullu işler açılmadığında sonraki bağımsız işi bekletmez. Önceki Paket A/B/C sırası bu tabloyla değiştirilmiştir.
@@ -267,7 +322,7 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | Sıra | Teslimat | Neden şimdi / bitiş kapısı |
 |---|---|---|
 | 0 | **F22 tamamlandı** | Tek sıra ve roadmap eşlemesi hazır |
-| 1 | **F09 + F23** offline PR test kapısı ve Python unit test altyapısı | Yeni düzeltmeler tekrar kaybolmasın; F01–F06 regresyonları ilgili düzeltmeyle eklenir. F23 `lib/` modüllerinin doğrudan test edilmesini sağlar — F09'un zorunlu kontrollerinden biri |
+| 1 | **F09'u kapat; F23 tamamlandı** | RC.2'de düzeltme CI'ı yeşil çalıştırmalı ve uzak ruleset'e pytest/e2e eklenmeli. F01–F06 regresyonları ilgili düzeltmeyle eklenir |
 | 2 | **F01 → F05** çalıştırma izolasyonu ve kilit sahipliği | Cache ve rapor öncesi ortak kayıt yarışlarını gider |
 | 3 | **F02 → F03 → F04** durum, güncel kanıt, doğru rapor | Eksik/eskimiş tarama temiz görünmesin; F01 ve F02 schema tasarımı beraber yapılır. F23'teki unit test fixture'ları F02–F04 düzeltmeleriyle genişletilir |
 | 4 | **F06 → F07 → F08 → F25** cache politikası, release, kanal ve geçiş rehberi | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
@@ -275,12 +330,14 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | 6 | **F18** platform/yol matrisi ve kalan WSL2 doğrulaması | Taşınabilirlik temel ürün vaadi; WSL2 ortamı yoksa diğer testler devam eder |
 | 7 | **F16a → R01 kapsam kararı → F16b** | Önce gerçek çıktı/suppression matrisi; sonra gerekli adaptörler. R01 helper seçilirse F16b'den sonra |
 | 8 | **F10 → F14 → F15** kurulum, kapsam/yardım, landing QA | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun |
+| 8a | **F26** sunucusuz HTML rapor kullanılabilirliği | F04/F14 ve F16 kapsam sözleşmesi üstünde ilk görsel kullanım; F19/cache/agent runner beklemez |
+| 8b | **R12a → koşulu sağlanırsa R12b** SkillSpector | Önce fixture tabanlı fayda/yanlış pozitif ölçümü, sonra pinli opsiyonel adaptör; varsayılan gate değişmez |
 | 9 | **F19** bulgu/karar modeli | Kapsamlı evidence üstünde stabil kimlik; JSONL/resume yalnız ölçülmüş ihtiyaçla |
 | 10 | **F20 → F21a** ölçüm ve opt-in boyut cache | Hız kazanımı ve invalidation eşdeğerliği ölçülmeden cache yok |
 | 11 | **R02** skills-only plugin, ihtiyaç varsa | F10/F11/F14 tamam; vendor öncesi deneme kolaylığı sağlar |
 | 12 | **F21b / R03** ihtiyaç açılan genişletme | Monorepo maliyeti varsa F21b; Python/JS triyaj yükü varsa R03. Birbirinin önkoşulu değiller |
 | 13 | **F17** ihtiyaç kadar modüler bakım | Stabil davranış üstünde küçük dilimler; tüm işi bekleten yeniden yazım yok |
-| 14 | **R04/R05/R06/R07/R08/R10/R11** koşullu rezerv | Yalnız karttaki tetik ve bağımlılıklar oluşursa planlanır. R11 pin eskimesi veya CVE tetiklediğinde açılır |
+| 14 | **R04/R05/R06/R07/R08/R10/R11/R13** koşullu rezerv | Yalnız karttaki tetik ve bağımlılıklar oluşursa planlanır. R11 pin eskimesi veya CVE tetiklediğinde; R13 F26 kullanımında tarama kontrolü ihtiyacı doğrulanınca açılır |
 | 15 | **R09 wizard** en son | Aktif öncelikli işler sonrası, güncel UX verisiyle yeniden tasarım |
 
 **Bağımsız AI ölçüm hattı:** F12a sıra 1 ile aynı planlama döneminde başlayabilir; API anahtarı gerektirmez. F12b uygun backend erişimiyle, F12c ise sonuçlar yeterliyse takip eder. Bu bir paralel ajan çalıştırma talimatı değil; geliştirme bağımlılığı tarifidir. Üretim varsayılanı ölçülmeden prompt/eşik değişmez; deterministik düzeltmeler bu hattı beklemez. R04/R05 ilgili F12 kapıları tamamlanmadan açılmaz.

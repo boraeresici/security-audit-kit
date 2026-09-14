@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           persist-credentials: false
-      - uses: actions/setup-python@e797f83bcb11f83ae1e01e372e06f6f3ae8b4587  # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.11'
       - name: install pytest
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
         with:
           persist-credentials: false
-      - uses: actions/setup-python@e797f83bcb11f83ae1e01e372e06f6c3ae8b4587  # v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.11'
       - name: e2e (offline — no docker, no uvx; external-tool assertions skip gracefully)

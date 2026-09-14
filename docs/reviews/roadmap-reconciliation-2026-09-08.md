@@ -4,6 +4,16 @@ Tarih: 8 Eylül 2026 · Baz: yerel `main / 48fad91`.
 
 Güncel uygulama sırası ve kabul kriterleri [birleşik iş listesinde](application-backlog-2026-09-08.md). Bu belge, eski roadmap maddelerinin neden kapandığını, birleştiğini veya ertelendiğini açıklar. İncelenen kaynaklar: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG ve ilgili uygulama kodu. Yerel kaynakların tarihi beyanları güncel ürün/sağlayıcı ölçümü sayılmadı; dış araç lisansları ve yetenekleri yeniden araştırılmadı.
 
+## 14 Eylül 2026 — SkillSpector ve UI öncelik kararı
+
+Kullanıcı değerlendirmesi üzerine [birleşik backlog](application-backlog-2026-09-08.md) üç kartla genişletildi: **F26** sunucusuz HTML rapor kullanılabilirliği, **R12** SkillSpector pilotu/adaptörü, **R13** koşullu yerel tarama UI'si. Varsayılan sıra mevcut P0/P1 güvenilirlik ve kapsam işleri → F26 → R12; R13 ancak rapor kullanımının yetmediği görülürse açılır. F26/R12 teslim sırasına 8a/8b olarak, F19/cache genişlemesinden önce yerleştirildi; bunlar AI runner veya kalıcı karar deposu gerektirmez.
+
+CLI yürütme çekirdeği korunur. Mevcut HTML raporu yeniden yazılmaz; arama/filtre/detay eklenir. F04 dürüst rapor ve F03 çalıştırma kökeni görsel genişlemenin temelidir. SkillSpector kurulum öncesi skill güvenliği için ayrı adaydır; R08 genel scanner rezerviyle mükerrer değildir. Önce yanlış pozitif/kaçırma ölçümü, sonra pinli ve raporlama amaçlı isteğe bağlı adaptör; `all`/pre-push veya otomatik hard gate kapsamına varsayılan eklenmez. Kaynak ve kabul kriterleri R12 kartında tutulur.
+
+R13, SkillSpector başarılı olmasa da gerçek UI ihtiyacında açılabilir; F01–F05 ve F11/F24 sınırları önkoşuldur. UI'den AI inceleme R04'e, karar yazma F19'a bağlı ayrı işlerdir. Wizard R09 son planlı özellik olarak kalır; UI ile aynı onboarding sorununu iki kez çözmeden önce ihtiyacı yeniden değerlendirilir.
+
+RC kontrolünde temiz `ca36413` arşivinde 234 unit test ve 93 offline e2e assertion geçti. Uzak RC.1 CI'da iki iş geçersiz `actions/setup-python` pinleri nedeniyle test başlamadan başarısızdı; uzak ruleset de pytest/e2e'yi zorunlu tutmuyordu. F23 tamamlandı. F09, RC.2 düzeltmesi CI'da yeşil olduktan ve uzak required-check listesi yerel ruleset ile eşleştikten sonra kapanır.
+
 ## Temel karar
 
 Eski sıradaki “hemen cache, ardından remediation ve ağır reachability” akışını güncelliyoruz. Önce hatalı tarama kayıtları ve paket-cache politika sorunu giderilecek. Cache ancak doğru sonucu sakladığını kanıtlayabildiğimizde değerli. Buna karşılık remediation'ın küçük kapsam kararı ve L1d'nin anahtarsız hazırlığı cache'i beklemek zorunda değil.
