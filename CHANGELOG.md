@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed (v1.18.0-rc.2 — CI action pin)
+- **The `pytest` and `e2e` jobs can start on GitHub Actions.** `v1.18.0-rc.1` pinned
+  `actions/setup-python` to two invalid commit SHAs, so both jobs failed while resolving the action
+  before any tests ran. Both jobs now use the verified immutable commit behind `setup-python@v5`.
+- The RC.1 source itself passes locally: 234 unit tests and 93 offline e2e assertions. RC.2 is
+  required because an RC whose required test jobs never executed cannot be promoted as tested.
+
 ### Added (#R5.2, slice A — a run lock, so two scans cannot write one record)
 - **The failure it removes.** `raw-<date>.log` is appended by every run and `summary.json` is
   truncated and rewritten by every run. Two overlapping scans — a pre-push `all` while someone runs
