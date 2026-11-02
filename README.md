@@ -356,9 +356,14 @@ which `/sec-triage` could read mid-write. A `mkdir`-based lock in `.git/security
 serializes the *writers*: `summary.json` is written to a temp file and renamed (a reader sees the old
 record or the new one, never half of one), and a second run waits `SCAN_LOCK_WAIT` seconds (30 by
 default) for the lock. If it cannot take it, **the scan still runs** — a push is never blocked because
-someone else is scanning — it just writes its own record and says so. A lock left
-behind by a killed scan is reclaimed on a dead owner PID or after `SCAN_LOCK_STALE_MIN` (60) minutes;
-`scan.sh doctor` prints whether the lock is free, held, or stale.
+someone else is scanning — it just writes its own record and says so. A lock is reclaimed only
+when its owner is gone, never for age alone (a long scan stays protected): the owner's PID is dead,
+or alive but a different process (PID reuse, told apart by start time), or the lock was taken on
+another host and its heartbeat (refreshed every `SCAN_LOCK_HEARTBEAT_SEC`, 30) has been silent for
+`SCAN_LOCK_STALE_MIN` (60) minutes. An unreadable lock is reclaimed after a few seconds instead of
+being waited on. When several runs find the same stale lock, exactly one reclaims it. A run removes
+the lock only while it still holds its own token, and it publishes only under that token. A run whose lock was taken over keeps its
+record in `runs/<run-id>/`. `scan.sh doctor` prints whether the lock is free, held (by whom), or stale (and why).
 
 Every run gets an id (`run_id` in `summary.json`) and builds its record in its own
 `scan-findings/runs/<run-id>/` first. Only the lock holder then publishes it into the shared

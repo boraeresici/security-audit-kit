@@ -21,6 +21,22 @@ All notable changes to this project are documented here. The format is based on
   lock. `evidence.json`, `kit.sarif` and the HTML report are written to a temp file and renamed into
   place, like `summary.json`.
 - The raw log of a lock-less run moved from `raw-<date>.<pid>.log` to `runs/<run-id>/raw.log`.
+- **A live scan's lock is no longer taken because it is old (F05).** A scan that ran longer than
+  `SCAN_LOCK_STALE_MIN` lost its lock to the next run, so two writers shared the record again. The
+  owner file now records pid, a random token, host and process start time, and the holder refreshes
+  a heartbeat (`SCAN_LOCK_HEARTBEAT_SEC`, default 30). A lock is reclaimed only when its owner is
+  gone: dead pid, a reused pid (start time differs), or, for a lock taken on another host, a
+  heartbeat silent for `SCAN_LOCK_STALE_MIN`. Locks written by an older kit keep the old rule.
+- **Concurrent reclaim no longer double-holds.** Three runs that found the same dead lock each
+  deleted it, and two could then hold it. Reclaim now happens under a short guard lock, with the
+  state re-read inside it.
+- **A run releases and publishes only under its own token.** Release used to delete whatever lock
+  was there. A run whose lock was taken over now leaves the new owner's lock alone, does not
+  publish, and keeps its record in `runs/<run-id>/`.
+- An unreadable owner file is reclaimed after a 10-second grace instead of being waited out.
+- A live process owned by another user is no longer taken for dead: `kill -0` fails with EPERM
+  there, so liveness falls back to `ps -p`.
+- `security-audit.conf.example` documents `SCAN_LOCK_HEARTBEAT_SEC` and `SCAN_RUNS_KEEP_DAYS`.
 
 ### Tests
 - **e2e no longer fails at random on its own assertions.** 56 checks piped output into `grep -q`;

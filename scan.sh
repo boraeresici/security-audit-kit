@@ -776,18 +776,15 @@ scan_doctor(){
   # Two overlapping runs used to interleave the same raw log and truncate summary.json under a
   # reader. Whether a lock is held right now (or left behind by a crash) is otherwise invisible.
   printf '\nrun lock (one writer for raw-<date>.log + the shared record):\n'
-  local lk lkowner
+  local lk lkst
   lk="$(scan_lock_path)"
-  if [ -d "$lk" ]; then
-    lkowner="$(cat "$lk/owner" 2>/dev/null || echo 'owner unknown')"
-    if [ -n "$(find "$lk" -maxdepth 0 -mmin "+$SCAN_LOCK_STALE_MIN" 2>/dev/null)" ]; then
-      printf '  !!  HELD but stale (>%s min): %s — next run reclaims it\n' "$SCAN_LOCK_STALE_MIN" "$lkowner"
-    else
-      printf '  ok  held right now by %s\n' "$lkowner"
-    fi
-  else
-    printf '  ok  free (%s)\n' "${lk#"$ROOT"/}"
-  fi
+  lkst="$(scan_lock_state "$lk")"
+  case "${lkst%%	*}" in
+    gone)  printf '  ok  free (%s)\n' "${lk#"$ROOT"/}" ;;
+    stale) printf '  !!  HELD but stale (%s) — next run reclaims it\n' "${lkst#*	}" ;;
+    *)     printf '  ok  held right now (%s)\n' "${lkst#*	}" ;;
+  esac
+  printf '      stale = owner gone, pid reused, or no heartbeat for %s min — never age alone\n' "$SCAN_LOCK_STALE_MIN"
   printf '      a second run waits %ss, then scans anyway into its own runs/<run-id>/ (shared record untouched)\n' "$SCAN_LOCK_WAIT"
 
   # The git hooks cannot see `npm i <pkg>`: the install script has already run by the time a
@@ -1080,10 +1077,33 @@ LOG_DIR="$ROOT/docs/security/scan-findings"
 # (what /sec-triage, Code Scanning upload and humans read). Every run, holder or not, first writes
 # into its own runs/<run-id>/; only the holder then publishes that into the shared record, at the
 # very end, in one short step that a Ctrl-C cannot split. A run without the lock never touches it.
-SCAN_LOCK_WAIT="${SCAN_LOCK_WAIT:-30}"            # seconds to wait for the other run
-SCAN_LOCK_STALE_MIN="${SCAN_LOCK_STALE_MIN:-60}"  # a lock older than this is a crashed run
+#
+# Liveness, not age, decides whether a lock is stale. A scan can legitimately run for longer than
+# any fixed limit (a monorepo, a cold docker pull), and taking a LIVE run's lock because it is old
+# puts two writers back on the shared record. So the owner file records who took the lock — pid,
+# a random token, host, and the process start time — and the holder refreshes a heartbeat while it
+# runs. A lock is reclaimed only when its owner is provably gone: the pid is dead, or alive but a
+# different process (pid reuse: the start time differs), or — where the pid cannot be checked (a
+# lock taken on another host sharing this .git) — the heartbeat has been silent for
+# SCAN_LOCK_STALE_MIN. An unreadable owner file is reclaimed after a short grace (it may be a lock
+# being created this instant), never waited on forever. Reclaiming happens under a second, short
+# lock with the state re-read inside it, so two runs that both saw the stale lock cannot each
+# delete it and end up holding it twice. Release, and publishing, happen only under our own token.
+SCAN_LOCK_WAIT="${SCAN_LOCK_WAIT:-30}"                     # seconds to wait for the other run
+SCAN_LOCK_STALE_MIN="${SCAN_LOCK_STALE_MIN:-60}"           # silent heartbeat this long = crashed run
+SCAN_LOCK_HEARTBEAT_SEC="${SCAN_LOCK_HEARTBEAT_SEC:-30}"   # how often the holder says it is alive
+SCAN_LOCK_GRACE_SEC=10                                     # a lock younger than this may still be writing its owner file
 LOCK_DIR=""
 LOCK_HELD=0
+LOCK_TOKEN=""
+LOCK_HB_PID=""
+LOCK_HOST="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo unknown)"
+
+file_mtime(){ stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+# `kill -0` fails on another user's live process too (EPERM) -> fall back to ps before calling it dead.
+proc_alive(){ kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1; }
+proc_start(){ ps -o lstart= -p "$1" 2>/dev/null | sed 's/  *$//'; }
+lock_field(){ sed -n "s/^$1=//p" "$2/owner" 2>/dev/null | head -1; }
 
 scan_lock_path(){
   local common
@@ -1096,37 +1116,136 @@ scan_lock_path(){
   fi
 }
 
+# Classify a lock dir. Prints "<state><TAB><why>": state is live | stale | gone.
+scan_lock_state(){
+  local d="$1" now pid host pstart cur hb age mt omt who
+  [ -d "$d" ] || { printf 'gone\t-'; return; }
+  now="$(date +%s)"
+  pid="$(sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$d/owner" 2>/dev/null | head -1)"
+  if [ -z "$pid" ]; then
+    mt="$(file_mtime "$d")"; omt="$(file_mtime "$d/owner")"
+    [ -n "$omt" ] && [ "${omt:-0}" -gt "${mt:-0}" ] && mt="$omt"
+    age=$(( now - ${mt:-$now} ))
+    if [ "$age" -ge "$SCAN_LOCK_GRACE_SEC" ]; then printf 'stale\tunreadable owner, %ss old' "$age"
+    else printf 'live\tbeing created'; fi
+    return
+  fi
+  host="$(lock_field host "$d")"
+  who="pid=$pid host=${host:-?} cmd=$(lock_field cmd "$d" | sed 's/ .*//')"
+  hb="$(cat "$d/heartbeat" 2>/dev/null)"
+  case "$hb" in ''|*[!0-9]*) hb="$(file_mtime "$d/owner")" ;; esac
+  age=$(( now - ${hb:-$now} ))
+  if [ -z "$(lock_field token "$d")" ]; then
+    # Written by a kit older than the heartbeat (one-line owner). Keep that kit's rule: a dead pid,
+    # or a lock dir older than SCAN_LOCK_STALE_MIN.
+    who="$(head -1 "$d/owner" 2>/dev/null)"
+    proc_alive "$pid" || { printf 'stale\towner process gone: %s' "$who"; return; }
+    [ -n "$(find "$d" -maxdepth 0 -mmin "+$SCAN_LOCK_STALE_MIN" 2>/dev/null)" ] \
+      && { printf 'stale\tpre-heartbeat lock older than %s min: %s' "$SCAN_LOCK_STALE_MIN" "$who"; return; }
+    printf 'live\t%s' "$who"; return
+  fi
+  if [ "$host" != "$LOCK_HOST" ]; then
+    # Another host's pid means nothing here: the heartbeat is the only liveness signal.
+    [ "$age" -gt $(( SCAN_LOCK_STALE_MIN * 60 )) ] \
+      && { printf 'stale\tno heartbeat for %ss (>%s min): %s' "$age" "$SCAN_LOCK_STALE_MIN" "$who"; return; }
+    printf 'live\t%s, heartbeat %ss ago' "$who" "$age"; return
+  fi
+  proc_alive "$pid" || { printf 'stale\towner process gone: %s' "$who"; return; }
+  pstart="$(lock_field pstart "$d")"; cur="$(proc_start "$pid")"
+  if [ -n "$pstart" ] && [ "$pstart" != "-" ] && [ -n "$cur" ]; then
+    [ "$pstart" != "$cur" ] && { printf 'stale\tpid reused (started %s, lock taken by one started %s): %s' "$cur" "$pstart" "$who"; return; }
+    printf 'live\t%s, heartbeat %ss ago' "$who" "$age"; return
+  fi
+  # Alive, but cannot tell whether it is the same process: a live holder heartbeats, so silence decides.
+  [ "$age" -gt $(( SCAN_LOCK_STALE_MIN * 60 )) ] \
+    && { printf 'stale\tno heartbeat for %ss (>%s min), pid unverifiable: %s' "$age" "$SCAN_LOCK_STALE_MIN" "$who"; return; }
+  printf 'live\t%s, heartbeat %ss ago' "$who" "$age"
+}
+
+# Reclaim a stale lock under a short guard lock, re-reading the state inside it: between our first
+# look and now, another run may already have reclaimed it and taken a fresh one.
+scan_lock_reclaim(){
+  local guard="$LOCK_DIR.reclaim" st mt
+  if ! mkdir "$guard" 2>/dev/null; then
+    # A reclaim takes milliseconds; a guard a minute old belongs to a reclaimer that died mid-way.
+    mt="$(file_mtime "$guard")"
+    [ -n "$mt" ] && [ $(( $(date +%s) - mt )) -gt 60 ] && rm -rf "$guard" 2>/dev/null
+    return 1
+  fi
+  st="$(scan_lock_state "$LOCK_DIR")"
+  if [ "${st%%	*}" = stale ]; then
+    note lock "stale lock reclaimed (${st#*	})"
+    rm -rf "$LOCK_DIR" 2>/dev/null
+  fi
+  rmdir "$guard" 2>/dev/null
+  return 0
+}
+
+# The heartbeat: a background loop that refreshes $LOCK_DIR/heartbeat while this run is alive and
+# still owns the lock. It never holds our stdout (it would keep `tee` and callers waiting) and it
+# exits by itself if this shell is SIGKILLed.
+scan_lock_heartbeat_start(){
+  local dir="$LOCK_DIR" tok="$LOCK_TOKEN" parent="$$" iv="$SCAN_LOCK_HEARTBEAT_SEC"
+  (
+    trap - EXIT INT TERM
+    while sleep "$iv"; do
+      kill -0 "$parent" 2>/dev/null || exit 0
+      [ "$(lock_field token "$dir")" = "$tok" ] || exit 0
+      date +%s > "$dir/heartbeat.tmp" 2>/dev/null && mv -f "$dir/heartbeat.tmp" "$dir/heartbeat" 2>/dev/null
+    done
+  ) </dev/null >/dev/null 2>&1 &
+  LOCK_HB_PID=$!
+}
+
+scan_lock_owned(){ [ -n "$LOCK_TOKEN" ] && [ "$(lock_field token "$LOCK_DIR")" = "$LOCK_TOKEN" ]; }
+
 # `mkdir` is the atomic primitive here: it either creates the directory or fails, with no window
 # between the check and the create that a second process could slip through.
 scan_lock_acquire(){
-  local owner pid waited=0
+  local st waited=0 ps0
   LOCK_DIR="$(scan_lock_path)"
   mkdir -p "$(dirname "$LOCK_DIR")" 2>/dev/null || return 1
+  LOCK_TOKEN="$$-$(date +%s)-$RANDOM$RANDOM"
   while :; do
     if mkdir "$LOCK_DIR" 2>/dev/null; then
-      printf 'pid=%s date=%s cmd=%s\n' "$$" "$(date +%FT%T)" "$CMD" > "$LOCK_DIR/owner" 2>/dev/null
+      ps0="$(proc_start "$$")"
+      # Owner written whole or not at all: a reader never parses half of it.
+      printf 'pid=%s\ntoken=%s\nhost=%s\npstart=%s\nstarted=%s\ncmd=%s\ndate=%s\n' \
+        "$$" "$LOCK_TOKEN" "$LOCK_HOST" "${ps0:--}" "$(date +%s)" "$CMD" "$(date +%FT%T)" \
+        > "$LOCK_DIR/owner.tmp" 2>/dev/null && mv -f "$LOCK_DIR/owner.tmp" "$LOCK_DIR/owner"
+      date +%s > "$LOCK_DIR/heartbeat" 2>/dev/null
       LOCK_HELD=1
+      scan_lock_heartbeat_start
       return 0
     fi
-    owner="$(cat "$LOCK_DIR/owner" 2>/dev/null || echo 'owner unknown')"
-    pid="$(printf '%s' "$owner" | sed -n 's/^pid=\([0-9]*\).*/\1/p')"
-    # A lock directory outlives the process that made it — a killed scan, a closed terminal, a
-    # crashed container. Reclaim on a dead pid, or on age, so a stale lock cannot become permanent.
-    if { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } \
-       || [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin "+$SCAN_LOCK_STALE_MIN" 2>/dev/null)" ]; then
-      note lock "stale lock reclaimed ($owner)"
-      rm -rf "$LOCK_DIR" 2>/dev/null
-      continue
-    fi
+    st="$(scan_lock_state "$LOCK_DIR")"
+    case "${st%%	*}" in
+      gone)  continue ;;
+      stale) scan_lock_reclaim && continue ;;
+    esac
     if [ "$waited" -ge "$SCAN_LOCK_WAIT" ]; then return 1; fi
-    [ "$waited" -eq 0 ] && say lock "another scan holds the lock ($owner) — waiting up to ${SCAN_LOCK_WAIT}s"
+    [ "$waited" -eq 0 ] && say lock "another scan holds the lock (${st#*	}) — waiting up to ${SCAN_LOCK_WAIT}s"
     sleep 1
     waited=$((waited + 1))
   done
 }
 
+scan_lock_stop_heartbeat(){
+  [ -n "$LOCK_HB_PID" ] && kill "$LOCK_HB_PID" 2>/dev/null
+  LOCK_HB_PID=""
+}
+
+# Remove the lock only if it is still ours. If another run took it over (it judged us stale), it
+# is theirs now: deleting it would put two writers back on the record.
 scan_lock_release(){
-  [ "$LOCK_HELD" = "1" ] && [ -n "$LOCK_DIR" ] && rm -rf "$LOCK_DIR" 2>/dev/null
+  scan_lock_stop_heartbeat
+  if [ "$LOCK_HELD" = "1" ] && [ -n "$LOCK_DIR" ]; then
+    if scan_lock_owned; then
+      rm -rf "$LOCK_DIR" 2>/dev/null
+    elif [ -d "$LOCK_DIR" ]; then
+      note lock "the lock is no longer ours — left in place for its current owner"
+    fi
+  fi
   LOCK_HELD=0
 }
 
@@ -1297,6 +1416,13 @@ scan_publish(){
   return 0
 }
 
+# Still ours? Another run may have judged this one stale while it ran (a laptop asleep past
+# SCAN_LOCK_STALE_MIN on a lock it could not pid-check). Then the record is theirs: keep ours aside.
+if [ "$LOCK_HELD" = "1" ] && ! scan_lock_owned; then
+  note lock "the lock is no longer ours (taken over while this run scanned) -> NOT publishing"
+  scan_lock_stop_heartbeat
+  LOCK_HELD=0
+fi
 if [ "$LOCK_HELD" = "1" ]; then
   scan_publish
 else
