@@ -97,17 +97,17 @@ re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, revie
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.19.0
-bash bootstrap.sh v1.19.0 --scan          # also run a full scan after install
-bash bootstrap.sh v1.19.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.19.1
+bash bootstrap.sh v1.19.1 --scan          # also run a full scan after install
+bash bootstrap.sh v1.19.1 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 # <sha> is the COMMIT the tag points at. Release tags are annotated, so `git rev-parse <tag>` gives
 # you the tag OBJECT and --expect will refuse it. Ask for the commit explicitly:
-#   git rev-parse v1.19.0^{commit}          # in a clone of this repo
-#   gh api repos/<owner>/<repo>/git/refs/tags/v1.19.0 --jq .object.sha   # then resolve if type=tag
+#   git rev-parse v1.19.1^{commit}          # in a clone of this repo
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.19.1 --jq .object.sha   # then resolve if type=tag
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.19.0`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.19.1`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
@@ -179,7 +179,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.19.0          # pin a tag
+  rev: v1.19.1          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -223,9 +223,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
    against the newest semver tag in the kit repo via `git ls-remote` (no clone):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.18.0
-   # latest tag       : v1.19.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.19.0
+   # vendored version : v1.19.0
+   # latest tag       : v1.19.1
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.19.1
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
    periodic check or a `make` target.
@@ -235,9 +235,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.19.0   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.19.1   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.19.0"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.19.1"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
@@ -636,7 +636,9 @@ The user doesn't have to remember; the trigger announces itself:
    the console: `NEXT STEP — for triage, in Claude Code: /sec-triage`.
 2. **scan.sh** also writes the raw output to
    `docs/security/scan-findings/raw-<TODAY>.log` — a visible "to-do" trail sitting
-   in the folder (gitignored, transient).
+   in the folder (transient). The first scan writes `scan-findings/.gitignore`, which keeps
+   every artifact there out of git except `findings-*.md`, the triage record. Commit that
+   `.gitignore`; scan.sh never overwrites it once it exists.
 3. **Run `/sec-triage` in Claude** (no args): the skill first reads
    `raw-<TODAY>.log` (or runs the scan itself if absent), decides real/FP for each
    finding, writes `findings-<TODAY>.md`, applies FP->allowlist / real->fix.

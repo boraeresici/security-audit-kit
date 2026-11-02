@@ -1336,6 +1336,19 @@ trap 'scan_exit_cleanup' EXIT
 trap 'scan_abort 130' INT
 trap 'scan_abort 143' TERM
 mkdir -p "$LOG_DIR"
+# Everything this script writes here is transient and regenerated on the next run; the record a
+# team keeps is the triage file. Without this, a plain `git add -A` in a consumer repo commits raw
+# logs, SARIF and per-run records. Written once, before any artifact exists, and never over a
+# .gitignore the repo already has there (a team may have chosen to track more).
+[ -e "$LOG_DIR/.gitignore" ] || cat > "$LOG_DIR/.gitignore" 2>/dev/null <<'EOF'
+# Written by security-audit-kit (scan.sh). Scan artifacts here are transient and regenerated on
+# every run: raw logs, summary.json, sarif/, evidence.json, HTML reports, runs/<run-id>/.
+# The persistent record is the triage file, findings-<date>.md, which stays tracked.
+# Edit freely: scan.sh never overwrites this file once it exists.
+*
+!.gitignore
+!findings-*.md
+EOF
 
 # Take the writer lock before ANY artifact is touched — `evidence`/`report` included, since they
 # read summary.json + sarif/ and would otherwise be able to read a record mid-write.
