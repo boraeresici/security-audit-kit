@@ -16,7 +16,23 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 
 **F03** (2 Kasım, `feat/f03-artifact-provenance`): evidence yalnız bu çalıştırmanın manifestteki, hash'i tutan SARIF dosyalarını kullanıyor; provenance `summary.json` ve evidence'ta. Ortak `sarif/` önceki çalıştırmaların dosyalarını artık taşımıyor; F01'de açık bırakılan soru böylece kapandı.
 
-**Sırada:** F03 → F04 → F14 + F25. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+**Sırada:** F03 tamamlandı (PR #40). Sıradaki işler: F04 → F14a + F25 → F30 (aşağıdaki performans girişine bak). Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+
+## 2 Kasım 2026 — Performans ölçümü ve konumlandırma (F30–F32, R02 öne alındı)
+
+"Rust'a geçmek hızlandırır mı?" sorusu üzerine kitin kendi reposunda uçtan uca ölçüm yapıldı; her adım 3 kez çalıştırıldı. `scan.sh all` sıcakken ~40 sn sürüyor; bunun ~32 sn'si trivy'nin cache olmadığı için her koşuda 131 MiB'lık DB'yi yeniden indirmesinden geliyor. Python son işleme < 0,5 sn, bash'in kendi payı ~0,3 sn. Sonuç: dil değişikliği gündemde değil; darboğaz **F30** (trivy DB cache'i) olarak eklendi ve 3c sırasına alındı. Hook profili, push aralığında gitleaks ve paralel boyutlar **F31** oldu. Kapanış özeti, Docker uyarısı ve blok mesajı F14'e, boyut başına süre F20'ye kabul kriteri olarak eklendi.
+
+Aynı gün bir konumlandırma değerlendirmesi yapıldı. Repo 4,5 ayda 0 star aldı; kit hiçbir plugin marketplace'inde yok. Aynı kanalda Semgrep'in resmi Claude Code plugin'i ve Trail of Bits'in `static-analysis` plugin'i var. Bu yüzden **R02** (plugin kanalı) P2 adaydan P1'e yükseltildi ve 11. sıradan 8. sıraya, F10'un arkasına alındı. README ilk ekranı, demo, ölçülmemiş karşılaştırma satırı ("credit balance is too low") ve güven sinyalleri **F32** oldu.
+
+Bu değerlendirme, "Birlikte değerlendireceğimiz kararlar" bölümündeki açık soruya (başlangıç UX'i mi, monorepo maliyeti mi) bir veri sağlıyor: ölçülen darboğaz ve benimseme engelleri başlangıç UX'i tarafında. Ancak karar verilmiş sayılmadı.
+
+İnceleme sonrası plana dört düzeltme işlendi:
+- **F30:** provenance'a DB'nin yaşı değil kimliği (`UpdatedAt`) yazılacak. Yaş zamanla değiştiği için F03'ün evidence determinizmini bozardı; yaş yalnız `summary.json` ve `doctor` çıktısında.
+- **F14:** a/b olarak bölündü. Boyut başına `seconds` alanı F20'den F14a'ya alındı.
+- **F31a:** varsayılan tam geçmiş kaldı; push aralığı taraması isteğe bağlı bir seçenek.
+- **rc=2:** muhtemelen yarım F03 çalışma ağacından kaynaklanıyor. Doğrulanmadı; F03 merge edildikten sonra tekrar ölçülecek.
+
+**Güncel sıra:** F03 → F04 → F14a + F25 (3b) → F30 (3c) → yayın kapısı F06–F08.
 
 ## 2 Kasım 2026 — SOCNova, yeni açık takibi ve agent erişimi (R15 notu)
 

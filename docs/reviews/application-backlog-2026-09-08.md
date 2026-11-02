@@ -14,6 +14,8 @@ Kaynak: [8 Eylül 2026 çok rollü değerlendirme](application-review-2026-09-08
 
 **Sıra değişikliği — 2 Kasım 2026:** F14 ve F25, F03 → F04'ün hemen arkasına (3b) alındı. Gerekçe: F02'nin kırıcı schema değişikliği ve F14'ün bağımlılığının kalkması. Önceliğin tanımı ve diğer işlerin sırası değişmedi. Planın açık bıraktığı "baskın kullanıcı / başlangıç UX'i mi monorepo maliyeti mi" kararı hâlâ verilmedi; bu değişiklik o karar yerine geçmez.
 
+**Güncelleme — 2 Kasım 2026 (performans ve konumlandırma):** Uçtan uca ölçüm, darboğazın trivy DB indirmesi olduğunu gösterdi (`all` ~40 sn'nin ~32 sn'si); orkestratörün dili darboğaz değil. **F30** (trivy DB cache'i, sıra 3c), **F31** (pre-push profili ve paralel boyutlar) ve **F32** (README ilk ekranı, demo, karşılaştırma düzeltmesi, güven sinyalleri) eklendi. **R02** plugin kanalı P1'e yükseltildi ve 8. sıraya alındı. F14 ve F20'ye kabul kriteri eklendi. [Gerekçe](roadmap-reconciliation-2026-09-08.md).
+
 **Not — 2 Kasım 2026:** SOCNova karşılaştırması, taramalar arası yeni açık takibi, agent/alarm entegrasyonu ve Dependabot rolü **R15** koşullu not kartına alındı. Kritik değil; teslim sırası değişmedi.
 
 P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki güvenilirlik ve kullanılabilirlik paketi. P2: ölçüm ve talebe göre geliştirme. P0 etiketi CVSS veya istismar şiddeti değildir. Efor: K ≈ 0,5–2, O ≈ 3–5, B ≈ 6–10 mühendis-gün; test ve doküman dahil kaba tahmin, takvim sözü değil.
@@ -35,7 +37,7 @@ P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki gü
 | F11 | Kitin kendi güven sınırlarını ve hardening seçeneklerini çıkar | Risk / K | P1 | Güvenlik | O | — |
 | F12 | Kalibrasyon hazırlığı → ölçüm → karar sözleşmesi | Araştırma / K | P1 | AI + güvenlik | B | a: yok; b: erişilebilir backend; c: ölçüm |
 | F13 | Yerel/ağsız/veri paylaşımı ifadelerini düzelt | Doküman / K | P1 | Ürün + güvenlik | K | — |
-| F14 | Kapsam özeti, yardım ve kısa başlangıç akışı | UX / Ö | P1 | Ürün + DX | O | F02 |
+| F14 | a: kapsam/kapanış özeti, yardım, kısa başlangıç; b: sessiz çıktı ve ilk bulgu satırı | UX / Ö | P1 | Ürün + DX | a: O; b: O | a: F02; b: F31b |
 | F15 | Landing dayanıklılık ve erişilebilirlik kontrolü | UX / K+Ö | P2 | Frontend + QA | K | — |
 | F16 | Eksik boyutları normalize kanıt modeline ekle | Geliştirme / K | P1 | Veri | B | F02, F03 |
 | F17 | Shell orkestrasyonunu kademeli modüllere ayır | Bakım / Ö | P2 | Mimari | B | F09, davranış sözleşmeleri |
@@ -51,6 +53,9 @@ P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki gü
 | F27 | Deep incelemede kapsam defteri ve tekrar inceleme | Geliştirme / K+Ö | P2 | AI + veri | O | F03, F04, F19 |
 | F28 | Bağımsız doğrulayıcı pilotu ve kapsam kontrolü | Araştırma / K+Ö | P2 | AI + QA | O pilot | F11, F12c, F19, F27 |
 | F29 | py-deps: projeye ait olmayan aktif ortamı denetleme | Hata / D+K | P1 | Backend + güvenlik | K | — ; durum adlandırması F02 ile uyumlu |
+| F30 | trivy DB/check cache'i, tazelik politikası, ilk koşu mesajı | Performans / D | P1 | Backend + DX | K | F03 (DB kimliği provenance'ta) |
+| F31 | a: pre-push profili + push aralığında gitleaks; b: paralel boyutlar | Performans + UX / Ö | P2 | Backend + DX | a: K–O; b: O | a: F14; b: F30, F03 |
+| F32 | README ilk ekranı, demo, karşılaştırma düzeltmesi, güven sinyalleri | Ürün / Ö | P1 | Ürün + DX | K–O | karşılaştırma satırı: F12b |
 
 ## Roadmap'ten gelen ek / koşullu kartlar
 
@@ -59,7 +64,7 @@ Bu tablo yukarıdaki F maddelerini tekrar etmez. “Koşullu” işler, belirtil
 | ID | Eski referans / iş | Karar | Rol | Efor | Açılma koşulu / bağımlılık |
 |---|---|---|---|---|---|
 | R01 | T2.2 / #8 remediation compute | P1 kapsam kararı; uygulama koşullu | DX + güvenlik | K karar; O–B uygulama | Mevcut skill komutlarının yetmediği örnek |
-| R02 | R5.3 skills-only plugin / manifest | P2 aday | DX + güvenlik | O | F10, F11, F14; daha kolay deneme ihtiyacı |
+| R02 | R5.3 skills-only plugin / manifest | P1 (2 Kasım 2026'da P2 adaydan yükseltildi) | DX + güvenlik | O | F10, F11, F14; dağıtım darboğazı (0 star) ve Semgrep'in resmi Claude Code plugin'i |
 | R03 | A3 / #7 Python-JS reachability | Koşullu | Güvenlik + performans | B | F16, F21a; ölçülmüş yüksek triyaj yükü |
 | R04 | L2 + Phase B provider/local runner | Koşullu | AI + mimari | B pilot; tam runner ayrıca tahmin | F12; gerçek offline/non-Claude gereksinimi |
 | R05 | T3.4 generate-only PoC | Koşullu | Güvenlik + AI | B | F12c, F19; kanıt ihtiyacı |
@@ -184,6 +189,16 @@ Her komut için yerel hesap, internet ihtiyacı ve dış servise gönderilebilec
 
 Yeni kullanıcı kısa başlangıç üzerinden `doctor → scan → sonucu anla → next step` akışını tamamlayabilmeli. Yardımda her komutun boyutları, önkoşulları ve gate davranışı görünmeli. `all` dışında kalan boyutlar kapsam özetinde açık olmalı. Profiller eklenecekse mevcut varsayılanlar korunmalı. En az birkaç gerçek kullanıcıyla ilk rapora ulaşma süresi ve yanlış kapsam yorumları ölçülmeli; hedefler baz ölçüm sonrası kesinleşmeli.
 
+**Ek — 2 Kasım 2026 (performans ve UX değerlendirmesi):**
+- Her taramanın sonunda tek ekranlık bir kapanış özeti basılmalı: boyut, durum, süre, kısa neden, ardından "NOT inspected", "BLOCKED" ve önerilen sonraki adım.
+- Docker çalışmıyorsa hook yine geçebilir, ama tek ve net bir satırla hangi boyutların incelenmediği ve nasıl düzeltileceği yazılmalı. Kurulum günü ile push günü farklı olduğu için bu uyarı yalnız `install.sh`'e bırakılmamalı.
+- Hook bir push'u engellediğinde şunlar yazılmalı: hangi boyut, kaç bulgu, ilk dosya:satır, ham log yolu ve seçenekler (düzelt / süreli allowlist / `/sec-triage` / `--no-verify`). `error` durumunda mesaj "tarayıcı başarısız oldu, bu bir bulgu değil; allowlist'e ekleme" demeli.
+- Ekrana yalnızca `say`/`warn` satırları ve bulgular gitmeli; ham çıktının tamamı log'da kalmalı. `SCAN_VERBOSE=1` eski davranışı geri getirmeli.
+
+**Bölme — 2 Kasım 2026:** Bu ekle birlikte F14'ün eforu O'nun üstüne çıktı, bu yüzden iki parçaya bölündü:
+- **F14a (3b):** kapsam ve kapanış özeti, yardım, kısa başlangıç, Docker satırı ve "error ≠ bulgu" blok mesajı. F02 verisiyle hemen yapılabilir. Boyut başına süre için `summary.json` `dimensions[]`'a eklenecek `seconds` alanı F20'den buraya alındı; ek bir alan, şemayı kırmaz. Böylece 3b, 10. sıradaki F20'yi beklemez.
+- **F14b (10, F31b ile):** sessiz ekran çıktısı (`SCAN_VERBOSE`) ve blok mesajındaki "ilk dosya:satır". Hook'lar `SARIF=0` ile çalıştığı için ilk bulguyu göstermek her aracın ham çıktısını ayrıştırmayı gerektirir. Boyut çıktılarını ayrı dosyalara alan F31b altyapısıyla aynı iştir.
+
 ### F15 — Landing kalite turu
 
 Dar/geniş ekran, klavye, ekran okuyucu temel akışı, JS kapalı kullanım ve clipboard reddi tarayıcıda doğrulanmalı. Kritik içerik JS hatasında görünür kalmalı; kopyalama sonucu ve hatası erişilebilir bildirim vermeli. Mevcut reduced-motion desteği korunmalı. Bulunmayan sorunlar için sırf checklist tamamlamak amacıyla tasarım değiştirilmemeli.
@@ -215,6 +230,8 @@ Satır kayması aynı bulguyu gereksiz yeniden açmamalı; aynı manifestte ayn�
 ### F20 — Önce ölçüm
 
 Boyut bazında süre, durum nedeni, kapsam ve cache hit bilgisi yerelde üretilmeli. Küçük repo, monorepo ve büyük geçmiş fixture'larında sıcak/soğuk koşum ayrılmalı. Gizli veri veya kaynak kod metriklere girmemeli; ağ telemetrisi varsayılan olarak eklenmemeli. F21 için ölçülmüş darboğaz listesi çıkarılmalı.
+
+**İlk ölçüm — 2 Kasım 2026:** Kitin kendi reposunda (82 dosya, 89 commit, macOS + Docker Desktop, imajlar önceden çekilmiş) her adım 3 kez çalıştırıldı. Sıcak koşu süreleri: secret ~1 sn, sast ~3 sn, container ~36 sn (soğuk 111 sn), sbom ~3 sn, `all` ~40 sn, evidence/report < 0,5 sn. Darboğaz trivy DB indirmesi; F30'a alındı. Boyut başına `seconds` alanı F14a'ya alındı (ek alan, şemayı kırmaz); F20 bunu ölçüm için kullanır. Bu ölçüm küçük repo içindir; monorepo ve büyük geçmiş fixture'ları hâlâ gerekli. Bir koşuda tekrarlanamayan bir rc=2 görüldü. Olası neden (doğrulanmadı): ölçüm sırasında aynı çalışma ağacında F03 değişiklikleri yarım duruyordu (`lib/evidence.py` düzenleniyordu, `scan.sh checksums`/`verify` çalışıyordu). F03 merge edildikten sonra temiz bir ağaçta tekrar ölçülmeli; yine görülürse incelenmeli.
 
 ### F21 — Cache / monorepo
 
@@ -282,6 +299,8 @@ Mevcut `lib/report_html.py` ve `evidence.json` üzerine kurulur. Amaç ilk görs
 ### R02 — Skills-only deneme kanalı
 
 Önce vendored scanner bulunan/bulunmayan repo ve farklı çalışma dizini sözleşmesi yazılsın. Plugin kiti otomatik indirmesin, hook/config'i sessiz değiştirmesin; eksik tarayıcı için temiz önkoşul açıklaması üretsin. Manifest, sürüm, kök çözümleme ve izin bildirimi hedef host üzerinde test edilsin; `allowed-tools` tek başına sandbox garantisi diye sunulmasın. Deterministik tarayıcı vendored+pinned kalsın. Claude kanalının açılması tam Phase B gerektirmez; başka host desteği ayrıca talep ve test ister.
+
+**Öncelik değişikliği — 2 Kasım 2026:** P2 adaydan P1'e yükseltildi; teslim sırasında 11'den 8'e, F10'un hemen arkasına alındı. Gerekçe: dağıtım ana darboğaz. Repo 4,5 ayda 0 star aldı, kit hiçbir plugin marketplace'inde yok. Aynı kanalda doğrudan rakipler var: Semgrep'in resmi Claude Code plugin'i (MCP + hook + skill, agent'ın ürettiği her dosyayı tarar, `/plugin` Discover sekmesinde; Semgrep hesabı gerektirir) ve Trail of Bits'in `static-analysis` plugin'i (CodeQL + Semgrep + SARIF birleştirme). Ayrışma noktası olarak kitin pinli/checksum'lı tedarik zinciri, `skipped ≠ pass` durum sözleşmesi, kurulum öncesi `pkgcheck` hook'u ve hesap gerektirmemesi öne çıkarılmalı. Kabul kriterleri değişmedi; `.claude-plugin/marketplace.json` ile tek komutla kurulum hedeflenir, `bootstrap.sh` ile vendor'lama seçenek olarak kalır.
 
 ### R03 — Ağır reachability pilotu
 
@@ -422,6 +441,42 @@ Seçilen alan için giriş sinyali, incelenecek sınırlar, uygulanmama nedeni, 
 
 **Durum:** uygulandı, PR #38 ile `main`'de (yayımlanmadı). e2e'ye 9 kontrol eklendi; kabul kriterlerindeki beş fixture ve `PY_VENV` için iki durum test ediliyor. Ölçülen pyenv-global vakası artık rc=0 ve INDETERMINATE.
 
+### F30 — Tarayıcı veritabanı cache'i (trivy)
+
+**Bulgu — 2 Kasım 2026 (D):** Bu repo üzerinde 3 tekrarlı uçtan uca ölçüm yapıldı. `scan.sh all` sıcakken ~40 sn sürüyor; bunun ~32 sn'si `scan_container`'ın (`scan.sh:521`) trivy'yi cache volume'u olmadan `docker run --rm` ile çalıştırmasından geliyor. Her koşuda 131 MiB'lık vuln DB ve misconfig check bundle'ı yeniden indiriliyor. İndirilen bundle pinli 0.58 tarafından parse edilemediği için log'a rego ERROR satırları düşüyor. Soğuk ilk koşu 111 sn sürüyor ve bunu açıklayan bir mesaj yok. Python son işleme < 0,5 sn, bash'in kendi payı ~0,3 sn; yani orkestratörün dili darboğaz değil. Bu, F21a'nın sonuç cache'inden ayrı bir *araç veritabanı* cache'idir ve input-hashing gerektirmez.
+
+**Kabul kriterleri:**
+
+- trivy DB ve check bundle'ı kalıcı bir cache'te tutulmalı (varsayılan: named docker volume; CI için host yolu ile değiştirilebilir). Bir tazelik eşiği altında `--skip-db-update --skip-check-update` kullanılmalı, eşik aşılınca DB yenilenmeli. Varsayılan eşik ve gerekçesi karta işlenmeli.
+- `SCAN_OFFLINE=1` desteklenmeli: cache'te DB yoksa boyut `pass` değil `skipped`/`not inspected` olmalı (F02 durum adlandırması).
+- Bayat bir DB ile alınan "temiz" sonuç, taze bir DB ile alınandan ayırt edilebilmeli. Bunun için iki ayrı yer var:
+  - **DB'nin kimliği** (trivy DB metadata'sındaki `UpdatedAt`) provenance'a (F03) yazılmalı. Aynı DB her zaman aynı değeri verir; bu yüzden `evidence.json`'a kopyalanabilir ve "aynı içerik aynı çıktıyı verir" garantisi korunur.
+  - **DB'nin yaşı** (kaç saat önce güncellendiği) yalnız `summary.json`'daki çalıştırma bilgilerine ve `doctor` çıktısına yazılmalı. Provenance'a yazılmamalı: yaş her çalıştırmada değişir ve evidence'ı her seferinde farklı kılar.
+- İlk koşuda tek satırlık bir açıklama basılmalı ("first run: downloading the trivy vulnerability DB (~130 MiB, once)"). trivy `--no-progress` ile çalıştırılmalı; rego ERROR satırları log'dan kalkmalı.
+- Kazanç, aynı ölçüm yöntemiyle önce/sonra olarak raporlanmalı (tahmin: `all` ~40 sn → ~9 sn). Cache açık ve kapalı koşumlar aynı bulguları üretmeli.
+- İsteğe bağlı: `scan.sh warm` (imaj çekme + DB indirme), `install.sh` sonunda önerilir; böylece ilk pre-push dakikalar sürmez.
+
+### F31 — Hook profili ve paralel boyutlar
+
+**Bulgu — 2 Kasım 2026 (Ö):** pre-push bugün `all`'u çalıştırıyor. Bloklamayan (soft) `container` boyutu tek başına sürenin ~%90'ı. gitleaks her push'ta tam geçmişi tarıyor; büyük geçmişlerde bu dakikalar sürebilir. Boyutlar sırayla çalışıyor.
+
+**Kabul kriterleri:**
+
+- **F31a — pre-push profili:** pre-push'ın hangi boyutları çalıştırdığı açık bir profil olmalı; varsayılanı ve gerekçesi karta işlenmeli. Profilin dışında kalan boyutlar kapanış özetinde "bu profilde çalışmadı" olarak görünmeli (F14). gitleaks pre-push'ta push aralığını (`--log-opts`) tarayabilmeli, ama **varsayılan tam geçmiş kalır**; aralık taraması büyük geçmişi olan repolar için açıkça açılan bir seçenektir. Gerekçe: aralık taraması, kit kurulmadan önce push edilmiş bir sırrı pre-push'ta görmez; varsayılanı daraltmak gate'in kapsamını sessizce azaltır. Aralık açıkken kapanış özeti bunu "secret: push aralığı" diye yazmalı. Tarandığı aralık provenance'ta (`scope`) yazılı olmalı. Yeni branch ve uzak ref'i olmayan durumların testleri gerekli.
+- **F31b — paralel boyutlar:** F30'dan sonra yapılmalı (cache öncesi tahmini kazanç yalnız ~4 sn). Kilit parent süreçte kalmalı; boyut çıktıları ayrı dosyalara yazılıp sabit sırada log'a basılmalı; `summary.json` boyut sırası deterministik olmalı (F03). Ctrl-C'de arka plan süreçleri ve docker container'ları temizlenmeli. `SCAN_PARALLEL=0` sıralı davranışı geri getirmeli.
+
+### F32 — Dış okuyucu için ilk izlenim ve güven sinyalleri
+
+**Bulgu — 2 Kasım 2026 (Ö):** Repo 16 Haziran 2026'da açıldı; 2 Kasım itibarıyla 0 star, 0 fork. README 733 satır ve ilk ekranda bir mermaid diyagramı var; "kur → tara → sonucu gör" akışını gösteren kısa bir demo yok. `docs/compare/aikido-semgrep.md:100` varsayılan Claude backend'i için "credit balance is too low" yazıyor; yani projenin en güçlü farkı (kanıt barı + eval) ölçülmemiş halde yayında. `docs/compare/cloudflare-security-audit-skill.md` Türkçe olduğu için dış okuyucuya kapalı. Bağımsız bir güven sinyali (OpenSSF Scorecard, imzalı release, kullanım hikâyesi) yok.
+
+**Kabul kriterleri:**
+
+- README'nin ilk ekranı: ne yaptığı, tek kurulum komutu ve 60 sn'lik bir terminal kaydı (asciinema/GIF). Derin içerik `docs/`'a taşınmalı; README-tr aynı yapıyı izlemeli.
+- Karşılaştırma tablosundaki ölçülmemiş satır, F12b ölçümüyle doldurulmalı ya da ölçülene kadar kaldırılmalı.
+- Public `docs/compare` belgeleri İngilizce olmalı ya da iç planlamaya taşınmalı.
+- OpenSSF Scorecard eklenmeli; imzalı release R07 kararına bağlı kalır.
+- Aikido/Semgrep karşılaştırması landing'in ana bölümünden çıkarılmalı; rakip olarak agent kanalındaki araçlar (Semgrep plugin, Trail of Bits `static-analysis`) esas alınmalı.
+
 ## Güncel teslim sırası — ana planlama kaynağı
 
 Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki işler tek PR olmak zorunda değil. Koşullu işler açılmadığında sonraki bağımsız işi bekletmez. Önceki Paket A/B/C sırası bu tabloyla değiştirilmiştir.
@@ -433,18 +488,19 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | 2 | **F01 → F05** çalıştırma izolasyonu ve kilit sahipliği | Cache ve rapor öncesi ortak kayıt yarışlarını gider |
 | 3 | **F02 → F03 → F04** durum, güncel kanıt, doğru rapor | Eksik/eskimiş tarama temiz görünmesin; F01 ve F02 schema tasarımı beraber yapılır. F23'teki unit test fixture'ları F02–F04 düzeltmeleriyle genişletilir |
 | 3a | **F29** py-deps ortam seçimi | Yabancı ortamın sonucu bu repoya ait gibi raporlanmasın; durum adlandırması F02 ile uyumlu olsun. Küçük ve bağımsız, F02 sonrasını beklemeden de alınabilir |
-| 3b | **F14 + F25** kapsam özeti/yardım ve sürüm geçiş rehberi | 2 Kasım 2026'da 8. ve 4. sıradan öne alındı. F02, `summary.json` için kırıcı bir schema değişikliği getirdi; tüketicinin geçiş rehberi bu değişikliği içeren sürümle birlikte çıkmalı. F14'ün tek bağımlılığı F02 idi; F02'nin ürettiği durum ve nedeni kullanıcıya okunur bir kapsam özeti olarak göstermek bu işin özü. Yayın kapısı (F06–F08) bunlardan sonra gelir |
+| 3b | **F14a + F25** kapsam özeti/yardım ve sürüm geçiş rehberi | 2 Kasım 2026'da 8. ve 4. sıradan öne alındı. F02, `summary.json` için kırıcı bir schema değişikliği getirdi; tüketicinin geçiş rehberi bu değişikliği içeren sürümle birlikte çıkmalı. F14'ün tek bağımlılığı F02 idi; F02'nin ürettiği durum ve nedeni kullanıcıya okunur bir kapsam özeti olarak göstermek bu işin özü. Yayın kapısı (F06–F08) bunlardan sonra gelir |
+| 3c | **F30** trivy DB cache'i | 2 Kasım 2026'da eklendi. Ölçülmüş tek büyük darboğaz (`all` ~40 sn'nin ~32 sn'si); küçük ve bağımsız. DB kimliğini provenance'a yazdığı için F03'ten sonra gelir; F29 gibi araya alınabilir |
 | 4 | **F06 → F07 → F08** cache politikası, release ve kanal (F25 3b'ye alındı) | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
 | 5 | **F13 + F11 + F24** veri akışı, kit tehdit modeli ve config doğrulama | Yanlış yerellik iddiasını gider; F24 config'in çalıştırılabilir doğasını somut kontrol altına alır. R02/R06 için sınırları tanımla |
 | 6 | **F18** platform/yol matrisi ve kalan WSL2 doğrulaması | Taşınabilirlik temel ürün vaadi; WSL2 ortamı yoksa diğer testler devam eder |
 | 7 | **F16a → R01 kapsam kararı → F16b** | Önce gerçek çıktı/suppression matrisi; sonra gerekli adaptörler. R01 helper seçilirse F16b'den sonra |
-| 8 | **F10 → F15** kurulum ve landing QA (F14 3b'ye alındı) | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun |
+| 8 | **F10 → R02 → F32 → F15** kurulum, plugin kanalı, ilk izlenim ve landing QA (F14 3b'ye alındı) | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun. R02 2 Kasım 2026'da 11. sıradan buraya alındı: dağıtım ana darboğaz. F32'nin karşılaştırma satırı F12b ölçümünü bekler; geri kalanı beklemez. F31a pre-push profili F14a ile birlikte ya da burada alınabilir |
 | 8a | **F26** sunucusuz HTML rapor kullanılabilirliği | F04/F14 ve F16 kapsam sözleşmesi üstünde ilk görsel kullanım; F19/cache/agent runner beklemez |
 | 8b | **R12a → koşulu sağlanırsa R12b** SkillSpector | Önce fixture tabanlı fayda/yanlış pozitif ölçümü, sonra pinli opsiyonel adaptör; varsayılan gate değişmez |
 | 9 | **F19a → F19b** bulgu/karar ve kanıt sözleşmesi | Stabil kimlik, belirsizlik, şema doğrulama ve geriye uyum; JSONL/resume yalnız ölçülmüş ihtiyaçla |
 | 9a | **F27 → F28a → koşulu sağlanırsa F28b** deep inceleme kalitesi | Kapsam kaydı ardından bağımsız doğrulama pilotu; F28 ayrıca F12c bekler. Bu AI hattı bağımsız F20/F21 işlerini bloke etmez |
-| 10 | **F20 → F21a** ölçüm ve opt-in boyut cache | Hız kazanımı ve invalidation eşdeğerliği ölçülmeden cache yok |
-| 11 | **R02** skills-only plugin, ihtiyaç varsa | F10/F11/F14 tamam; vendor öncesi deneme kolaylığı sağlar |
+| 10 | **F20 → F31b + F14b → F21a** ölçüm, paralel boyutlar, sessiz çıktı ve opt-in boyut cache | Hız kazanımı ve invalidation eşdeğerliği ölçülmeden cache yok. F31b yalnızca F30'dan sonra anlamlı bir kazanç sağlar; F14b aynı çıktı altyapısını kullanır |
+| 11 | *(R02 8. sıraya alındı)* | — |
 | 12 | **F21b / R03** ihtiyaç açılan genişletme | Monorepo maliyeti varsa F21b; Python/JS triyaj yükü varsa R03. Birbirinin önkoşulu değiller |
 | 13 | **F17** ihtiyaç kadar modüler bakım | Stabil davranış üstünde küçük dilimler; tüm işi bekleten yeniden yazım yok |
 | 14 | **R04/R05/R06/R07/R08/R10/R11/R13/R14/R15** koşullu rezerv | Yalnız karttaki tetik ve bağımlılıklar oluşursa planlanır. R11 pin eskimesi veya CVE tetiklediğinde; R13 F26 kullanımında tarama kontrolü ihtiyacı doğrulanınca açılır |
