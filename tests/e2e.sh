@@ -1160,7 +1160,7 @@ F02="$(mktemp -d)"; F02S="$F02/shims"; mkdir -p "$F02S"
 ) || no "F02 fixture could not be built"
 # uvx shim: prints $F02_OUT, exits $F02_RC. docker shim: `info` exits $F02_DINFO, `run` like uvx.
 # shellcheck disable=SC2016  # the $vars belong to the shim, expanded when it runs
-printf '#!/bin/sh\n[ -n "$F02_OUT" ] && printf "%%s\\n" "$F02_OUT"\nexit "${F02_RC:-0}"\n' > "$F02S/uvx"
+printf '#!/bin/sh\n[ -n "$F02_OUT" ] && printf "%%s\\n" "$F02_OUT"\np=""; for a in "$@"; do [ "$p" = --output ] && [ -n "$F02_SARIF" ] && printf "%%s" "$F02_SARIF" > "$a"; p="$a"; done\nexit "${F02_RC:-0}"\n' > "$F02S/uvx"
 # shellcheck disable=SC2016
 printf '#!/bin/sh\n[ "$1" = info ] && exit "${F02_DINFO:-0}"\n[ -n "$F02_OUT" ] && printf "%%s\\n" "$F02_OUT"\nexit "${F02_RC:-0}"\n' > "$F02S/docker"
 chmod +x "$F02S/uvx" "$F02S/docker"
@@ -1232,6 +1232,39 @@ if [ -x /usr/bin/python3 ]; then
   [[ "$D" == "error allow "* ]] && [ "$F02RC" -eq 0 ] && ok "F02: osv scan error -> error, gate unchanged (allows)" \
     || no "F02: osv error -> got '$D' rc=$F02RC"
   grep -q 'NOT inspected' "$F02/out" && ok "F02: the run names what was not inspected" || no "F02: no not-inspected banner"
+  echo "-- F03: evidence uses only what THIS run produced, and says where it came from --"
+  F03SARIF='{"runs":[{"tool":{"driver":{"name":"semgrep"}},"results":[{"ruleId":"R1","level":"error","message":{"text":"m"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"app.py"},"region":{"startLine":1}}}]}]}]}'
+  F03D="$F02/repo/docs/security/scan-findings"
+  f03ev(){ /usr/bin/python3 -I -c 'import json,sys
+d=json.load(open(sys.argv[1])); print(d["counts"]["total"]); print("\n".join(d.get("warnings") or []))' "$F03D/evidence.json" 2>/dev/null; }
+  f02 sast SARIF=1 F02_RC=1 F02_SARIF="$F03SARIF"
+  F03P="$(/usr/bin/python3 -I -c 'import json,sys
+d=json.loads(sys.argv[1]); p=d.get("provenance") or {}; a=d.get("artifacts") or []
+print(p.get("commit"), p.get("dirty"), (p.get("kit") or {}).get("version") or "-", (p.get("scope") or {}).get("command"),
+      ",".join(x["path"] for x in a), all(len(x.get("sha256") or "")==64 for x in a) and bool(a))' "$F02SUM" 2>/dev/null)"
+  F03HEAD="$(git -C "$F02/repo" rev-parse HEAD)"
+  [[ "$F03P" == "$F03HEAD False "*" sast sarif/semgrep.sarif True" ]] && [[ "$F03P" != *" - sast "* ]] \
+    && ok "F03: summary.json carries provenance (commit, clean tree, kit version, scope) + this run's SARIF with sha256" \
+    || no "F03: provenance/artifacts wrong: '$F03P' (HEAD $F03HEAD)"
+  [ "$(f03ev | head -1)" = 1 ] && ok "F03: this run's SARIF becomes evidence" || no "F03: evidence total '$(f03ev | head -1)', want 1"
+  grep -q "\"commit\": \"$F03HEAD\"" "$F03D/evidence.json" && ok "F03: evidence.json carries the commit it describes" \
+    || no "F03: evidence.json has no provenance"
+  # tampered after the scan -> a rebuild refuses it, out loud
+  printf ' ' >> "$F03D/sarif/semgrep.sarif"
+  (cd "$F02/repo" && env PATH="$F02S:$F02SYS" "$BASH" tools/security-audit-kit/scan.sh evidence >"$F02/out" 2>&1)
+  [ "$(f03ev | head -1)" = 0 ] && grep -q 'changed since this run wrote it' "$F02/out" \
+    && ok "F03: a SARIF changed after the scan is not used, and the rebuild says so" || no "F03: tampered SARIF still used"
+  # next run: sast is SKIPPED (no uvx). Yesterday's semgrep.sarif must not resurface as current.
+  (cd "$F02/repo" && env PATH="$F02SYS" SARIF=1 "$BASH" tools/security-audit-kit/scan.sh sast >"$F02/out" 2>&1)
+  [ ! -f "$F03D/sarif/semgrep.sarif" ] && ok "F03: the shared sarif/ holds only this run's output (no carry-over)" \
+    || no "F03: an earlier run's semgrep.sarif was carried into this run's record"
+  [ "$(f03ev | head -1)" = 0 ] && ok "F03: a skipped dimension's old findings are not current evidence" \
+    || no "F03: skipped sast still produced $(f03ev | head -1) finding(s) from an older run"
+  # a dirty tree is recorded as such
+  printf 'x\n' >> "$F02/repo/app.py"
+  f02 secret F02_DINFO=1
+  grep -q '"dirty": true' <<<"$F02SUM" && ok "F03: uncommitted changes -> provenance.dirty true" || no "F03: dirty tree not recorded"
+  git -C "$F02/repo" checkout -q -- app.py
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 

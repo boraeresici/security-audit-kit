@@ -921,3 +921,106 @@ class TestMain:
 
         assert doc["counts"]["total"] == 1
         assert doc["findings"][0]["dimension"] == "secret"
+
+
+# ---------------------------------------------------------------------------
+# select_sources() — F03: only this run's outputs, from dimensions that inspected something
+# ---------------------------------------------------------------------------
+
+class TestSelectSources:
+    RESULT = {"ruleId": "R1", "message": {"text": "m"},
+              "locations": [{"physicalLocation": {"artifactLocation": {"uri": "a.py"},
+                                                  "region": {"startLine": 1}}}]}
+
+    def _sarif(self, d, name):
+        p = os.path.join(d, name)
+        with open(p, "w") as fh:
+            json.dump({"runs": [{"tool": {"driver": {"name": "t"}}, "results": [self.RESULT]}]}, fh)
+        return p
+
+    def _sha(self, p):
+        import hashlib
+        with open(p, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest()
+
+    def _summary(self, dims, artifacts, sarif=True):
+        return {"schema_version": 2, "sarif": sarif, "dimensions": dims, "artifacts": artifacts}
+
+    def _art(self, p):
+        return {"path": "sarif/" + os.path.basename(p), "sha256": self._sha(p)}
+
+    def test_manifest_file_of_inspecting_dimension_is_used(self, tmp_path):
+        p = self._sarif(tmp_path, "semgrep.sarif")
+        w = []
+        got = evidence.select_sources(self._summary([{"name": "sast", "status": "findings"}], [self._art(p)]),
+                                      str(tmp_path), w)
+        assert got == [(p, "semgrep", "sast")]
+        assert w == []
+
+    def test_leftover_file_not_in_manifest_is_ignored_and_said(self, tmp_path):
+        # The measured shape: yesterday's semgrep.sarif on disk, today sast was skipped.
+        self._sarif(tmp_path, "semgrep.sarif")
+        w = []
+        got = evidence.select_sources(self._summary([{"name": "sast", "status": "skipped"}], []), str(tmp_path), w)
+        assert got == []
+        assert any("semgrep.sarif" in x and "not produced by this run" in x for x in w)
+
+    def test_error_status_output_is_not_current_findings(self, tmp_path):
+        p = self._sarif(tmp_path, "semgrep.sarif")
+        w = []
+        got = evidence.select_sources(self._summary([{"name": "sast", "status": "error"}], [self._art(p)]),
+                                      str(tmp_path), w)
+        assert got == []
+        assert any("sast" in x and "error" in x for x in w)
+
+    def test_changed_after_the_scan_is_rejected(self, tmp_path):
+        p = self._sarif(tmp_path, "semgrep.sarif")
+        art = self._art(p)
+        with open(p, "a") as fh:
+            fh.write(" ")
+        w = []
+        got = evidence.select_sources(self._summary([{"name": "sast", "status": "pass"}], [art]), str(tmp_path), w)
+        assert got == []
+        assert any("changed since" in x for x in w)
+
+    def test_listed_but_missing_is_said(self, tmp_path):
+        w = []
+        art = {"path": "sarif/semgrep.sarif", "sha256": "0" * 64}
+        got = evidence.select_sources(self._summary([{"name": "sast", "status": "pass"}], [art]), str(tmp_path), w)
+        assert got == []
+        assert any("missing" in x for x in w)
+
+    def test_inspecting_dimension_without_sarif_is_said(self, tmp_path):
+        w = []
+        evidence.select_sources(self._summary([{"name": "secret", "status": "pass"}], []), str(tmp_path), w)
+        assert any("secret" in x and "no SARIF" in x for x in w)
+
+    def test_alias_dimension_uses_its_tools_file(self, tmp_path):
+        p = self._sarif(tmp_path, "gitleaks.sarif")
+        got = evidence.select_sources(self._summary([{"name": "staged", "status": "pass"}], [self._art(p)]),
+                                      str(tmp_path), [])
+        assert got == [(p, "gitleaks", "secret")]
+
+    def test_schema1_summary_keeps_the_old_scoping(self, tmp_path):
+        p = self._sarif(tmp_path, "semgrep.sarif")
+        self._sarif(tmp_path, "gitleaks.sarif")
+        w = []
+        got = evidence.select_sources({"dimensions": [{"name": "sast", "status": "fail"}]}, str(tmp_path), w)
+        assert got == [(p, "semgrep", "sast")]
+        assert any("no artifact manifest" in x for x in w)
+
+    def test_provenance_is_carried_into_evidence(self, tmp_path, monkeypatch):
+        p = self._sarif(tmp_path, "semgrep.sarif")
+        prov = {"commit": "abc", "dirty": False, "kit": {"version": "9.9.9"}}
+        summary = self._summary([{"name": "sast", "status": "findings"}], [self._art(p)])
+        summary["provenance"] = prov
+        summary["run_id"] = "20261102T000000-1"
+        sp, out = tmp_path / "summary.json", tmp_path / "evidence.json"
+        sp.write_text(json.dumps(summary))
+        monkeypatch.setattr(sys, "argv", ["evidence.py", "--sarif-dir", str(tmp_path), "--summary", str(sp),
+                                          "--out", str(out)])
+        assert evidence.main() == 0
+        doc = json.loads(out.read_text())
+        assert doc["scan"]["provenance"] == prov
+        assert doc["counts"]["total"] == 1
+        assert "run_id" not in json.dumps(doc)  # run metadata stays in summary.json: evidence is diffable

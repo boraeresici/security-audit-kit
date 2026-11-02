@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format is based on
   `gate` (`block`/`allow`) or top-level `gate.blocked_by`. Full mapping:
   [docs/schema/summary.md](docs/schema/summary.md#migrating-from-schema-1).
 - The gate itself is unchanged: what blocked before blocks now, what was allowed is still allowed.
+- **`sarif/` holds the latest `SARIF=1` run's files only.** An earlier run's SARIF is no longer
+  carried forward: after `scan.sh secret` with `SARIF=1`, `sarif/semgrep.sarif` is gone. If you
+  upload the directory, run every dimension you want uploaded in the same scan (e.g. `all`).
+- `summary.json` gains `provenance` and `artifacts`; `evidence.json` gains `scan.provenance`
+  (both additive).
 
 ### Fixed
 - **py-deps audited whatever environment the shell had active (F29).** With no repo `.venv`, any
@@ -41,6 +46,16 @@ All notable changes to this project are documented here. The format is based on
   (`BLOCKED (rc=1): sast (error)`, formerly "HARD finding") names what blocked and as what. A
   `PY_VENV` without `bin/python` is `error`. The HTML report
   styles every status and shows the reason on hover.
+- **evidence.json could present an earlier run's findings as current (F03).** It used any SARIF
+  file on disk for a dimension listed in `summary.json`, and the shared `sarif/` carried every
+  earlier run's files forward. A `sast` run that was skipped (no uvx) therefore resurfaced
+  yesterday's semgrep findings as today's. Now `summary.json` lists this run's SARIF with sha256
+  (`artifacts`) and records what was scanned, with what (`provenance`: commit, dirty tree, kit
+  version + CHECKSUMS digest, config digest, rules, tool pins, scope). evidence.json uses only listed,
+  unchanged files of dimensions that inspected something. Each file left out, whether it is an
+  error/skipped dimension's output, a file changed after the scan, a listed file that is missing
+  or a leftover, is named in `warnings` and printed by the builder. The shared `sarif/` is replaced,
+  not merged.
 
 ## [1.19.1] - 2026-11-02
 

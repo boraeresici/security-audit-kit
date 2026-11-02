@@ -359,6 +359,76 @@ def read_json(path: str, warnings: list, label: str):
         return None
 
 
+# summary.json statuses (schema 2) under which a dimension's output describes this repo now. Schema 1
+# had only pass | fail | indeterminate; "fail" meant findings or a crash, so it stays accepted there.
+INSPECTED = {"pass", "findings", "fail"}
+
+
+def sha256_file(path: str) -> str:
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
+    """The SARIF files that are THIS run's findings, as (path, tool, dimension).
+
+    The SARIF directory outlives a run, so "the file is on disk" proves nothing about when it was
+    written. summary.json lists what this run produced (`artifacts`, with sha256), and each
+    dimension's status; a file is used only if it is in that list, unchanged since, and its
+    dimension actually inspected something. Everything left out is said in `warnings`.
+    """
+    dimensions = summary.get("dimensions") or []
+    status = {}
+    for d in dimensions:
+        status[DIMENSION_ALIASES.get(d.get("name"), d.get("name"))] = d.get("status")
+    by_dim = {dim: (fname, tool) for fname, (tool, dim) in SARIF_SOURCES.items()}
+    on_disk = sorted(f for f in SARIF_SOURCES if os.path.exists(os.path.join(sarif_dir, f)))
+
+    artifacts = summary.get("artifacts")
+    if artifacts is None:
+        # Schema 1 / hand-written summary: scope by the dimensions that ran, as before — and say
+        # that nothing proves these files belong to that run.
+        if dimensions:
+            warnings.append("summary.json has no artifact manifest (written before schema 2) -> SARIF "
+                            "files on disk are trusted to belong to its run")
+            ran = set(status)
+        else:
+            warnings.append("no summary.json dimensions -> included every SARIF file on disk, which may be stale")
+            ran = set(by_dim)
+        return [(os.path.join(sarif_dir, f), *SARIF_SOURCES[f]) for f in on_disk if SARIF_SOURCES[f][1] in ran]
+
+    listed = {}
+    for a in artifacts:
+        listed[os.path.basename(a.get("path") or "")] = a.get("sha256")
+    out = []
+    for fname in sorted(listed):
+        if fname not in SARIF_SOURCES:
+            continue
+        tool, dim = SARIF_SOURCES[fname]
+        path = os.path.join(sarif_dir, fname)
+        st = status.get(dim)
+        if st not in INSPECTED:
+            warnings.append(f"{fname}: {dim} is '{st}' in this run -> its output is not taken as current findings")
+            continue
+        if not os.path.exists(path):
+            warnings.append(f"{fname}: listed in this run's manifest but missing -> {dim} findings unavailable")
+            continue
+        if not listed[fname]:
+            warnings.append(f"{fname}: no sha256 recorded (no hash tool at scan time) -> used unverified")
+        elif sha256_file(path) != listed[fname]:
+            warnings.append(f"{fname}: changed since this run wrote it (sha256 mismatch) -> not used")
+            continue
+        out.append((path, tool, dim))
+    for fname in on_disk:
+        if fname not in listed:
+            warnings.append(f"{fname}: not produced by this run (left over from an earlier one) -> ignored")
+    if summary.get("sarif"):
+        for dim, st in sorted(status.items()):
+            if st in INSPECTED and dim in by_dim and by_dim[dim][0] not in listed:
+                warnings.append(f"{dim}: inspected, but wrote no SARIF in this run -> no per-finding rows")
+    return out
+
+
 def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
     doc = read_json(sarif_path, warnings, os.path.basename(sarif_path))
     if not doc:
@@ -401,21 +471,9 @@ def main() -> int:
     summary = read_json(args.summary, warnings, "summary.json") or {}
     dimensions = summary.get("dimensions") or []
 
-    if dimensions:
-        ran = {DIMENSION_ALIASES.get(d.get("name"), d.get("name")) for d in dimensions}
-    else:
-        # No summary to scope by: take whatever SARIF is on disk, but say so — some of it may be
-        # left over from an earlier scan of a different scope.
-        ran = {dim for _, dim in SARIF_SOURCES.values()}
-        warnings.append("no summary.json dimensions -> included every SARIF file on disk, which may be stale")
-
     findings: list = []
-    for filename, (tool, dimension) in sorted(SARIF_SOURCES.items()):
-        if dimension not in ran:
-            continue
-        path = os.path.join(args.sarif_dir, filename)
-        if os.path.exists(path):
-            findings.extend(collect(path, tool, dimension, warnings))
+    for path, tool, dimension in select_sources(summary, args.sarif_dir, warnings):
+        findings.extend(collect(path, tool, dimension, warnings))
 
     if args.findings:
         judged = parse_findings_md(args.findings, warnings)
@@ -453,6 +511,9 @@ def main() -> int:
             "exit_code": summary.get("exit_code"),
             "raw_log": summary.get("raw_log"),
             "dimensions": dimensions,
+            # Content identity (commit, dirty, kit, config, tools, scope) — no run id or time, so
+            # two runs over unchanged code still diff to nothing.
+            **({"provenance": summary["provenance"]} if summary.get("provenance") else {}),
         },
         "counts": {"total": len(findings), "by_severity": by_severity, "by_decision": by_decision},
         "findings": findings,
@@ -463,6 +524,8 @@ def main() -> int:
         json.dump(document, fh, indent=2, sort_keys=False)
         fh.write("\n")
     print(f"[scan:evidence] wrote {args.out} ({len(findings)} findings, {len(warnings)} warnings)")
+    for w in warnings:
+        print(f"[scan:evidence]   ! {w}")
     return 0
 
 

@@ -22,6 +22,11 @@ lives in [`evidence.json`](evidence.md).
   "raw_log": "docs/security/scan-findings/raw-2026-11-02.log",
   "sarif": false,
   "gate": {"exit_code": 1, "blocked_by": ["sast"]},
+  "provenance": {"commit": "cbf069a…", "dirty": false, "kit": {"version": "1.19.1", "checksums_sha256": "…"},
+                 "config_sha256": "…", "scope": {"command": "all", "sast_paths": ".", "tf_dir": null, "base_ref": null},
+                 "rules": {"semgrep_configs": "--config p/python …", "local_rules_sha256": null},
+                 "tools": {"semgrep": "1.166.0", "…": "…", "gitleaks": "ghcr.io/gitleaks/gitleaks:v8.21.2@sha256:…"}},
+  "artifacts": [{"path": "sarif/semgrep.sarif", "sha256": "…"}],
   "dimensions": [
     {"name": "secret",  "exit_code": 0, "status": "skipped",        "gate": "allow", "reason": "no docker -> gitleaks skipped"},
     {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "reason": null},
@@ -70,6 +75,34 @@ tools.
 `exit_code` per dimension is the kit's internal code (`0`, `1`, `3`, or the tool's own non-zero
 code on failure). Prefer `status` and `gate`; `exit_code` is kept for compatibility.
 
+## `provenance` — what was scanned, with what (F03)
+
+Taken at the start of the run, before any dimension runs (sbom writes into the tree and would
+otherwise make every run look dirty). It describes content, not the run: no time, no run id. That
+is why `evidence.json` can carry it verbatim and stay diffable.
+
+| field | meaning |
+|---|---|
+| `commit` | `HEAD` at scan time; `null` in a repo with no commits |
+| `dirty` | uncommitted changes (tracked or untracked) outside `docs/security/scan-findings/`; `null` with no commit. A dirty scan describes the working tree, not `commit` |
+| `kit.version` | the vendored `.kit-version` ref, else the newest released CHANGELOG version |
+| `kit.checksums_sha256` | digest of the kit's `CHECKSUMS` — identifies the exact kit files, rules included |
+| `config_sha256` | digest of `.security-audit.conf` (or `SECURITY_AUDIT_CONF`); `null` without one |
+| `scope` | the command and the knobs that narrow it: `SAST_PATHS`, `TF_DIR`, `BASE_REF` |
+| `rules` | the semgrep config set, and one digest over the repo's local rule files (`null` with none) |
+| `tools` | every pinned tool: a version for the uvx tools, `image:tag@digest` for the docker ones |
+
+Digests are `null` when the machine has no sha256 tool.
+
+## `artifacts` — what this run produced
+
+The SARIF files this run wrote, each with its sha256 (empty unless `SARIF=1`). `evidence.json` is
+built only from these, and only for dimensions whose status is `pass` or `findings`. Since F03 the
+shared `sarif/` directory holds exactly this run's files: an earlier run's SARIF is removed when a
+`SARIF=1` run publishes, so it cannot be uploaded or read as a current result. A `SARIF=0` run
+leaves `sarif/` and `evidence.json` as they were; their `provenance` says which commit they
+describe.
+
 ## Migrating from schema 1
 
 Schema 1 had no `schema_version`, no top-level `gate`, and per dimension only
@@ -81,5 +114,6 @@ Schema 1 had no `schema_version`, no top-level `gate`, and per dimension only
   also sees `skipped`, `error` and `not_applicable` for those; treat the first two as not clean.
 - A soft dimension with findings (`iac`, `container`) used to be `pass`; it is now `findings` with
   `gate: "allow"`.
-- New fields are additive: `schema_version`, `gate`, and per dimension `gate` and `reason`.
+- New fields are additive: `schema_version`, `gate`, `provenance`, `artifacts`, and per dimension
+  `gate` and `reason`.
 - Branch on `schema_version` (absent = 1).
