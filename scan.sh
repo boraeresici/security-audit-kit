@@ -1020,6 +1020,10 @@ EOF
 # so neither has to know a tool's native output. Optional by design: it needs python3 and SARIF
 # output, and a missing prerequisite is a notice, never a scan failure (same contract as every
 # other optional piece of the kit).
+# The builders print the path they wrote. Show the one the user will actually find: no temp
+# suffix, and the shared path instead of the holder's staging dir (published a moment later).
+py_say(){ sed -e "s|\.$$\.tmp||g" -e "s|${RUN_DIR:-/nonexistent}/publish/|$LOG_DIR/|g"; }
+
 scan_evidence(){
   have python3 || { warn evidence "no python3 -> evidence.json skipped"; return 0; }
   [ -f "$KIT_DIR/lib/evidence.py" ] || { warn evidence "lib/evidence.py missing -> skipped"; return 0; }
@@ -1031,14 +1035,18 @@ scan_evidence(){
   # Write-then-rename, like summary.json: a builder that dies (or is cancelled) mid-write must
   # leave the previous file whole, never half of a new one.
   # shellcheck disable=SC2086
-  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" $fargs \
+  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" $fargs | py_say \
     && mv -f "$EVIDENCE.$$.tmp" "$EVIDENCE" \
     || { rm -f "$EVIDENCE.$$.tmp"; warn evidence "builder failed -> evidence.json not updated"; return 0; }
   # The skills' own findings have no other SARIF home -> put them on the same review surface.
+  # With no judgment findings kit_sarif.py writes NOTHING on purpose (an empty upload would close
+  # every open kit alert) — so rename only what it actually wrote.
   if [ -f "$KIT_DIR/lib/kit_sarif.py" ]; then
-    python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif.$$.tmp" \
-      && mv -f "$SARIF_DIR/kit.sarif.$$.tmp" "$SARIF_DIR/kit.sarif" \
-      || { rm -f "$SARIF_DIR/kit.sarif.$$.tmp"; warn evidence "kit.sarif not emitted"; }
+    if python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif.$$.tmp" | py_say; then
+      [ -f "$SARIF_DIR/kit.sarif.$$.tmp" ] && mv -f "$SARIF_DIR/kit.sarif.$$.tmp" "$SARIF_DIR/kit.sarif"
+    else
+      rm -f "$SARIF_DIR/kit.sarif.$$.tmp"; warn evidence "kit.sarif not emitted"
+    fi
   fi
   [ "$REPORT" = "html" ] && scan_report
   return 0
@@ -1053,7 +1061,7 @@ scan_report(){
   [ -f "$KIT_DIR/lib/report_html.py" ] || { warn report "lib/report_html.py missing -> skipped"; return 0; }
   [ -f "$EVIDENCE" ] || { warn report "no evidence.json yet (re-run with SARIF=1) -> report skipped"; return 0; }
   python3 "$KIT_DIR/lib/report_html.py" --evidence "$EVIDENCE" --out "$REPORT_HTML.$$.tmp" \
-    --repo "$(basename "$ROOT")" --date "$TODAY" \
+    --repo "$(basename "$ROOT")" --date "$TODAY" | py_say \
     && mv -f "$REPORT_HTML.$$.tmp" "$REPORT_HTML" \
     || { rm -f "$REPORT_HTML.$$.tmp"; warn report "report not written"; }
   return 0
