@@ -707,6 +707,21 @@ SH
     || no "isolation: summary.json run_id missing or wrong (run '${RIDA:-?}')"
   [ -f "$F01FD/evidence.json" ] && ls "$F01FD"/report-*.html >/dev/null 2>&1 \
     && ok "isolation: evidence.json + HTML report published" || no "isolation: evidence/report not published"
+  # The artifacts are transient; only the triage file is the record. A plain `git add -A` in a
+  # consumer repo committed the raw log, SARIF, evidence and report (v1.19.0 dogfood).
+  # The .gitignore itself is meant to be committed: everything else must stay invisible to git.
+  ( cd "$F01" && git status --porcelain --untracked-files=all docs/security ) 2>/dev/null \
+    | grep -v 'scan-findings/\.gitignore$' > "$F01.st"
+  [ -f "$F01FD/.gitignore" ] && [ ! -s "$F01.st" ] \
+    && ( cd "$F01" && ! git check-ignore -q docs/security/scan-findings/findings-2026-01-01.md ) \
+    && ok "gitignore: scan artifacts stay out of git; findings-*.md stays trackable" \
+    || no "gitignore: scan artifacts would be committed ($(wc -l < "$F01.st" | tr -d ' ') untracked)"
+  printf '# mine\n' > "$F01FD/.gitignore"
+  f01run K >/dev/null 2>&1
+  [ "$(cat "$F01FD/.gitignore")" = "# mine" ] \
+    && ok "gitignore: an existing scan-findings/.gitignore is never overwritten" \
+    || no "gitignore: the user's own .gitignore was overwritten"
+  rm -f "$F01FD/.gitignore" "$F01.st"; f01run K >/dev/null 2>&1
   # No judgment findings is the common case: kit_sarif.py then deliberately writes nothing, and the
   # temp-then-rename must not turn that into an error. Paths the user reads are the final ones,
   # never a temp name or the holder's staging dir (rc.1 dogfood).

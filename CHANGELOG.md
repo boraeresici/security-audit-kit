@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.1] - 2026-11-02
+
+### Upgrade notes
+- The first scan after upgrading writes `docs/security/scan-findings/.gitignore`. Commit it.
+  Files you already track there stay tracked; to commit a new artifact on purpose, use `git add -f`
+  or edit that `.gitignore`. If one already exists, it is left exactly as it is.
+
+### Fixed
+- **Scan artifacts no longer end up in commits.** The README called `scan-findings/` "gitignored",
+  but nothing ignored it. In a consumer repo, a plain `git add -A` committed the raw logs,
+  `summary.json`, `sarif/`, `evidence.json`, HTML reports and, since 1.19.0, `runs/<run-id>/`
+  (found while dogfooding v1.19.0). scan.sh now writes `scan-findings/.gitignore` before the
+  first artifact. It ignores everything there except `findings-*.md` (the triage record, the
+  one file meant to be kept) and itself. An existing `.gitignore` is never overwritten.
+
 ## [1.19.0] - 2026-11-02
 
 ### Upgrade notes
