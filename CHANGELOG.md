@@ -16,6 +16,14 @@ All notable changes to this project are documented here. The format is based on
 - Mixed versions on one repo: a lock written by an older kit is still honoured by this one, with
   the older rule (dead pid, or older than `SCAN_LOCK_STALE_MIN`).
 
+### Fixed (v1.19.0-rc.2 — rc.1 dogfood)
+- **`SARIF=1` with no judgment findings no longer prints a rename error.** In that case
+  `kit_sarif.py` writes nothing on purpose (an empty upload would close every open kit alert). rc.1
+  still tried to rename its temp file, so the most common run printed `mv: … No such file` and a
+  misleading `kit.sarif not emitted` warning. The previous `kit.sarif` was always kept intact.
+- The evidence and report builders' "wrote …" lines show the final path again, not the temp name
+  or the lock holder's staging directory.
+
 ### Fixed
 - **A scan that could not take the lock no longer overwrites the other run's record (F01).** Before,
   only its raw log moved aside: `summary.json`, `sarif/`, `evidence.json`, `kit.sarif` and the HTML

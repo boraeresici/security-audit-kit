@@ -707,6 +707,12 @@ SH
     || no "isolation: summary.json run_id missing or wrong (run '${RIDA:-?}')"
   [ -f "$F01FD/evidence.json" ] && ls "$F01FD"/report-*.html >/dev/null 2>&1 \
     && ok "isolation: evidence.json + HTML report published" || no "isolation: evidence/report not published"
+  # No judgment findings is the common case: kit_sarif.py then deliberately writes nothing, and the
+  # temp-then-rename must not turn that into an error. Paths the user reads are the final ones,
+  # never a temp name or the holder's staging dir (rc.1 dogfood).
+  ! grep -qE 'No such file|kit\.sarif not emitted|\.tmp|/publish/' <<<"$OUTA" \
+    && ok "isolation: no rename error, temp name or staging path in the run's output" \
+    || no "isolation: output leaks a staging/temp path or a rename error"
   [ "$(f01runs)" = 0 ] && ! ls "$F01FD"/*.tmp "$F01FD"/sarif/*.tmp >/dev/null 2>&1 \
     && ok "isolation: the holder leaves no run/staging dir or temp file behind" \
     || no "isolation: holder left staging behind"
