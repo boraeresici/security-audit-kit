@@ -12,6 +12,8 @@ Kaynak: [8 Eylül 2026 çok rollü değerlendirme](application-review-2026-09-08
 
 **Güncelleme — 21 Ekim 2026:** F01 uygulaması sırasında yerel e2e'deki py-deps hataları incelendi. Neden, geliştirici shell'inde tanımlı `VIRTUAL_ENV` idi; testler hermetik yapıldı. Aynı inceleme bir ürün hatası da gösterdi: repo `.venv`'i yokken projeye ait olmayan aktif ortam denetleniyor. **F29** olarak eklendi (P1, sıra 3a). Bu bir plan değişikliğidir; düzeltme henüz uygulanmadı.
 
+**Sıra değişikliği — 2 Kasım 2026:** F14 ve F25, F03 → F04'ün hemen arkasına (3b) alındı. Gerekçe: F02'nin kırıcı schema değişikliği ve F14'ün bağımlılığının kalkması. Önceliğin tanımı ve diğer işlerin sırası değişmedi. Planın açık bıraktığı "baskın kullanıcı / başlangıç UX'i mi monorepo maliyeti mi" kararı hâlâ verilmedi; bu değişiklik o karar yerine geçmez.
+
 **Not — 2 Kasım 2026:** SOCNova karşılaştırması, taramalar arası yeni açık takibi, agent/alarm entegrasyonu ve Dependabot rolü **R15** koşullu not kartına alındı. Kritik değil; teslim sırası değişmedi.
 
 P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki güvenilirlik ve kullanılabilirlik paketi. P2: ölçüm ve talebe göre geliştirme. P0 etiketi CVSS veya istismar şiddeti değildir. Efor: K ≈ 0,5–2, O ≈ 3–5, B ≈ 6–10 mühendis-gün; test ve doküman dahil kaba tahmin, takvim sözü değil.
@@ -422,11 +424,12 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | 2 | **F01 → F05** çalıştırma izolasyonu ve kilit sahipliği | Cache ve rapor öncesi ortak kayıt yarışlarını gider |
 | 3 | **F02 → F03 → F04** durum, güncel kanıt, doğru rapor | Eksik/eskimiş tarama temiz görünmesin; F01 ve F02 schema tasarımı beraber yapılır. F23'teki unit test fixture'ları F02–F04 düzeltmeleriyle genişletilir |
 | 3a | **F29** py-deps ortam seçimi | Yabancı ortamın sonucu bu repoya ait gibi raporlanmasın; durum adlandırması F02 ile uyumlu olsun. Küçük ve bağımsız, F02 sonrasını beklemeden de alınabilir |
-| 4 | **F06 → F07 → F08 → F25** cache politikası, release, kanal ve geçiş rehberi | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
+| 3b | **F14 + F25** kapsam özeti/yardım ve sürüm geçiş rehberi | 2 Kasım 2026'da 8. ve 4. sıradan öne alındı. F02, `summary.json` için kırıcı bir schema değişikliği getirdi; tüketicinin geçiş rehberi bu değişikliği içeren sürümle birlikte çıkmalı. F14'ün tek bağımlılığı F02 idi; F02'nin ürettiği durum ve nedeni kullanıcıya okunur bir kapsam özeti olarak göstermek bu işin özü. Yayın kapısı (F06–F08) bunlardan sonra gelir |
+| 4 | **F06 → F07 → F08** cache politikası, release ve kanal (F25 3b'ye alındı) | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
 | 5 | **F13 + F11 + F24** veri akışı, kit tehdit modeli ve config doğrulama | Yanlış yerellik iddiasını gider; F24 config'in çalıştırılabilir doğasını somut kontrol altına alır. R02/R06 için sınırları tanımla |
 | 6 | **F18** platform/yol matrisi ve kalan WSL2 doğrulaması | Taşınabilirlik temel ürün vaadi; WSL2 ortamı yoksa diğer testler devam eder |
 | 7 | **F16a → R01 kapsam kararı → F16b** | Önce gerçek çıktı/suppression matrisi; sonra gerekli adaptörler. R01 helper seçilirse F16b'den sonra |
-| 8 | **F10 → F14 → F15** kurulum, kapsam/yardım, landing QA | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun |
+| 8 | **F10 → F15** kurulum ve landing QA (F14 3b'ye alındı) | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun |
 | 8a | **F26** sunucusuz HTML rapor kullanılabilirliği | F04/F14 ve F16 kapsam sözleşmesi üstünde ilk görsel kullanım; F19/cache/agent runner beklemez |
 | 8b | **R12a → koşulu sağlanırsa R12b** SkillSpector | Önce fixture tabanlı fayda/yanlış pozitif ölçümü, sonra pinli opsiyonel adaptör; varsayılan gate değişmez |
 | 9 | **F19a → F19b** bulgu/karar ve kanıt sözleşmesi | Stabil kimlik, belirsizlik, şema doğrulama ve geriye uyum; JSONL/resume yalnız ölçülmüş ihtiyaçla |

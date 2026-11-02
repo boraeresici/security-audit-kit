@@ -12,7 +12,9 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 - **F29:** aktif `VIRTUAL_ENV` yalnız repo içindeki gerçek bir venv ise denetleniyor; repo dışındaki bir ortam için `PY_VENV` kullanılıyor. Ölçülen pyenv-global vakası HARD bloktan INDETERMINATE'e döndü.
 - **F02:** `summary.json` schema 2 ile her boyutta `status` (altı değer), `reason` ve gate etkisi ayrı tutuluyor. Gate davranışı değişmedi. Dogfood'da eskiden "HARD finding" görünen semgrep çıkışının gerçekte bir yapılandırma hatası olduğu ortaya çıktı (`Invalid scanning root`); artık `error` olarak kaydediliyor.
 
-**Sırada:** F03 ve F04, F02 merge edildikten sonra `origin/main`'den ayrı branch'lerde açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+**Sıra değişikliği:** F14 (kapsam özeti, yardım) ve F25 (sürüm geçiş rehberi), F03 → F04'ün arkasına, 3b olarak alındı; yayın kapısı F06–F08 onlardan sonra geliyor. Gerekçe: F02 tüketiciler için kırıcı bir değişiklik, rehberi aynı sürümle çıkmalı; F14'ün tek bağımlılığı F02 idi. Sıranın kritikliğe (P0 = sonuca güveni bozan doğrulanmış hata) ve bağımlılığa göre kurulduğu, UX işlerinin bu yüzden arkada kaldığı not edildi.
+
+**Sırada:** F03 → F04 → F14 + F25. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
 
 ## 2 Kasım 2026 — SOCNova, yeni açık takibi ve agent erişimi (R15 notu)
 
