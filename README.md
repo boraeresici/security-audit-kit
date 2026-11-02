@@ -665,6 +665,7 @@ rules. `scan.sh doctor` prints the resolved set. For customization, one file per
    : "${SAST_PATHS:=backend frontend}"     # narrow source directories
    : "${TF_DIR:=infra/terraform}"          # terraform directory
    # : "${JS_DIRS:=frontend}"              # js-deps: where the JS app is (see below)
+   # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: audit a venv outside the repo (see below)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # leave unset = stack-auto; set to override
    ```
 3. `scan.sh` sources it automatically.
@@ -678,7 +679,10 @@ just the first. If your app lives somewhere the heuristic will not find it (or t
 search is bypassed entirely.
 
 **`py-deps` never reports green about an environment it could not find.** With a `.venv` in the
-repo (or an active one), pip-audit audits it. Without one — the normal shape for a project that
+repo, pip-audit audits it. An active `VIRTUAL_ENV` counts only if it is a real venv (it has a
+`pyvenv.cfg`) **inside this repo**; another project's venv or a pyenv global interpreter is ignored
+with a warning, because its result would say nothing about this repo. To audit a venv that lives
+elsewhere on purpose, set **`PY_VENV`**; the run names the env it audited and why. Without one — the normal shape for a project that
 runs in a container — auditing the ambient interpreter would mean auditing *nothing*, so the kit
 reads the committed manifests (`requirements*.txt`, `uv.lock`, `Pipfile.lock`, `poetry.lock`,
 `pdm.lock`) with **osv-scanner** instead: statically, nothing is built or installed. (`pip-audit -r`
