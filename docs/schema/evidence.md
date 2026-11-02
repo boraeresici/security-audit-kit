@@ -51,7 +51,7 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
     "exit_code": 1,
     "raw_log": "docs/security/scan-findings/raw-2026-08-12.log",
     "dimensions": [{"name": "sast", "exit_code": 0, "status": "pass", "gate": "allow", "reason": null}]
-    // Copied verbatim from summary.json — see docs/schema/summary.md. From summary schema 2,
+    // Copied from summary.json, minus the per-run `seconds` — see docs/schema/summary.md. From summary schema 2,
     // status is "pass" | "findings" | "error" | "skipped" | "indeterminate" | "not_applicable";
     // only "pass" and "findings" mean the dimension inspected something. Schema 1 summaries
     // (status "pass" | "fail" | "indeterminate") are still accepted and copied as they are.

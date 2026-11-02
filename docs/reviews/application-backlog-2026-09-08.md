@@ -209,6 +209,16 @@ Yeni kullanıcı kısa başlangıç üzerinden `doctor → scan → sonucu anla 
 - **F14a (3b):** kapsam ve kapanış özeti, yardım, kısa başlangıç, Docker satırı ve "error ≠ bulgu" blok mesajı. F02 verisiyle hemen yapılabilir. Boyut başına süre için `summary.json` `dimensions[]`'a eklenecek `seconds` alanı F20'den buraya alındı; ek bir alan, şemayı kırmaz. Böylece 3b, 10. sıradaki F20'yi beklemez.
 - **F14b (10, F31b ile):** sessiz ekran çıktısı (`SCAN_VERBOSE`) ve blok mesajındaki "ilk dosya:satır". Hook'lar `SARIF=0` ile çalıştığı için ilk bulguyu göstermek her aracın ham çıktısını ayrıştırmayı gerektirir. Boyut çıktılarını ayrı dosyalara alan F31b altyapısıyla aynı iştir.
 
+**F14a durumu — 2 Kasım 2026:** `feat/f14a-closing-summary` branch'inde uygulandı.
+- **Kapanış özeti:** her boyutun durumu, süresi ve nedeni; komutun kapsamadığı boyutlar ("not in 'all'"); Docker ya da uvx eksikse tek satırda hangi boyutların denetlenmediği ve nasıl düzeltileceği.
+- **Blok mesajı:** bloklayan bir bulgu mu, çöken bir tarayıcı mı, ayrı yazılıyor. Bulgu için seçenekler listeleniyor; çöken tarayıcı için "not a finding; do not allowlist it" deniyor.
+- **`scan.sh help`:** komutlar, gate etiketleri, önkoşullar, `all`'un dışında kalanlar ve ilk kullanım yolu.
+- **Süre:** `summary.json`'a boyut başına `seconds` eklendi. evidence'a kopyalanmıyor, böylece evidence'ın determinizmi korunuyor.
+- **Hook'lar:** nedeni tahmin eden kendi mesajlarını bıraktı. Örneğin pre-commit, gitleaks çöktüğünde de "secret in staged changes" diyordu; artık kapanış özetine yönlendiriyorlar.
+- **Çıktı sözleşmesi korundu:** `── run:`, `NEXT STEP`, `NOT inspected`, `BLOCKED` satırları duruyor.
+
+**Yapılmayan:** kartın istediği gerçek kullanıcılarla ölçüm (ilk rapora ulaşma süresi, yanlış kapsam yorumları). Bunun için gerçek kullanıcı gerekiyor; ölçüm açık kalıyor.
+
 ### F15 — Landing kalite turu
 
 Dar/geniş ekran, klavye, ekran okuyucu temel akışı, JS kapalı kullanım ve clipboard reddi tarayıcıda doğrulanmalı. Kritik içerik JS hatasında görünür kalmalı; kopyalama sonucu ve hatası erişilebilir bildirim vermeli. Mevcut reduced-motion desteği korunmalı. Bulunmayan sorunlar için sırf checklist tamamlamak amacıyla tasarım değiştirilmemeli.

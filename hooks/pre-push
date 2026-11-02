@@ -20,7 +20,9 @@ fi
 
 echo "[pre-push] scan.sh all (full) — please wait..."
 if ! bash "$ROOT/tools/security-audit-kit/scan.sh" all; then
-  echo "[pre-push] BLOCKED. Triage: /sec-triage in Claude. Emergency: git push --no-verify"
+  # scan.sh's closing summary above says what blocked, as a finding or as a failed scanner, and how
+  # to unblock; repeating a generic line here would contradict it for a crash.
+  echo "[pre-push] BLOCKED — see the closing summary above. Emergency: git push --no-verify"
   exit 1
 fi
 exit 0

@@ -317,7 +317,29 @@ bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detec
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
+bash tools/security-audit-kit/scan.sh help       # commands, gate tags, prerequisites, what `all` leaves out
 ```
+
+**First run:** `scan.sh doctor` → `scan.sh all` → read the closing summary → `/sec-triage`. Every
+scan ends with one screen, the closing summary:
+
+```
+── run: 20261102T193745-5208 · scan all · 70.5s
+   secret     pass             2.8s
+   sast       error            4.7s  semgrep exit 2 (scan error, not a finding)
+   js-deps    skipped          0.1s  package.json found but none is auditable ...
+   container  findings        48.3s  CRITICAL/HIGH findings (soft: reported, does not block)
+   iac        not_applicable   0.0s  no terraform
+── not in 'all': osv guarddog zizmor sbom — run scan.sh <name> for those
+── BLOCKED (rc=1): sast (error) — commit/push is blocked.
+── scanner FAILED: sast — this is not a finding; do not allowlist it. Fix the scan (see the raw log) and re-run.
+```
+
+It lists each dimension with its status, time and reason, and names what the command does not
+cover. When Docker or uvx/pipx is missing, one line names the dimensions left uninspected and how
+to fix that. This is repeated on every hook run, because the day you install is not the day you
+push. When something blocks, the summary says whether it was a finding (with the ways to unblock)
+or a scanner that failed (fix the scan, never allowlist it).
 
 Every run writes a machine-readable `docs/security/scan-findings/summary.json`: the gate's decision
 (`gate.exit_code`, `gate.blocked_by`), the `run_id` of the run that wrote it (see *Two scans at
