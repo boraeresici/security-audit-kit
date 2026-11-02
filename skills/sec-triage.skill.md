@@ -33,7 +33,9 @@ the vendored copy. The only files you write are the project's own: the findings 
 
 1. **Scan / get the output.** Priority order: (a) if output was passed as an argument, use it;
    (b) else check `docs/security/scan-findings/raw-<TODAY>.log` (every scan writes its raw output
-   there) — also read `summary.json` if present (machine-readable per-dimension status); (c) if
+   there) — also read `summary.json` if present (machine-readable per-dimension status; a dimension
+   that is `skipped`, `error` or `indeterminate` inspected nothing — report it as a coverage gap,
+   never as clean; see `docs/schema/summary.md`); (c) if
    neither exists, run `bash tools/security-audit-kit/scan.sh <scope>` — pre-PR=`all`,
    post-package=`fast`, single dimension=`secret|sast|deps|iac|container`. Tool->dimension:
    semgrep=SAST, gitleaks=secret, trivy=dep/OS/misconfig, checkov=IaC, pip-audit/js-audit=dep CVE.

@@ -12,6 +12,8 @@ Kaynak: [8 Eylül 2026 çok rollü değerlendirme](application-review-2026-09-08
 
 **Güncelleme — 21 Ekim 2026:** F01 uygulaması sırasında yerel e2e'deki py-deps hataları incelendi. Neden, geliştirici shell'inde tanımlı `VIRTUAL_ENV` idi; testler hermetik yapıldı. Aynı inceleme bir ürün hatası da gösterdi: repo `.venv`'i yokken projeye ait olmayan aktif ortam denetleniyor. **F29** olarak eklendi (P1, sıra 3a). Bu bir plan değişikliğidir; düzeltme henüz uygulanmadı.
 
+**Sıra değişikliği — 2 Kasım 2026:** F14 ve F25, F03 → F04'ün hemen arkasına (3b) alındı. Gerekçe: F02'nin kırıcı schema değişikliği ve F14'ün bağımlılığının kalkması. Önceliğin tanımı ve diğer işlerin sırası değişmedi. Planın açık bıraktığı "baskın kullanıcı / başlangıç UX'i mi monorepo maliyeti mi" kararı hâlâ verilmedi; bu değişiklik o karar yerine geçmez.
+
 **Not — 2 Kasım 2026:** SOCNova karşılaştırması, taramalar arası yeni açık takibi, agent/alarm entegrasyonu ve Dependabot rolü **R15** koşullu not kartına alındı. Kritik değil; teslim sırası değişmedi.
 
 P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki güvenilirlik ve kullanılabilirlik paketi. P2: ölçüm ve talebe göre geliştirme. P0 etiketi CVSS veya istismar şiddeti değildir. Efor: K ≈ 0,5–2, O ≈ 3–5, B ≈ 6–10 mühendis-gün; test ve doküman dahil kaba tahmin, takvim sözü değil.
@@ -78,9 +80,19 @@ Bu tablo yukarıdaki F maddelerini tekrar etmez. “Koşullu” işler, belirtil
 
 Kilit bekleme süresi dolan tarama, diğer taramanın summary/SARIF/evidence/HTML dosyalarını değiştirmemeli. Her çalıştırma benzersiz dizin ve kimlik almalı; son tamamlanan çalışma işaretçisinin güncellenmesi açık bir sahiplik kuralına bağlı olmalı. İki eşzamanlı tarama ve kilit zaman aşımı testi tüm artifact'ların kendi çalışmasına ait kaldığını doğrulamalı. İptal edilmiş çalışma son başarılı kaydı bozmamalı.
 
+**Durum:** tamamlandı, v1.19.0 ile yayımlandı (PR #32). Eski SARIF'in taşınması F03'e bırakıldı.
+
 ### F02 — Durum ve politika
 
 Boyut sonucu en az `pass`, `findings`, `error`, `skipped`, `indeterminate`, `not_applicable` ayrımını ve nedenini taşımalı; adlandırma schema tasarımında kesinleşebilir. `gate` sonucu ayrı hesaplanmalı. Eksik Docker/uvx, eksik manifest, araç çökmesi ve soft-fail bulgusu için fixture olmalı. Mevcut tüketicilere schema geçişi belgelenmeli. Varsayılan fail-open kararını değiştirmeden yanlış `pass` giderilebilmeli.
+
+**Karar — 2 Kasım 2026:**
+- **Adlandırma:** karttaki altı ad aynen kullanıldı. `status` alanının değerleri yerinde değiştirildi ve `schema_version: 2` eklendi. Eski `fail` değeri kaldırıldı. Eski alanı koruyup yanına yeni bir alan eklemek de düşünüldü, ama o zaman eski alan atlanan boyutlar için yanlış `pass` yazmaya devam ederdi.
+- **Gate:** davranış değiştirilmedi; gate hâlâ dönüş kodundan hesaplanıyor. Durum, fonksiyonun açık işaretinden (`dim_mark`/`dim_skip`/`dim_na`/`dim_error`) ya da varsayılan eşlemeden geliyor. Tarama hatalarının bloklayıp bloklamayacağı ayrı bir politika sorusu olarak açık bırakıldı.
+- **Ayırt edilemeyen durumlar:** pip-audit, gitleaks, npm/pnpm/yarn audit ve guarddog, bulgu ile hata için aynı çıkış kodunu kullanıyor. Bunlar `findings` olarak kaydediliyor; bu sınırlama sözleşmede yazılı.
+- **Sözleşme:** [docs/schema/summary.md](../schema/summary.md).
+
+**Durum:** `feat/f02-status-policy` branch'inde uygulandı. e2e'ye 18 kontrol eklendi; araçlar shim'lendiği için offline ve deterministik çalışıyor. Rapordaki durum etiketleri için bir birim testi var.
 
 ### F03 — Artifact kökeni ve güncellik
 
@@ -93,6 +105,8 @@ Evidence yalnız aynı run manifestindeki çıktıları tüketmeli. Önceki SARI
 ### F05 — Kilit yaşam döngüsü
 
 Canlı ve uzun süren taramanın kilidi yalnız yaşı nedeniyle alınmamalı. Release yalnız kendi token'ını taşıyan kilidi kaldırmalı. Ölü PID, PID yeniden kullanımı, heartbeat yokluğu, aynı anda stale reclaim ve INT/TERM testleri yapılmalı. Bozuk kilit dosyası sonsuz beklemeye yol açmamalı.
+
+**Durum:** tamamlandı, v1.19.0 ile yayımlandı (PR #34).
 
 ### F06 — Politika farkındalığı olan paket cache'i
 
@@ -397,7 +411,7 @@ Seçilen alan için giriş sinyali, incelenecek sınırlar, uygulanmama nedeni, 
 
 **Karar — 2 Kasım 2026:** Sıra `PY_VENV` > repo `.venv` > aktif `VIRTUAL_ENV`. Aktif ortam ancak `pyvenv.cfg` taşıyorsa ve fiziksel yolu (symlink çözülmüş) `ROOT` altındaysa proje ortamı sayılır. Diğer durumlarda neden yazılır ve no-env yoluna düşülür: statik manifest ya da INDETERMINATE. Yabancı ortamı kabul etmek için iki seçenek vardı: `VIRTUAL_ENV`'e güvenen bir bayrak ya da yol veren `PY_VENV`. Yol veren seçildi. Kullanıcı hangi ortamı denetlettiğini adıyla söylüyor; bayrak ise yine shell'in o an aktif ettiği şeye bağlı kalırdı. `PY_VENV` açık bir seçim olduğu için sonucu normal pip-audit sonucu gibi sayılır; denetim satırı ortamı ve seçilme nedenini yazar. `bin/python` içermeyen bir `PY_VENV` hatadır (rc=1); sessiz fallback yapılmaz. Yeni durum adı eklenmedi: üretilen sonuçlar mevcut `pass`/`findings`/`indeterminate`, F02'nin adlandırmasıyla çakışmıyor. F25'in rehberi henüz yazılmadığı için geçiş notu CHANGELOG'daki "Upgrade notes" altında.
 
-**Durum:** `fix/f29-py-deps-env` branch'inde uygulandı. e2e'ye 9 kontrol eklendi; kabul kriterlerindeki beş fixture ve `PY_VENV` için iki durum test ediliyor. Ölçülen pyenv-global vakası artık rc=0 ve INDETERMINATE.
+**Durum:** uygulandı, PR #38 ile `main`'de (yayımlanmadı). e2e'ye 9 kontrol eklendi; kabul kriterlerindeki beş fixture ve `PY_VENV` için iki durum test ediliyor. Ölçülen pyenv-global vakası artık rc=0 ve INDETERMINATE.
 
 ## Güncel teslim sırası — ana planlama kaynağı
 
@@ -410,11 +424,12 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | 2 | **F01 → F05** çalıştırma izolasyonu ve kilit sahipliği | Cache ve rapor öncesi ortak kayıt yarışlarını gider |
 | 3 | **F02 → F03 → F04** durum, güncel kanıt, doğru rapor | Eksik/eskimiş tarama temiz görünmesin; F01 ve F02 schema tasarımı beraber yapılır. F23'teki unit test fixture'ları F02–F04 düzeltmeleriyle genişletilir |
 | 3a | **F29** py-deps ortam seçimi | Yabancı ortamın sonucu bu repoya ait gibi raporlanmasın; durum adlandırması F02 ile uyumlu olsun. Küçük ve bağımsız, F02 sonrasını beklemeden de alınabilir |
-| 4 | **F06 → F07 → F08 → F25** cache politikası, release, kanal ve geçiş rehberi | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
+| 3b | **F14 + F25** kapsam özeti/yardım ve sürüm geçiş rehberi | 2 Kasım 2026'da 8. ve 4. sıradan öne alındı. F02, `summary.json` için kırıcı bir schema değişikliği getirdi; tüketicinin geçiş rehberi bu değişikliği içeren sürümle birlikte çıkmalı. F14'ün tek bağımlılığı F02 idi; F02'nin ürettiği durum ve nedeni kullanıcıya okunur bir kapsam özeti olarak göstermek bu işin özü. Yayın kapısı (F06–F08) bunlardan sonra gelir |
+| 4 | **F06 → F07 → F08** cache politikası, release ve kanal (F25 3b'ye alındı) | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
 | 5 | **F13 + F11 + F24** veri akışı, kit tehdit modeli ve config doğrulama | Yanlış yerellik iddiasını gider; F24 config'in çalıştırılabilir doğasını somut kontrol altına alır. R02/R06 için sınırları tanımla |
 | 6 | **F18** platform/yol matrisi ve kalan WSL2 doğrulaması | Taşınabilirlik temel ürün vaadi; WSL2 ortamı yoksa diğer testler devam eder |
 | 7 | **F16a → R01 kapsam kararı → F16b** | Önce gerçek çıktı/suppression matrisi; sonra gerekli adaptörler. R01 helper seçilirse F16b'den sonra |
-| 8 | **F10 → F14 → F15** kurulum, kapsam/yardım, landing QA | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun |
+| 8 | **F10 → F15** kurulum ve landing QA (F14 3b'ye alındı) | Yeni dağıtım kanalı öncesi ilk kullanım anlaşılır ve güvenli olsun |
 | 8a | **F26** sunucusuz HTML rapor kullanılabilirliği | F04/F14 ve F16 kapsam sözleşmesi üstünde ilk görsel kullanım; F19/cache/agent runner beklemez |
 | 8b | **R12a → koşulu sağlanırsa R12b** SkillSpector | Önce fixture tabanlı fayda/yanlış pozitif ölçümü, sonra pinli opsiyonel adaptör; varsayılan gate değişmez |
 | 9 | **F19a → F19b** bulgu/karar ve kanıt sözleşmesi | Stabil kimlik, belirsizlik, şema doğrulama ve geriye uyum; JSONL/resume yalnız ölçülmüş ihtiyaçla |

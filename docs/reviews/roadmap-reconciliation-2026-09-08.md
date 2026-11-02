@@ -4,6 +4,18 @@ Tarih: 8 Eylül 2026 · Baz: yerel `main / 48fad91`.
 
 Güncel uygulama sırası ve kabul kriterleri [birleşik iş listesinde](application-backlog-2026-09-08.md). Bu belge, eski roadmap maddelerinin neden kapandığını, birleştiğini veya ertelendiğini açıklar. İncelenen kaynaklar: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG ve ilgili uygulama kodu. Yerel kaynakların tarihi beyanları güncel ürün/sağlayıcı ölçümü sayılmadı; dış araç lisansları ve yetenekleri yeniden araştırılmadı.
 
+## 2 Kasım 2026 — F01/F05 yayında; F29 ve F02 uygulandı
+
+Teslim sırasının 2. maddesi bitti. **F01** (her çalıştırma kendi dizininde, kaydı yalnız kilit sahibi yayımlar) ve **F05** (kilit yaşı yerine sahibin canlılığına bakılır, kilidi yalnız kendi token'ını taşıyan bırakır) **v1.19.0** ile yayımlandı (`ddff75f`). rc.1 dogfood'unda `kit.sarif` rename hatası ve geçici yolların mesajlarda görünmesi bulundu; ikisi rc.2'de düzeltildi. Bu yayının dogfood'u, README'nin "gitignored" dediği `scan-findings/` dizininin gerçekte ignore edilmediğini gösterdi; düzeltme **v1.19.1** ile yayımlandı (`295532f`). İki sürüm de RC → dogfood → final akışıyla, temiz bir klondan kesildi.
+
+Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-status-policy` branch'inde, merge bekliyor. İkisi de henüz yayımlanmadı:
+- **F29:** aktif `VIRTUAL_ENV` yalnız repo içindeki gerçek bir venv ise denetleniyor; repo dışındaki bir ortam için `PY_VENV` kullanılıyor. Ölçülen pyenv-global vakası HARD bloktan INDETERMINATE'e döndü.
+- **F02:** `summary.json` schema 2 ile her boyutta `status` (altı değer), `reason` ve gate etkisi ayrı tutuluyor. Gate davranışı değişmedi. Dogfood'da eskiden "HARD finding" görünen semgrep çıkışının gerçekte bir yapılandırma hatası olduğu ortaya çıktı (`Invalid scanning root`); artık `error` olarak kaydediliyor.
+
+**Sıra değişikliği:** F14 (kapsam özeti, yardım) ve F25 (sürüm geçiş rehberi), F03 → F04'ün arkasına, 3b olarak alındı; yayın kapısı F06–F08 onlardan sonra geliyor. Gerekçe: F02 tüketiciler için kırıcı bir değişiklik, rehberi aynı sürümle çıkmalı; F14'ün tek bağımlılığı F02 idi. Sıranın kritikliğe (P0 = sonuca güveni bozan doğrulanmış hata) ve bağımlılığa göre kurulduğu, UX işlerinin bu yüzden arkada kaldığı not edildi.
+
+**Sırada:** F03 → F04 → F14 + F25. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+
 ## 2 Kasım 2026 — SOCNova, yeni açık takibi ve agent erişimi (R15 notu)
 
 Bir Gemini konuşmasındaki “SOC NOVA” iddiaları kontrol edildi. Ürün SOCRadar değil; SOCNova Bilişim A.Ş.'nin yapay zekâ destekli SOC platformu (socnova.com). Sitesi yalnız MITRE ATT&CK'i anıyor; Gemini'nin saydığı Sigma/YARA/Kestrel vb. kütüphaneler sitede yok. Gemini kiti uç nokta denetim aracı sanmıştı; kit bir repo/tedarik zinciri tarayıcısıdır. Kite alınacak yeni çekirdek özellik çıkmadı; web UI kararı (F26 → koşullu R13) değişmedi. Taramalar arası yeni açık bildirimi, alarm/agent entegrasyonu ve Dependabot iş bölümü **R15** koşullu not kartında tutuluyor; teslim sırası değişmedi.
@@ -55,7 +67,7 @@ Eski sıradaki “hemen cache, ardından remediation ve ağır reachability” a
 | plan #14 local rules | Discovery, yerel kuralların eklenmesi ve `rules-test` mevcut | Tamam; tüketiciye özel kuralları kite ekleme |
 | plan #11 stack-auto field verify | Önceki plan uygun gerçek tüketici bulunmadığından e2e ile kapatmış | Kapalı tut; uygun tüketici çıkarsa RC turuna ekle, bağımsız engelleyici iş değil |
 | R5.1 install-time hook | `pkgcheck`, parser, PreToolUse hook mevcut | Özellik tamam; cache politika hatası F06 |
-| R5.2 slice A | Kilit kodu main'de; CHANGELOG `Unreleased` altında | “Henüz geliştirilmedi” değil; F01/F05 düzeltmesi gerekiyor. Remote yayın doğrulanmadı |
+| R5.2 slice A | Kilit kodu main'de; F01/F05 düzeltmeleriyle v1.19.0'da yayımlandı (2 Kasım 2026) | Tamam; cache dilimi (slice B) F20 → F21a sırasında |
 | #9 WSL2 | Doküman/platform tespiti mevcut; gerçek WSL2 doğrulaması yok | Kısmi; kalan F18, yeniden platform dokümanı projesi açma |
 
 ## Açık roadmap maddelerinin değerlendirmesi

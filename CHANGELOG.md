@@ -11,6 +11,13 @@ All notable changes to this project are documented here. The format is based on
   If your repo has no `.venv` and you relied on a venv activated from elsewhere, set
   `PY_VENV=/path/to/venv` (env or `.security-audit.conf`). Without it, py-deps reads the committed
   manifests statically, or reports `indeterminate` when there are none.
+- **`summary.json` schema 2 (breaking for parsers of `status`).** The value `"fail"` is gone: it is
+  now `"findings"` or `"error"`. Dimensions whose tool was missing or that had nothing to scan are
+  no longer `"pass"`: they are `"skipped"` or `"not_applicable"`. Branch on the new
+  `schema_version` (absent = 1). If you meant "this dimension blocked", read the new per-dimension
+  `gate` (`block`/`allow`) or top-level `gate.blocked_by`. Full mapping:
+  [docs/schema/summary.md](docs/schema/summary.md#migrating-from-schema-1).
+- The gate itself is unchanged: what blocked before blocks now, what was allowed is still allowed.
 
 ### Fixed
 - **py-deps audited whatever environment the shell had active (F29).** With no repo `.venv`, any
@@ -23,6 +30,17 @@ All notable changes to this project are documented here. The format is based on
   falls through to the static-manifest path. New `PY_VENV` names an env to audit explicitly (a
   path without `bin/python` is an error, not a silent fallback). The audit line now says which
   env was audited and why.
+- **A dimension that never ran was recorded as `pass` (F02).** "no docker -> gitleaks skipped",
+  "no uvx/pipx -> semgrep skipped", "osv-scanner exit 2 (scan error)", "no terraform" and a
+  checkov crash all returned 0, and `summary.json` called them `pass`; soft dimensions with
+  findings (`iac`, `container`) were `pass` too. Each dimension now records `status` ∈ `pass`,
+  `findings`, `error`, `skipped`, `indeterminate`, `not_applicable` with a `reason`, and its effect
+  on the gate separately. A semgrep or zizmor crash is `error`, not `findings`. checkov's
+  soft-fail summary and a trivy findings exit code are read so soft findings are recorded. The run
+  ends with a `NOT inspected:` line naming every `skipped`/`error` dimension, and the block line
+  (`BLOCKED (rc=1): sast (error)`, formerly "HARD finding") names what blocked and as what. A
+  `PY_VENV` without `bin/python` is `error`. The HTML report
+  styles every status and shows the reason on hover.
 
 ## [1.19.1] - 2026-11-02
 

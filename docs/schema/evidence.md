@@ -46,11 +46,11 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
     "command": "all",
     "exit_code": 1,
     "raw_log": "docs/security/scan-findings/raw-2026-08-12.log",
-    "dimensions": [{"name": "sast", "exit_code": 0, "status": "pass"}]
-    // status is "pass" | "fail" | "indeterminate". "indeterminate" (exit_code 3) means the
-    // dimension RAN but had nothing to inspect — e.g. py-deps with no environment and no manifest
-    // readable without building the project. It never blocks, and it must never be read as
-    // coverage: treat it as an unanswered question, not a clean result.
+    "dimensions": [{"name": "sast", "exit_code": 0, "status": "pass", "gate": "allow", "reason": null}]
+    // Copied verbatim from summary.json — see docs/schema/summary.md. From summary schema 2,
+    // status is "pass" | "findings" | "error" | "skipped" | "indeterminate" | "not_applicable";
+    // only "pass" and "findings" mean the dimension inspected something. Schema 1 summaries
+    // (status "pass" | "fail" | "indeterminate") are still accepted and copied as they are.
   },
   "counts": {
     "total": 3,
@@ -107,7 +107,7 @@ Numeric first, then the SARIF level, then a tool-specific default:
 ### Dimensions without per-finding rows (known gap)
 
 `checkov` (iac), `guarddog`, `pip-audit` (py-deps) and the JS audits do not emit SARIF in the kit
-today, so they appear in `scan.dimensions` with a pass/fail status but contribute no `findings`
+today, so they appear in `scan.dimensions` with a status but contribute no `findings`
 entries. Their findings still reach a human through `raw-<date>.log` and triage. Closing this gap
 means adding SARIF output per tool — tracked separately, not part of this schema.
 
@@ -161,7 +161,7 @@ evidence.
 
 It deliberately renders **more** than `kit.sarif`: every finding, including the scanner ones
 carrying a triage decision, which SARIF leaves to each tool's own run. Sections: scan header (scope,
-gate, dimensions with pass/fail), severity breakdown, findings table (severity + its source, tool /
+gate, one chip per dimension with its status and, on hover, its reason), severity breakdown, findings table (severity + its source, tool /
 rule, `file:line`, message + evidence chain, decision + confidence), then **Suppressed** on record,
 then any builder warnings.
 

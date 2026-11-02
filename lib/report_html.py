@@ -54,7 +54,10 @@ h2{font-size:1.05rem;margin:2.4rem 0 .8rem;letter-spacing:-.005em}
 .chip{font-size:.8rem;padding:.16rem .55rem;border-radius:999px;border:1px solid var(--line);
   background:transparent;font-variant-numeric:tabular-nums}
 .chip.pass{color:var(--ok);border-color:currentColor}
-.chip.fail{color:var(--bad);border-color:currentColor}
+.chip.fail,.chip.findings,.chip.error{color:var(--bad);border-color:currentColor}
+.chip.error,.chip.skipped,.chip.indeterminate{border-style:dashed}
+.chip.skipped,.chip.indeterminate{color:var(--medium);border-color:currentColor}
+.chip.not_applicable{color:var(--muted)}
 .bars{display:grid;gap:.42rem;margin-top:.2rem}
 .bar{display:grid;grid-template-columns:5.2rem 1fr 2.4rem;align-items:center;gap:.7rem;font-size:.86rem}
 .bar i{height:.62rem;border-radius:3px;display:block;min-width:2px}
@@ -179,7 +182,9 @@ def main() -> int:
 
     dimensions = scan.get("dimensions") or []
     chips = "".join(
-        f'<span class="chip {esc(d.get("status"))}">{esc(d.get("name"))} · {esc(d.get("status"))}</span>'
+        f'<span class="chip {esc(d.get("status"))}"'
+        + (f' title="{esc(d.get("reason"))}"' if d.get("reason") else "")
+        + f'>{esc(d.get("name"))} · {esc(d.get("status"))}</span>'
         for d in dimensions
     ) or '<span class="chip">no dimensions recorded</span>'
 

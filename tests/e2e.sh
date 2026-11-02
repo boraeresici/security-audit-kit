@@ -1124,6 +1124,8 @@ grep -q "pip-audit --strict.*env $F29/foreign.*PY_VENV" <<<"$F29OUT" \
 F29OUT="$(f29 PY_VENV="$F29/missing")"; F29RC=$?
 grep -q 'PY_VENV.*no bin/python' <<<"$F29OUT" && [ "$F29RC" -ne 0 ] \
   && ok "F29: a broken PY_VENV is an error, not a silent fallback" || no "F29: broken PY_VENV accepted (rc=$F29RC)"
+grep -q '"name": "py-deps", "exit_code": 1, "status": "error"' "$PYR/docs/security/scan-findings/summary.json" 2>/dev/null \
+  && ok "F29+F02: a broken PY_VENV is recorded as error, not findings" || no "F29+F02: broken PY_VENV not recorded as error"
 rm -rf "$F29"
 # (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
 #     build a venv and install it, i.e. run the dependency tree's build scripts).
@@ -1140,6 +1142,98 @@ else
   skip "py-deps: manifest fallback (docker unavailable)"
 fi
 rm -rf "$PYR"
+
+echo "-- F02: a dimension's status says what happened; the gate is computed apart from it --"
+# Before F02 "no docker -> skipped", "osv-scanner exit 2 (scan error)" and "no terraform" all
+# returned 0 and summary.json called them "pass". Tools are shimmed so every case is deterministic
+# and offline; PATH holds only the shims + the system dirs, so a real uvx/docker never leaks in.
+F02="$(mktemp -d)"; F02S="$F02/shims"; mkdir -p "$F02S"
+(
+  cd "$F02" && mkdir repo && cd repo || exit 1
+  git init -q .
+  mkdir -p tools/security-audit-kit infra
+  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
+  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  printf 'print(1)\n' > app.py
+  git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -c user.email=e2e@test -c user.name=e2e commit -qm f02 >/dev/null 2>&1
+) || no "F02 fixture could not be built"
+# uvx shim: prints $F02_OUT, exits $F02_RC. docker shim: `info` exits $F02_DINFO, `run` like uvx.
+# shellcheck disable=SC2016  # the $vars belong to the shim, expanded when it runs
+printf '#!/bin/sh\n[ -n "$F02_OUT" ] && printf "%%s\\n" "$F02_OUT"\nexit "${F02_RC:-0}"\n' > "$F02S/uvx"
+# shellcheck disable=SC2016
+printf '#!/bin/sh\n[ "$1" = info ] && exit "${F02_DINFO:-0}"\n[ -n "$F02_OUT" ] && printf "%%s\\n" "$F02_OUT"\nexit "${F02_RC:-0}"\n' > "$F02S/docker"
+chmod +x "$F02S/uvx" "$F02S/docker"
+F02SYS="/usr/bin:/bin:/usr/sbin:/sbin"
+# f02 <cmd> [VAR=val ...] -> runs the scan; F02RC = its exit, F02SUM = summary.json.
+f02(){ local cmd="$1"; shift
+  (cd "$F02/repo" && env PATH="$F02S:$F02SYS" "$@" "$BASH" tools/security-audit-kit/scan.sh "$cmd" >"$F02/out" 2>&1); F02RC=$?
+  F02SUM="$(cat "$F02/repo/docs/security/scan-findings/summary.json" 2>/dev/null)"; }
+# f02dim <name> -> "status gate reason" for that dimension (python3 parses the JSON).
+f02dim(){ /usr/bin/python3 -I -c 'import json,sys
+d=json.loads(sys.argv[1])
+for x in d.get("dimensions",[]):
+    if x.get("name")==sys.argv[2]: print(x.get("status"),x.get("gate"),x.get("reason") or "")' "$F02SUM" "$1" 2>/dev/null; }
+f02top(){ /usr/bin/python3 -I -c 'import json,sys
+d=json.loads(sys.argv[1]); g=d.get("gate") or {}
+print(d.get("schema_version"), g.get("exit_code"), ",".join(g.get("blocked_by") or []) or "-")' "$F02SUM" 2>/dev/null; }
+if [ -x /usr/bin/python3 ]; then
+  # missing docker -> skipped, never pass; gate unchanged (allow)
+  f02 secret F02_DINFO=1; D="$(f02dim secret)"
+  [[ "$D" == "skipped allow "*docker* ]] && [ "$F02RC" -eq 0 ] \
+    && ok "F02: no docker -> secret is skipped (with reason), gate allows" || no "F02: no docker -> got '$D' rc=$F02RC"
+  [ "$(f02top)" = "2 0 -" ] && ok "F02: schema_version 2 + top-level gate (exit 0, nothing blocking)" \
+    || no "F02: top-level gate wrong: '$(f02top)'"
+  # missing uvx -> skipped (PATH without the uvx shim)
+  (cd "$F02/repo" && env PATH="$F02SYS" "$BASH" tools/security-audit-kit/scan.sh sast >/dev/null 2>&1)
+  F02SUM="$(cat "$F02/repo/docs/security/scan-findings/summary.json" 2>/dev/null)"; D="$(f02dim sast)"
+  [[ "$D" == "skipped allow "*uvx* ]] && ok "F02: no uvx/pipx -> sast is skipped" || no "F02: no uvx -> got '$D'"
+  # nothing to inspect -> not_applicable
+  f02 iac; D="$(f02dim iac)"
+  [[ "$D" == "not_applicable allow "* ]] && ok "F02: no terraform -> iac is not_applicable" || no "F02: no terraform -> got '$D'"
+  f02 deps; D="$(f02dim js-deps)"
+  [[ "$D" == "not_applicable allow "* ]] && ok "F02: no JS project -> js-deps is not_applicable" || no "F02: no JS -> got '$D'"
+  [[ "$(f02dim py-deps)" == "not_applicable allow "* ]] && ok "F02: no Python project -> py-deps is not_applicable" \
+    || no "F02: no Python -> got '$(f02dim py-deps)'"
+  # semgrep: 1 = findings, anything else = the tool failed. Both still block (gate unchanged).
+  f02 sast F02_RC=1; D="$(f02dim sast)"
+  [[ "$D" == "findings block"* ]] && [ "$F02RC" -eq 1 ] && ok "F02: semgrep exit 1 -> findings, blocks" \
+    || no "F02: semgrep findings -> got '$D' rc=$F02RC"
+  [ "$(f02top)" = "2 1 sast" ] && ok "F02: top-level gate names the blocking dimension" || no "F02: blocked_by wrong: '$(f02top)'"
+  # the old vocabulary is gone: a blocking finding is "findings", never "fail"
+  grep -q '"status": "fail"' <<<"$F02SUM" && no "F02: legacy status 'fail' still written" || ok "F02: no legacy 'fail' status"
+  f02 sast F02_RC=2; D="$(f02dim sast)"
+  [[ "$D" == "error block "*exit\ 2* ]] && [ "$F02RC" -eq 1 ] && ok "F02: semgrep crash -> error (not findings), still blocks" \
+    || no "F02: semgrep crash -> got '$D' rc=$F02RC"
+  grep -q 'BLOCKED (rc=1): sast (error)' "$F02/out" && ! grep -q 'HARD finding' "$F02/out" \
+    && ok "F02: the block line says a crash blocked, not a finding" || no "F02: block line still calls a crash a finding"
+  # soft-fail findings: reported as findings, the gate still allows
+  mkdir -p "$F02/repo/infra"; printf 'resource "x" "y" {}\n' > "$F02/repo/infra/main.tf"
+  git -C "$F02/repo" add infra/main.tf >/dev/null 2>&1
+  f02 iac F02_OUT="Passed checks: 3, Failed checks: 2, Skipped checks: 0"; D="$(f02dim iac)"
+  [[ "$D" == "findings allow "* ]] && [ "$F02RC" -eq 0 ] && ok "F02: checkov soft-fail with failed checks -> findings, gate allows" \
+    || no "F02: checkov soft-fail -> got '$D' rc=$F02RC"
+  f02 iac F02_OUT="Passed checks: 3, Failed checks: 0, Skipped checks: 0"
+  [[ "$(f02dim iac)" == "pass allow"* ]] && ok "F02: checkov with no failed checks -> pass" || no "F02: checkov clean -> got '$(f02dim iac)'"
+  f02 iac F02_RC=1; D="$(f02dim iac)"
+  [[ "$D" == "error allow "* ]] && [ "$F02RC" -eq 0 ] && ok "F02: checkov crash -> error, gate unchanged (allows)" \
+    || no "F02: checkov crash -> got '$D' rc=$F02RC"
+  git -C "$F02/repo" rm -q --cached infra/main.tf >/dev/null 2>&1; rm -f "$F02/repo/infra/main.tf"
+  # trivy (soft): findings are recorded, the gate allows; a failed container run still blocks
+  f02 container F02_RC=5; D="$(f02dim container)"
+  [[ "$D" == "findings allow"* ]] && [ "$F02RC" -eq 0 ] && ok "F02: trivy findings (soft) -> findings, gate allows" \
+    || no "F02: trivy soft findings -> got '$D' rc=$F02RC"
+  f02 container F02_RC=125; D="$(f02dim container)"
+  [[ "$D" == "error block "* ]] && ok "F02: trivy/docker failure -> error, blocks as before" || no "F02: trivy failure -> got '$D'"
+  # osv: 128 = no lockfiles (not_applicable), other non-1 codes = scan error; neither blocks
+  f02 osv F02_RC=128; [[ "$(f02dim osv)" == "not_applicable allow "* ]] && ok "F02: osv no lockfiles -> not_applicable" \
+    || no "F02: osv 128 -> got '$(f02dim osv)'"
+  f02 osv F02_RC=2; D="$(f02dim osv)"
+  [[ "$D" == "error allow "* ]] && [ "$F02RC" -eq 0 ] && ok "F02: osv scan error -> error, gate unchanged (allows)" \
+    || no "F02: osv error -> got '$D' rc=$F02RC"
+  grep -q 'NOT inspected' "$F02/out" && ok "F02: the run names what was not inspected" || no "F02: no not-inspected banner"
+else skip "F02 status tests (no /usr/bin/python3)"; fi
+rm -rf "$F02"
 
 echo "-- js-deps: audit the app, never a vendored asset, never block on 'cannot audit' --"
 # The reported failure: the first tracked package.json was a checked-in fullcalendar asset with no

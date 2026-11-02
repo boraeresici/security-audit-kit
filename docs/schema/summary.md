@@ -1,0 +1,85 @@
+# `summary.json` — what each dimension did, and what the gate decided (schema 2)
+
+> Status: **schema 2, unreleased** (F02). Schema 1 had no `schema_version` field; see *Migrating
+> from schema 1* below.
+
+`summary.json` answers *"did the scan pass, and what did it actually look at?"*. Per-finding detail
+lives in [`evidence.json`](evidence.md).
+
+- **Written by:** every `scan.sh` run, at `docs/security/scan-findings/summary.json` (a run that
+  could not take the lock writes it under `runs/<run-id>/` instead).
+- **Safe to parse:** written to a temp file and renamed, last in the publish step.
+
+## Shape
+
+```json
+{
+  "schema_version": 2,
+  "timestamp": "2026-11-02T10:15:00",
+  "run_id": "20261102T101500-4242",
+  "command": "all",
+  "exit_code": 1,
+  "raw_log": "docs/security/scan-findings/raw-2026-11-02.log",
+  "sarif": false,
+  "gate": {"exit_code": 1, "blocked_by": ["sast"]},
+  "dimensions": [
+    {"name": "secret",  "exit_code": 0, "status": "skipped",        "gate": "allow", "reason": "no docker -> gitleaks skipped"},
+    {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "reason": null},
+    {"name": "py-deps", "exit_code": 3, "status": "indeterminate",  "gate": "allow", "reason": "INDETERMINATE — no project venv, ..."},
+    {"name": "js-deps", "exit_code": 0, "status": "not_applicable", "gate": "allow", "reason": "no JS project"},
+    {"name": "iac",     "exit_code": 0, "status": "findings",       "gate": "allow", "reason": "2 failed check(s) (soft: reported, does not block)"}
+  ]
+}
+```
+
+## `status` — what happened
+
+| status | meaning | was anything inspected? |
+|---|---|---|
+| `pass` | the tool ran over this repo and reported nothing at the gated level | yes |
+| `findings` | the tool ran and reported findings. For soft dimensions (`iac`, `container`) they are recorded but do not block | yes |
+| `error` | the tool ran and **failed** (crash, bad config, scan error). Not a finding | no — treat as unknown |
+| `skipped` | the dimension applies, but a tool it needs is missing (docker, uvx/pipx, a package manager) | no |
+| `indeterminate` | the dimension applies but had nothing it could inspect (py-deps with no env and no static manifest) | no |
+| `not_applicable` | nothing of this kind in the repo (no terraform, no JS project, no lockfiles, no changed files) | nothing to inspect |
+
+Only `pass` and `findings` are coverage. `error`, `skipped` and `indeterminate` are unanswered
+questions: never read them as clean. The run prints a `NOT inspected` line for `skipped`/`error`
+and an `INDETERMINATE` line for `indeterminate`.
+
+`reason` is the human-readable line the scan printed for that outcome, or `null`. It is prose for
+people, not a stable machine key.
+
+Some tools exit 1 for both "found something" and "failed" (pip-audit, gitleaks, npm/pnpm/yarn
+audit, guarddog). The kit cannot tell those apart from the exit code, so they are recorded as
+`findings`; the raw log has the detail. Where a tool does separate them (semgrep, zizmor,
+osv-scanner, checkov, trivy, syft), `error` is used.
+
+## `gate` — what it did to the commit
+
+Computed separately from `status`, and unchanged by schema 2: the kit stays fail-open on missing
+tools.
+
+- Per dimension, `gate` is `block` or `allow`. Today `block` happens for `findings` from a hard
+  dimension and for `error` where the gate already blocked before schema 2 (semgrep, zizmor, trivy,
+  syft, a refused `OSV_CALL_ANALYSIS=rust`). An osv-scanner scan error and a checkov crash stay
+  `allow`, as before.
+- Top-level `gate.exit_code` is the scan's exit code (also kept as `exit_code` for schema 1
+  readers) and `gate.blocked_by` lists the dimensions with `gate: "block"`.
+
+`exit_code` per dimension is the kit's internal code (`0`, `1`, `3`, or the tool's own non-zero
+code on failure). Prefer `status` and `gate`; `exit_code` is kept for compatibility.
+
+## Migrating from schema 1
+
+Schema 1 had no `schema_version`, no top-level `gate`, and per dimension only
+`name`, `exit_code` and `status` ∈ `pass | fail | indeterminate`.
+
+- `"fail"` is gone. It is now `findings` or `error`; check `gate == "block"` if what you meant was
+  "this dimension blocked".
+- `"pass"` no longer covers dimensions that never ran. A consumer that treated `pass` as clean now
+  also sees `skipped`, `error` and `not_applicable` for those; treat the first two as not clean.
+- A soft dimension with findings (`iac`, `container`) used to be `pass`; it is now `findings` with
+  `gate: "allow"`.
+- New fields are additive: `schema_version`, `gate`, and per dimension `gate` and `reason`.
+- Branch on `schema_version` (absent = 1).
