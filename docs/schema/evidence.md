@@ -25,10 +25,14 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 4. **Diffable.** Findings are sorted by `(dimension, file, line, rule_id, id)` and the file carries
    no timestamp — two runs of the same scan over unchanged code produce byte-identical output.
    Volatile metadata (timestamps) stays in `summary.json`.
-5. **Only what ran.** The SARIF directory persists between scans, so findings are included only for
-   dimensions present in this run's `summary.json`. A `secret`-only scan therefore never resurfaces
-   yesterday's `sast` findings. With no `summary.json`, everything is included and a warning is
-   recorded.
+5. **Only what this run produced.** A file on disk proves nothing about when it was written, so
+   findings come only from the SARIF files listed in `summary.json` `artifacts` (this run's output,
+   with sha256), and only for dimensions whose status is `pass` or `findings`. A skipped or crashed
+   dimension's output, a file changed after the scan (sha256 mismatch), a listed file that is
+   missing, and any SARIF file not in the list are all left out, each with a line in `warnings`
+   (also printed by the builder). A summary written before schema 2 has no `artifacts`: then the
+   files of the dimensions it lists are used, with a warning that nothing proves they belong to that
+   run. With no `summary.json` at all, everything is included and a warning is recorded.
 6. **One finding per identity.** Results sharing an `id` are collapsed and the drop is counted in
    `warnings`. Tools legitimately repeat themselves — osv-scanner emits an advisory once per
    affected package version, which would otherwise report a single CVE in a single manifest line
@@ -51,6 +55,10 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
     // status is "pass" | "findings" | "error" | "skipped" | "indeterminate" | "not_applicable";
     // only "pass" and "findings" mean the dimension inspected something. Schema 1 summaries
     // (status "pass" | "fail" | "indeterminate") are still accepted and copied as they are.
+    "provenance": {"commit": "…", "dirty": false, "kit": {"version": "1.20.0"}, "…": "…"}
+    // Copied from summary.json when present: WHAT was scanned, with what (commit, dirty tree, kit,
+    // config, rules, tool pins, scope). It carries no time and no run id, so rule 4 still holds;
+    // run metadata stays in summary.json. Fields: docs/schema/summary.md#provenance.
   },
   "counts": {
     "total": 3,

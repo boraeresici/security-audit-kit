@@ -325,9 +325,13 @@ Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar: gat
 (`gate.exit_code`, `gate.blocked_by`), onu yazan kosunun `run_id`'si (asagidaki *Ayni anda iki
 tarama* bolumune bak) ve boyut basina gercekte ne oldugu — `pass`, `findings`, `error`, `skipped`,
 `indeterminate` ya da `not_applicable`, nedeniyle birlikte. Araci eksik olan ya da coken bir boyut
-`skipped`/`error` olur, asla `pass` degil. Sozlesme ve eski `pass`/`fail` bicimden gecis:
-[docs/schema/summary.md](docs/schema/summary.md). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
--> `.../sarif/`; yani sira **`evidence.json`**: her boyuttan her bulgu **tek bir bicimde**,
+`skipped`/`error` olur, asla `pass` degil. Neyin, neyle tarandigini da kaydeder (`provenance`:
+commit, kirli calisma agaci, kit surumu, config, kurallar, arac pinleri, kapsam) ve bu kosunun
+hangi SARIF dosyalarini urettigini (`artifacts`, sha256 ile). Sozlesme ve eski `pass`/`fail`
+bicimden gecis: [docs/schema/summary.md](docs/schema/summary.md). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
+-> `.../sarif/` (her `SARIF=1` kosusunda yenilenir: yalniz o kosunun dosyalarini tutar, onceki
+bir kosununkini asla) ; yani sira **`evidence.json`** — yalniz bu kosunun listeledigi SARIF
+dosyalarindan ve gercekten bir sey denetlemis boyutlardan uretilir: her boyuttan her bulgu **tek bir bicimde**,
 severity `critical|high|medium|low|info` olarak normalize edilmis ve aracin kendi degeri yaninda
 aynen korunmus halde. Var olma sebebi araclarin uyusmamasi: osv-scanner CVSS 9.1'lik bir advisory'ye
 `warning` der, semgrep `ERROR` der, gitleaks'te severity hic yoktur — ham ciktida "ciddiyete gore

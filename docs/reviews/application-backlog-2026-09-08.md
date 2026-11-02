@@ -98,6 +98,15 @@ Boyut sonucu en az `pass`, `findings`, `error`, `skipped`, `indeterminate`, `not
 
 Evidence yalnız aynı run manifestindeki çıktıları tüketmeli. Önceki SARIF + bu çalışmada atlanan/başarısız boyut, güncel bulgu olarak alınmamalı. Commit, dirty durumu, kapsam, araç/config/rule kimliği ve üretim zamanı için alanlar tanımlanmalı. Aynı içerikten deterministik bulgu üretimi korunmalı; çalıştırma metadata'sı ayrı tutulmalı. Eksik/bozuk çıktı görünür uyarı veya hata üretmeli.
 
+**Karar — 2 Kasım 2026:**
+- **Run manifesti:** ayrı bir dosya açılmadı; `summary.json`'daki `artifacts` alanı (bu çalıştırmanın SARIF dosyaları ve sha256'ları) bu işi görüyor.
+- **Evidence ne kullanıyor:** yalnızca listedeki, hash'i tutan dosyaları; o da boyutun durumu `pass` ya da `findings` ise. Dışarıda bırakılan her dosya için bir uyarı yazılıyor ve builder bu uyarıları basıyor.
+- **Ortak `sarif/`:** önceki çalıştırmaların dosyaları artık taşınmıyor; dizin her `SARIF=1` yayınında yeniden yazılıyor. Taşıma sürseydi, yükleme yapan ya da dosyayı okuyan biri eski dosyayı güncel sonuç sanabilirdi.
+- **Provenance:** `summary.json`'da çalıştırma başında hesaplanıyor. Kapsadığı alanlar: commit, dirty durumu, kit sürümü ve CHECKSUMS hash'i, config hash'i, kurallar, araç pinleri, kapsam. Zaman ve run id içermiyor; evidence.json'a olduğu gibi kopyalanıyor ve aynı içerik aynı çıktıyı vermeye devam ediyor.
+- **`SARIF=0` çalıştırmaları:** pre-commit gibi çalıştırmalar `sarif/` dizinine ve evidence.json'a dokunmuyor. Hangi commit'i anlattıkları provenance'ta yazılı.
+
+**Durum:** `feat/f03-artifact-provenance` branch'inde uygulandı. e2e'ye 7, birim testlere 9 kontrol eklendi.
+
 ### F04 — Dürüst rapor
 
 Çıkış kodu yoksa veya kapsam eksikse HTML `clean` dememeli. Araç hatası bulgu gibi sunulmamalı; sıfır gate kodu “bütün boyutlar temiz” anlamına gelmemeli. Tarama tarihi ile rapor üretim tarihi ayrılmalı. Açıkça çağrılan `report`/`evidence` üretilemediyse makine tarafından anlaşılabilir başarısızlık dönmeli; isteğe bağlı tarama sonrası rapor hatasının gate'e etkisi ayrıca belgelenmeli. Null/missing/3/1/0 durumları test edilmeli.

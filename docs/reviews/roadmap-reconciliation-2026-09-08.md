@@ -14,6 +14,8 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 
 **Sıra değişikliği:** F14 (kapsam özeti, yardım) ve F25 (sürüm geçiş rehberi), F03 → F04'ün arkasına, 3b olarak alındı; yayın kapısı F06–F08 onlardan sonra geliyor. Gerekçe: F02 tüketiciler için kırıcı bir değişiklik, rehberi aynı sürümle çıkmalı; F14'ün tek bağımlılığı F02 idi. Sıranın kritikliğe (P0 = sonuca güveni bozan doğrulanmış hata) ve bağımlılığa göre kurulduğu, UX işlerinin bu yüzden arkada kaldığı not edildi.
 
+**F03** (2 Kasım, `feat/f03-artifact-provenance`): evidence yalnız bu çalıştırmanın manifestteki, hash'i tutan SARIF dosyalarını kullanıyor; provenance `summary.json` ve evidence'ta. Ortak `sarif/` önceki çalıştırmaların dosyalarını artık taşımıyor; F01'de açık bırakılan soru böylece kapandı.
+
 **Sırada:** F03 → F04 → F14 + F25. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
 
 ## 2 Kasım 2026 — SOCNova, yeni açık takibi ve agent erişimi (R15 notu)

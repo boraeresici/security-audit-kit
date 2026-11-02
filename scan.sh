@@ -1465,6 +1465,69 @@ if [ "$CMD" = "evidence" ] || [ "$CMD" = "report" ]; then
   scan_report; exit $?
 fi
 
+# JSON string or null: free prose (a warn line, a path, a config string).
+json_str(){ [ -n "$1" ] || { printf 'null'; return; }
+  local v="${1//\\/\\\\}"; v="${v//\"/\\\"}"; printf '"%s"' "$v"; }
+
+# ---- provenance (F03): what this run looked at, with what — taken BEFORE any scan, because some
+# dimensions write into the tree (sbom) and would make every run look dirty. Content identity only:
+# no time, no run id, so evidence.json can carry it and still diff to nothing on unchanged code.
+kit_version(){
+  if [ -f "$KIT_DIR/.kit-version" ]; then awk '{print $1; exit}' "$KIT_DIR/.kit-version"
+  else awk '/^## \[[0-9]/{v=$2; gsub(/[][]/,"",v); print v; exit}' "$KIT_DIR/CHANGELOG.md" 2>/dev/null; fi
+}
+local_rules_sha(){   # one digest over every local rule file (path + content), or nothing
+  local f list; list="$(local_rules_files 2>/dev/null | sort)"
+  [ -n "$list" ] && have_sha || return 0
+  local tmp; tmp="$(mktemp)"
+  while IFS= read -r f; do
+    [ -f "$f" ] && printf '%s %s\n' "${f#"$ROOT"/}" "$(sha256_of "$f")"
+  done <<<"$list" > "$tmp"
+  sha256_of "$tmp"; rm -f "$tmp"
+}
+tool_ref(){ printf '%s:%s%s' "$1" "$2" "${3:+@$3}"; }   # image:tag@digest — both, for a reader
+provenance_json(){
+  local commit dirty="null" conf_sha="" kit_sha=""
+  commit="$(git -C "$ROOT" rev-parse -q --verify HEAD 2>/dev/null)"
+  if [ -n "$commit" ]; then
+    # The record itself lives in the tree; its churn is not a change to what was scanned.
+    if [ -n "$(git -C "$ROOT" status --porcelain -- . ":(exclude)${LOG_DIR#"$ROOT"/}" 2>/dev/null)" ]; then dirty=true
+    else dirty=false; fi
+  fi
+  have_sha && [ -f "$CONF" ] && conf_sha="$(sha256_of "$CONF")"
+  have_sha && [ -f "$CHECKSUMS_FILE" ] && kit_sha="$(sha256_of "$CHECKSUMS_FILE")"
+  printf '{"commit": %s, "dirty": %s,\n' "$(json_str "$commit")" "$dirty"
+  printf '    "kit": {"version": %s, "checksums_sha256": %s},\n' "$(json_str "$(kit_version)")" "$(json_str "$kit_sha")"
+  printf '    "config_sha256": %s,\n' "$(json_str "$conf_sha")"
+  printf '    "scope": {"command": %s, "sast_paths": %s, "tf_dir": %s, "base_ref": %s},\n' \
+    "$(json_str "$CMD")" "$(json_str "${SAST_PATHS:-.}")" "$(json_str "${TF_DIR:-}")" "$(json_str "${BASE_REF:-}")"
+  printf '    "rules": {"semgrep_configs": %s, "local_rules_sha256": %s},\n' \
+    "$(json_str "$SEMGREP_CONFIGS")" "$(json_str "$(local_rules_sha)")"
+  printf '    "tools": {"semgrep": %s, "checkov": %s, "pip-audit": %s, "guarddog": %s, "zizmor": %s,\n' \
+    "$(json_str "$SEMGREP_VER")" "$(json_str "$CHECKOV_VER")" "$(json_str "$PIP_AUDIT_VER")" \
+    "$(json_str "$GUARDDOG_VER")" "$(json_str "$ZIZMOR_VER")"
+  printf '      "gitleaks": %s, "trivy": %s, "syft": %s, "osv-scanner": %s}}' \
+    "$(json_str "$(tool_ref ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")")" \
+    "$(json_str "$(tool_ref aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")")" \
+    "$(json_str "$(tool_ref anchore/syft "$SYFT_VER" "$SYFT_DIGEST")")" \
+    "$(json_str "$(tool_ref ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")")"
+}
+PROVENANCE="$(provenance_json)"
+
+# This run's SARIF, by name and digest — what evidence.py may treat as this run's findings.
+artifacts_json(){
+  local f first=1
+  printf '['
+  if [ "$SARIF" = "1" ]; then
+    for f in "$SARIF_DIR"/*.sarif; do
+      [ -f "$f" ] || continue
+      [ "$first" = 1 ] || printf ', '; first=0
+      printf '{"path": "sarif/%s", "sha256": %s}' "${f##*/}" "$(json_str "$(sha256_of "$f" 2>/dev/null)")"
+    done
+  fi
+  printf ']'
+}
+
 mkdir -p "$RUN_DIR"
 [ "$SARIF" = "1" ] && mkdir -p "$SARIF_DIR"
 
@@ -1472,10 +1535,6 @@ printf '\n===== %s  scan.sh %s  run %s =====\n' "$(date +%FT%T)" "$CMD" "$RUN_ID
 
 run_scans "$CMD" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
-
-# JSON string or null: the reason is free prose from a warn line.
-json_str(){ [ -n "$1" ] || { printf 'null'; return; }
-  local v="${1//\\/\\\\}"; v="${v//\"/\\\"}"; printf '"%s"' "$v"; }
 
 # Machine-readable summary (consumed by /sec-triage; safe to parse). Schema 2 (F02): each dimension
 # says what happened (status + reason) and, separately, what it did to the gate. Contract in
@@ -1491,6 +1550,8 @@ blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$R
   printf '  "raw_log": "%s",\n' "${LOG#"$ROOT"/}"
   printf '  "sarif": %s,\n' "$([ "$SARIF" = "1" ] && echo true || echo false)"
   printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
+  printf '  "provenance": %s,\n' "$PROVENANCE"
+  printf '  "artifacts": %s,\n' "$(artifacts_json)"
   printf '  "dimensions": [\n'
   first=1
   while IFS="$(printf '\t')" read -r dim code st gate why; do
@@ -1507,13 +1568,14 @@ blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$R
 # the report) happens before, in this run's staging dir; what remains is a handful of renames, with
 # INT/TERM held off so a Ctrl-C lands before the first or after the last, never between. summary.json
 # goes last: it is the file a reader checks first, so it never names a run whose SARIF is not there.
-# sarif/ is carried forward file by file (a `secret` run keeps the last `sast` SARIF) — the same
-# merge the shared dir always had; whether stale SARIF belongs in the record is F03's question.
+# sarif/ is replaced, not merged (F03): it holds this run's SARIF only, the files summary.json's
+# `artifacts` lists. A SARIF=0 run leaves sarif/ and evidence.json alone; their provenance says
+# which commit they describe.
 scan_publish(){
   local stage="$RUN_DIR/publish" f
   if [ "$SARIF" = "1" ]; then
     mkdir -p "$stage/sarif"
-    for f in "$PUB_SARIF"/* "$SARIF_DIR"/*; do
+    for f in "$SARIF_DIR"/*; do
       [ -f "$f" ] && cp -p "$f" "$stage/sarif/"
     done
     SARIF_DIR="$stage/sarif"; EVIDENCE="$stage/evidence.json"; REPORT_HTML="$stage/report-$TODAY.html"
@@ -1522,6 +1584,11 @@ scan_publish(){
   trap '' INT TERM
   if [ "$SARIF" = "1" ]; then
     mkdir -p "$PUB_SARIF"
+    # The shared sarif/ is this run's output only: an earlier run's file left beside it would be
+    # read (by an upload, by a person) as a current result for a dimension this run never ran.
+    for f in "$PUB_SARIF"/*; do
+      [ -f "$f" ] && [ ! -f "$stage/sarif/${f##*/}" ] && rm -f "$f"
+    done
     for f in "$stage/sarif"/*; do
       [ -f "$f" ] && mv -f "$f" "$PUB_SARIF/"
     done
