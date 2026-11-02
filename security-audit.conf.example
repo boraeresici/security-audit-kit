@@ -44,6 +44,14 @@
 # : "${JS_DIRS:=frontend apps/web}"
 # : "${JS_SKIP_RE:=(^|/)(node_modules|bower_components|vendor|third[_-]party|static|assets|public|dist|build|coverage)/}"
 
+# --- dependencies (python) ---
+# py-deps: which environment pip-audit inspects. Left empty: the repo's .venv, else an active
+# VIRTUAL_ENV only if it is a real venv (pyvenv.cfg) INSIDE this repo, else the committed manifests
+# are read statically (or the dimension is INDETERMINATE). A venv outside the repo — another
+# project's, a pyenv global interpreter — is ignored with a warning. Set this to audit an env that
+# lives elsewhere on purpose; the run names it. A path without bin/python is an error.
+# : "${PY_VENV:=/opt/venvs/myapp}"
+
 # --- IaC (checkov) ---
 # Terraform directory. If left empty, it is auto-detected from the first *.tf.
 # : "${TF_DIR:=infra/terraform}"

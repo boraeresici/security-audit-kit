@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Upgrade notes
+- py-deps no longer audits an active `VIRTUAL_ENV` that lives outside the repo or is not a venv.
+  If your repo has no `.venv` and you relied on a venv activated from elsewhere, set
+  `PY_VENV=/path/to/venv` (env or `.security-audit.conf`). Without it, py-deps reads the committed
+  manifests statically, or reports `indeterminate` when there are none.
+
+### Fixed
+- **py-deps audited whatever environment the shell had active (F29).** With no repo `.venv`, any
+  `VIRTUAL_ENV` was taken as this project's, without checking that it was a venv or belonged to
+  this repo. Measured: `VIRTUAL_ENV` pointing at a pyenv global interpreter made a
+  `pyproject.toml`-only repo audit that interpreter. pip-audit failed with "Dependency not found
+  on PyPI" and the gate HARD-blocked (rc=1) where `indeterminate` was expected. The same path
+  could report a clean foreign venv as a green py-deps. Now an active `VIRTUAL_ENV` is used only
+  if it has a `pyvenv.cfg` and lives inside the repo; otherwise the run says why it was ignored and
+  falls through to the static-manifest path. New `PY_VENV` names an env to audit explicitly (a
+  path without `bin/python` is an error, not a silent fallback). The audit line now says which
+  env was audited and why.
+
 ## [1.19.1] - 2026-11-02
 
 ### Upgrade notes

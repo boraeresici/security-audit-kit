@@ -10,8 +10,9 @@
 # Requires git; docker (gitleaks) and uvx/pipx (semgrep) are used if present, else skipped.
 # Usage:  bash tests/e2e.sh        (exit 0 = all assertions passed)
 set -uo pipefail
-# Hermetic: py-deps audits an active VIRTUAL_ENV when the repo has no .venv (by design), so the
-# caller's shell would decide what the no-venv fixtures see. Tests that need one set it themselves.
+# Hermetic: an active VIRTUAL_ENV inside a fixture repo would be audited by py-deps, and a foreign
+# one adds an "ignored" warning, so the caller's shell would shape what the py-deps fixtures see.
+# Tests that need one set it themselves.
 unset VIRTUAL_ENV
 
 KIT_SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -1083,6 +1084,47 @@ grep -q '"status": "indeterminate"' <<<"$PYSUM" \
   || no "py-deps: summary.json still calls it pass/fail"
 grep -q 'NOT a pass' <<<"$PYOUT" && ok "py-deps: the run says out loud that green is not coverage" \
   || no "py-deps: no INDETERMINATE banner on the run"
+# F29 — an active VIRTUAL_ENV is this repo's environment only if it is a venv AND lives inside the
+# repo. Measured failure: a developer shell with VIRTUAL_ENV=~/.pyenv/versions/3.12.9 (a global
+# interpreter, no pyvenv.cfg) got the pyproject-only fixture above audited against that
+# interpreter, and pip-audit's error HARD-blocked the gate instead of reporting INDETERMINATE.
+F29="$(mktemp -d)"
+mkdir -p "$F29/foreign/bin" "$F29/pyenv-global/bin"
+printf '#!/bin/sh\nexit 0\n' > "$F29/foreign/bin/python"; chmod +x "$F29/foreign/bin/python"
+printf 'home = /usr/bin\n' > "$F29/foreign/pyvenv.cfg"
+printf '#!/bin/sh\nexit 0\n' > "$F29/pyenv-global/bin/python"; chmod +x "$F29/pyenv-global/bin/python"
+f29(){ (cd "$PYR" && env "$@" bash tools/security-audit-kit/scan.sh deps 2>&1); }
+# (c) no repo .venv + a REAL venv that belongs to another project -> not audited.
+F29OUT="$(f29 VIRTUAL_ENV="$F29/foreign")"; F29RC=$?
+grep -q 'INDETERMINATE' <<<"$F29OUT" && ! grep -q 'pip-audit --strict' <<<"$F29OUT" \
+  && ok "F29: a foreign venv is not audited as this repo's" || no "F29: foreign venv audited as this repo's"
+grep -q 'not inside this repo' <<<"$F29OUT" && ok "F29: says why the active venv was ignored" \
+  || no "F29: foreign venv ignored silently"
+[ "$F29RC" -eq 0 ] && ok "F29: foreign venv does not block the gate" || no "F29: foreign venv blocked (rc=$F29RC)"
+# (d) no repo .venv + VIRTUAL_ENV pointing at an interpreter that is not a venv (pyenv global).
+F29OUT="$(f29 VIRTUAL_ENV="$F29/pyenv-global")"; F29RC=$?
+grep -q 'INDETERMINATE' <<<"$F29OUT" && ! grep -q 'pip-audit --strict' <<<"$F29OUT" \
+  && ok "F29: a non-venv VIRTUAL_ENV is not audited" || no "F29: non-venv interpreter audited"
+grep -q 'not a venv' <<<"$F29OUT" && ok "F29: says the VIRTUAL_ENV is not a venv" \
+  || no "F29: non-venv VIRTUAL_ENV ignored silently"
+[ "$F29RC" -eq 0 ] && ok "F29: pyenv-global case does not block (the measured rc=1)" \
+  || no "F29: pyenv-global case blocked (rc=$F29RC)"
+# (e) no repo .venv + an active venv INSIDE the repo (any name) -> it is the project's env. Passed
+#     through the unresolved mktemp path: on macOS /var -> /private/var, ROOT is the resolved one.
+mkdir -p "$PYR/venv/bin"; printf 'home = /usr/bin\n' > "$PYR/venv/pyvenv.cfg"
+printf '#!/bin/sh\nexit 0\n' > "$PYR/venv/bin/python"; chmod +x "$PYR/venv/bin/python"
+F29OUT="$(f29 VIRTUAL_ENV="$PYR/venv")"
+grep -q 'pip-audit --strict.*env venv' <<<"$F29OUT" && ok "F29: an active venv inside the repo is audited" \
+  || no "F29: the repo's own (non-.venv) venv was not selected"
+rm -rf "$PYR/venv"
+# (f) explicit opt-in: PY_VENV names the env to audit, wherever it lives, and the run says so.
+F29OUT="$(f29 PY_VENV="$F29/foreign" VIRTUAL_ENV="$F29/pyenv-global")"
+grep -q "pip-audit --strict.*env $F29/foreign.*PY_VENV" <<<"$F29OUT" \
+  && ok "F29: PY_VENV opt-in audits the named env and says why" || no "F29: PY_VENV not honoured"
+F29OUT="$(f29 PY_VENV="$F29/missing")"; F29RC=$?
+grep -q 'PY_VENV.*no bin/python' <<<"$F29OUT" && [ "$F29RC" -ne 0 ] \
+  && ok "F29: a broken PY_VENV is an error, not a silent fallback" || no "F29: broken PY_VENV accepted (rc=$F29RC)"
+rm -rf "$F29"
 # (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
 #     build a venv and install it, i.e. run the dependency tree's build scripts).
 printf 'requests==2.19.0\n' > "$PYR/requirements.txt"

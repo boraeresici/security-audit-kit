@@ -395,6 +395,10 @@ Seçilen alan için giriş sinyali, incelenecek sınırlar, uygulanmama nedeni, 
 - Fixture'lar: repo `.venv` + yabancı `VIRTUAL_ENV` (mevcut test korunur), `.venv` yok + yabancı gerçek venv, `.venv` yok + venv olmayan yorumlayıcı (pyenv global örneği), `.venv` yok + `ROOT` altındaki venv, `VIRTUAL_ENV` tanımsız.
 - Mevcut kullanıcılar için davranış değişikliği CHANGELOG'da ve F25 geçiş notunda belirtilmeli; README/README-tr'deki ortam seçimi açıklaması güncellenmeli.
 
+**Karar — 2 Kasım 2026:** Sıra `PY_VENV` > repo `.venv` > aktif `VIRTUAL_ENV`. Aktif ortam ancak `pyvenv.cfg` taşıyorsa ve fiziksel yolu (symlink çözülmüş) `ROOT` altındaysa proje ortamı sayılır. Diğer durumlarda neden yazılır ve no-env yoluna düşülür: statik manifest ya da INDETERMINATE. Yabancı ortamı kabul etmek için iki seçenek vardı: `VIRTUAL_ENV`'e güvenen bir bayrak ya da yol veren `PY_VENV`. Yol veren seçildi. Kullanıcı hangi ortamı denetlettiğini adıyla söylüyor; bayrak ise yine shell'in o an aktif ettiği şeye bağlı kalırdı. `PY_VENV` açık bir seçim olduğu için sonucu normal pip-audit sonucu gibi sayılır; denetim satırı ortamı ve seçilme nedenini yazar. `bin/python` içermeyen bir `PY_VENV` hatadır (rc=1); sessiz fallback yapılmaz. Yeni durum adı eklenmedi: üretilen sonuçlar mevcut `pass`/`findings`/`indeterminate`, F02'nin adlandırmasıyla çakışmıyor. F25'in rehberi henüz yazılmadığı için geçiş notu CHANGELOG'daki "Upgrade notes" altında.
+
+**Durum:** `fix/f29-py-deps-env` branch'inde uygulandı. e2e'ye 9 kontrol eklendi; kabul kriterlerindeki beş fixture ve `PY_VENV` için iki durum test ediliyor. Ölçülen pyenv-global vakası artık rc=0 ve INDETERMINATE.
+
 ## Güncel teslim sırası — ana planlama kaynağı
 
 Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki işler tek PR olmak zorunda değil. Koşullu işler açılmadığında sonraki bağımsız işi bekletmez. Önceki Paket A/B/C sırası bu tabloyla değiştirilmiştir.

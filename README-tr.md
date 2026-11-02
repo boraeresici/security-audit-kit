@@ -660,6 +660,7 @@ secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
    : "${SAST_PATHS:=backend frontend}"     # kaynak dizinleri daralt
    : "${TF_DIR:=infra/terraform}"          # terraform dizini
    # : "${JS_DIRS:=frontend}"              # js-deps: JS uygulamasi nerede (asagi bak)
+   # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: repo disindaki bir venv'i denetle (asagi bak)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # set degil = stack-auto; override icin set et
    ```
 3. `scan.sh` bunu otomatik source eder.
@@ -672,8 +673,11 @@ denetlenecek bir sey de yoktur: not dusulerek atlanir, hata sayilmaz. Geriye kal
 repodaki tek `package.json` dosyalari repoya girmis front-end asset'leriyse) **`JS_DIRS`** ayarla,
 arama tumuyle devre disi kalir.
 
-**`py-deps` bulamadigi bir ortam hakkinda asla yesil demez.** Repoda bir `.venv` varsa (ya da aktif
-bir tane varsa) pip-audit onu denetler. Yoksa — konteynerde kosan bir proje icin normal olan sekil —
+**`py-deps` bulamadigi bir ortam hakkinda asla yesil demez.** Repoda bir `.venv` varsa pip-audit onu
+denetler. Aktif bir `VIRTUAL_ENV` ancak gercek bir venv ise (`pyvenv.cfg` tasiyorsa) ve **bu repo
+icindeyse** sayilir; baska bir projenin venv'i ya da pyenv'in global yorumlayicisi bir uyariyla
+yok sayilir, cunku sonucu bu repo hakkinda bir sey soylemez. Baska yerde duran bir venv'i bilerek
+denetlemek icin **`PY_VENV`** ayarla; kosu hangi ortami neden denetledigini yazar. Yoksa — konteynerde kosan bir proje icin normal olan sekil —
 ortamdaki bos yorumlayiciyi denetlemek *hicbir seyi* denetlemek demektir; bu yuzden kit commit'lenmis
 manifest'leri (`requirements*.txt`, `uv.lock`, `Pipfile.lock`, `poetry.lock`, `pdm.lock`) bunun
 yerine **osv-scanner** ile okur: statik olarak, hicbir sey build edilmez veya kurulmaz. (`pip-audit -r`

@@ -79,6 +79,11 @@ TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelt
 JS_DIRS="${JS_DIRS:-}"
 JS_SKIP_RE="${JS_SKIP_RE:-(^|/)(node_modules|bower_components|vendor|third[_-]party|static|assets|public|dist|build|coverage|\.venv|site-packages)/}"
 
+# py-deps: the environment pip-audit inspects. Empty = the repo's .venv, else an active VIRTUAL_ENV
+# that is a real venv inside this repo, else the static-manifest path. Set it to audit an env that
+# lives elsewhere (a shared venv, a container-built one); the run names it and says why.
+PY_VENV="${PY_VENV:-}"
+
 # Python tools — pinned by version (no drift vs. CI). Empty = latest (not recommended).
 SEMGREP_VER="${SEMGREP_VER:-1.166.0}"
 CHECKOV_VER="${CHECKOV_VER:-3.3.1}"
@@ -234,6 +239,10 @@ sarif_rel(){ printf '%s/%s' "${SARIF_DIR#"$ROOT"/}" "$1"; }
 # the rule (a static guard) and the behaviour (a >6000-file fixture repo).
 has_tracked(){ grep -qE "$1" <<<"$(git ls-files 2>/dev/null)"; }
 
+# A directory's physical path (symlinks resolved: macOS /var -> /private/var), or the input as-is
+# if it does not exist — so "is X inside the repo" compares like with like.
+real_dir(){ (cd -P -- "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
+
 # ---- python deps (pip-audit) ----
 # Tracked python dependency manifests osv-scanner can read STATICALLY, minus the vendored kit's own
 # fixtures (material for a test, not this project's dependencies).
@@ -256,20 +265,37 @@ scan_py_deps(){
   [ -f .pip-audit-ignore ] && flags="$(awk '/^[^#]/{printf " --ignore-vuln %s",$1}' .pip-audit-ignore)"
   # Audit THIS repo's environment — not uvx's ephemeral one, and not whatever venv the caller
   # happens to have active. pip-audit defaults to the running interpreter (empty under uvx), so we
-  # point it somewhere explicitly, and the repo's own .venv WINS: preferring $VIRTUAL_ENV means a
-  # scan started from another project's shell audits THAT project and reports a green (or red)
+  # point it somewhere explicitly. Auditing another project's environment reports a green (or red)
   # py-deps saying nothing about this repo — a silently wrong answer, the worst kind for a gate.
-  local venv=""
-  [ -x "$ROOT/.venv/bin/python" ] && venv="$ROOT/.venv"
-  if [ -z "$venv" ] && [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
-    venv="$VIRTUAL_ENV"   # no repo venv -> an active one still beats uvx's interpreter
-  elif [ -n "$venv" ] && [ -n "${VIRTUAL_ENV:-}" ] && [ "$VIRTUAL_ENV" != "$venv" ]; then
-    warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not this repo's venv -> auditing ${venv#"$ROOT"/}"
+  # Order: PY_VENV (explicit opt-in, any path) > the repo's .venv > an active VIRTUAL_ENV, and the
+  # last only if it is a real venv (pyvenv.cfg) that lives INSIDE this repo. Anything else falls
+  # through to the no-env path (static manifests or INDETERMINATE) and the run says why.
+  local venv="" why=""
+  if [ -n "$PY_VENV" ]; then
+    [ -x "$PY_VENV/bin/python" ] \
+      || { warn deps "PY_VENV=$PY_VENV has no bin/python -> cannot audit the env you named"; return 1; }
+    venv="$PY_VENV"; why="PY_VENV"
+  elif [ -x "$ROOT/.venv/bin/python" ]; then
+    venv="$ROOT/.venv"; why="repo .venv"
+    [ -n "${VIRTUAL_ENV:-}" ] && [ "$(real_dir "$VIRTUAL_ENV")" != "$(real_dir "$venv")" ] \
+      && warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not this repo's venv -> auditing .venv"
+  elif [ -n "${VIRTUAL_ENV:-}" ]; then
+    local ve; ve="$(real_dir "$VIRTUAL_ENV")"
+    if [ ! -f "$VIRTUAL_ENV/pyvenv.cfg" ] || [ ! -x "$VIRTUAL_ENV/bin/python" ]; then
+      warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not a venv (no pyvenv.cfg) -> ignored"
+    else
+      case "$ve" in
+        "$(real_dir "$ROOT")"/*) venv="$VIRTUAL_ENV"; why="active venv inside the repo" ;;
+        *) warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not inside this repo -> ignored (set PY_VENV to audit it anyway)" ;;
+      esac
+    fi
   fi
   if [ -z "$venv" ]; then scan_py_deps_no_env; return $?; fi
 
+  local label="$venv" rv rr; rv="$(real_dir "$venv")"; rr="$(real_dir "$ROOT")"
+  case "$rv" in "$rr"/*) label="${rv#"$rr"/}" ;; esac
   export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
-  say deps "pip-audit --strict (==$PIP_AUDIT_VER, env ${venv#"$ROOT"/})"
+  say deps "pip-audit --strict (==$PIP_AUDIT_VER, env $label — $why)"
   # shellcheck disable=SC2086
   pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags || { [ $? -eq 127 ] && { warn deps "no uvx/pipx -> pip-audit skipped"; return 0; }; return 1; }
 }
