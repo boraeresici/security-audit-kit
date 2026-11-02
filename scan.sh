@@ -775,7 +775,7 @@ scan_doctor(){
 
   # Two overlapping runs used to interleave the same raw log and truncate summary.json under a
   # reader. Whether a lock is held right now (or left behind by a crash) is otherwise invisible.
-  printf '\nrun lock (one writer for raw-<date>.log + summary.json):\n'
+  printf '\nrun lock (one writer for raw-<date>.log + the shared record):\n'
   local lk lkowner
   lk="$(scan_lock_path)"
   if [ -d "$lk" ]; then
@@ -788,7 +788,7 @@ scan_doctor(){
   else
     printf '  ok  free (%s)\n' "${lk#"$ROOT"/}"
   fi
-  printf '      a second run waits %ss, then scans anyway into its own raw-<date>.<pid>.log\n' "$SCAN_LOCK_WAIT"
+  printf '      a second run waits %ss, then scans anyway into its own runs/<run-id>/ (shared record untouched)\n' "$SCAN_LOCK_WAIT"
 
   # The git hooks cannot see `npm i <pkg>`: the install script has already run by the time a
   # manifest reaches the index. Whether that window is guarded is invisible unless it is said.
@@ -1031,13 +1031,17 @@ scan_evidence(){
   # exists so evidence.json carries both halves (what the tools found, what we decided).
   local fargs=""
   [ -f "$FINDINGS_MD" ] && fargs="--findings $FINDINGS_MD"
+  # Write-then-rename, like summary.json: a builder that dies (or is cancelled) mid-write must
+  # leave the previous file whole, never half of a new one.
   # shellcheck disable=SC2086
-  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE" $fargs \
-    || { warn evidence "builder failed -> evidence.json not updated"; return 0; }
+  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" $fargs \
+    && mv -f "$EVIDENCE.$$.tmp" "$EVIDENCE" \
+    || { rm -f "$EVIDENCE.$$.tmp"; warn evidence "builder failed -> evidence.json not updated"; return 0; }
   # The skills' own findings have no other SARIF home -> put them on the same review surface.
   if [ -f "$KIT_DIR/lib/kit_sarif.py" ]; then
-    python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif" \
-      || warn evidence "kit.sarif not emitted"
+    python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif.$$.tmp" \
+      && mv -f "$SARIF_DIR/kit.sarif.$$.tmp" "$SARIF_DIR/kit.sarif" \
+      || { rm -f "$SARIF_DIR/kit.sarif.$$.tmp"; warn evidence "kit.sarif not emitted"; }
   fi
   [ "$REPORT" = "html" ] && scan_report
   return 0
@@ -1051,8 +1055,10 @@ scan_report(){
   have python3 || { warn report "no python3 -> HTML report skipped"; return 0; }
   [ -f "$KIT_DIR/lib/report_html.py" ] || { warn report "lib/report_html.py missing -> skipped"; return 0; }
   [ -f "$EVIDENCE" ] || { warn report "no evidence.json yet (re-run with SARIF=1) -> report skipped"; return 0; }
-  python3 "$KIT_DIR/lib/report_html.py" --evidence "$EVIDENCE" --out "$REPORT_HTML" \
-    --repo "$(basename "$ROOT")" --date "$TODAY" || warn report "report not written"
+  python3 "$KIT_DIR/lib/report_html.py" --evidence "$EVIDENCE" --out "$REPORT_HTML.$$.tmp" \
+    --repo "$(basename "$ROOT")" --date "$TODAY" \
+    && mv -f "$REPORT_HTML.$$.tmp" "$REPORT_HTML" \
+    || { rm -f "$REPORT_HTML.$$.tmp"; warn report "report not written"; }
   return 0
 }
 
@@ -1068,7 +1074,12 @@ LOG_DIR="$ROOT/docs/security/scan-findings"
 # truncates it while /sec-triage is reading it — a half-written record the reader cannot detect).
 # The lock serializes the writers; it deliberately does NOT gate the scan itself: refusing to scan
 # because someone else is scanning would block a push for a reason that has nothing to do with
-# security. If the lock cannot be taken, the run continues into its OWN log and says so.
+# security. If the lock cannot be taken, the run continues into its OWN run directory and says so.
+#
+# What the lock protects is the SHARED record — summary.json, sarif/, evidence.json, report-*.html
+# (what /sec-triage, Code Scanning upload and humans read). Every run, holder or not, first writes
+# into its own runs/<run-id>/; only the holder then publishes that into the shared record, at the
+# very end, in one short step that a Ctrl-C cannot split. A run without the lock never touches it.
 SCAN_LOCK_WAIT="${SCAN_LOCK_WAIT:-30}"            # seconds to wait for the other run
 SCAN_LOCK_STALE_MIN="${SCAN_LOCK_STALE_MIN:-60}"  # a lock older than this is a crashed run
 LOCK_DIR=""
@@ -1158,30 +1169,73 @@ run_scans(){
 # Every scan: write raw output to a per-day file (persistent trail) + a machine-readable
 # summary.json + (opt-in) SARIF, then print a triage instruction. raw-*.log/summary.json
 # are transient (gitignored); the persistent record is the triage's findings-*.md.
+#
+# The shared record (PUB_*) is what readers use; this run's own copy (RUN_DIR) is where it is
+# built. The run id is in summary.json, never in evidence.json: that one must diff to nothing
+# across two runs over unchanged code.
+RUN_ID="$(date +%Y%m%dT%H%M%S)-$$"
+RUNS_DIR="$LOG_DIR/runs"
+RUN_DIR="$RUNS_DIR/$RUN_ID"
+SCAN_RUNS_KEEP_DAYS="${SCAN_RUNS_KEEP_DAYS:-7}"   # a lock-less run's own record is kept this long
+PUB_SUMMARY="$LOG_DIR/summary.json"
+PUB_SARIF="$LOG_DIR/sarif"
+PUB_EVIDENCE="$LOG_DIR/evidence.json"
+PUB_REPORT="$LOG_DIR/report-$TODAY.html"
 LOG="$LOG_DIR/raw-$TODAY.log"
-SUMMARY="$LOG_DIR/summary.json"
-SARIF_DIR="$LOG_DIR/sarif"
-EVIDENCE="$LOG_DIR/evidence.json"
+SUMMARY="$RUN_DIR/summary.json"
+SARIF_DIR="$RUN_DIR/sarif"
+EVIDENCE="$RUN_DIR/evidence.json"
 FINDINGS_MD="$LOG_DIR/findings-$TODAY.md"
-REPORT_HTML="$LOG_DIR/report-$TODAY.html"
+REPORT_HTML="$RUN_DIR/report-$TODAY.html"
 RESULTS_FILE="$(mktemp)"
-trap 'rm -f "$RESULTS_FILE"; scan_lock_release' EXIT INT TERM
+
+# The holder's run dir is only a staging area (its log goes to the daily trail): drop it on any
+# exit, published or not. A lock-less run's dir IS its record, so it stays — without summary.json
+# when the run was cut short. The dir goes BEFORE the lock, so no other run sees it half-removed.
+scan_exit_cleanup(){
+  rm -f "$RESULTS_FILE"
+  [ "$LOCK_HELD" = "1" ] && rm -rf "$RUN_DIR" 2>/dev/null
+  scan_lock_release
+}
+# A trapped INT/TERM must END the run. Without the `exit`, bash runs the handler and carries on:
+# the lock is released and the rest of the script then writes the shared record without it.
+scan_abort(){
+  trap - EXIT INT TERM
+  note run "cancelled (signal) -> nothing published; the previous record is unchanged"
+  scan_exit_cleanup
+  exit "$1"
+}
+trap 'scan_exit_cleanup' EXIT
+trap 'scan_abort 130' INT
+trap 'scan_abort 143' TERM
 mkdir -p "$LOG_DIR"
-[ "$SARIF" = "1" ] && mkdir -p "$SARIF_DIR"
 
 # Take the writer lock before ANY artifact is touched — `evidence`/`report` included, since they
 # read summary.json + sarif/ and would otherwise be able to read a record mid-write.
 if ! scan_lock_acquire; then
-  note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> running anyway, into a SEPARATE log"
-  note lock "(the scan is never skipped for a lock; only the shared record is kept coherent)"
-  LOG="$LOG_DIR/raw-$TODAY.$$.log"
+  # evidence/report exist only to rewrite the SHARED record; without the lock that is exactly the
+  # write we must not make. Unlike a scan, refusing costs nothing: re-run it once the other is done.
+  case "$CMD" in evidence|report)
+    note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> '$CMD' not run (it rewrites the shared record); retry when the other scan is done"
+    exit 1 ;;
+  esac
+  note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> running anyway, into a SEPARATE run directory"
+  note lock "(the scan is never skipped for a lock; the shared record stays the other run's: ${RUN_DIR#"$ROOT"/})"
+  LOG="$RUN_DIR/raw.log"
 fi
 
 # Rebuild the record / re-render the report from what is already on disk, without re-scanning.
-[ "$CMD" = "evidence" ] && { scan_evidence; exit $?; }
-[ "$CMD" = "report" ]   && { scan_report; exit $?; }
+# Holding the lock, these work on the shared record directly (each write is write-then-rename).
+if [ "$CMD" = "evidence" ] || [ "$CMD" = "report" ]; then
+  SUMMARY="$PUB_SUMMARY"; SARIF_DIR="$PUB_SARIF"; EVIDENCE="$PUB_EVIDENCE"; REPORT_HTML="$PUB_REPORT"
+  [ "$CMD" = "evidence" ] && { scan_evidence; exit $?; }
+  scan_report; exit $?
+fi
 
-printf '\n===== %s  scan.sh %s =====\n' "$(date +%FT%T)" "$CMD" >> "$LOG"
+mkdir -p "$RUN_DIR"
+[ "$SARIF" = "1" ] && mkdir -p "$SARIF_DIR"
+
+printf '\n===== %s  scan.sh %s  run %s =====\n' "$(date +%FT%T)" "$CMD" "$RUN_ID" >> "$LOG"
 
 run_scans "$CMD" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
@@ -1190,6 +1244,7 @@ rc=${PIPESTATUS[0]}
 {
   printf '{\n'
   printf '  "timestamp": "%s",\n' "$(date +%FT%T)"
+  printf '  "run_id": "%s",\n' "$RUN_ID"
   printf '  "command": "%s",\n' "$CMD"
   printf '  "exit_code": %s,\n' "$rc"
   printf '  "raw_log": "%s",\n' "${LOG#"$ROOT"/}"
@@ -1208,9 +1263,49 @@ rc=${PIPESTATUS[0]}
   printf '\n  ]\n}\n'
 } > "$SUMMARY.$$.tmp" && mv -f "$SUMMARY.$$.tmp" "$SUMMARY"
 
-[ "$SARIF" = "1" ] && scan_evidence
+# Publish this run into the shared record — the holder only. Everything slow (the evidence builder,
+# the report) happens before, in this run's staging dir; what remains is a handful of renames, with
+# INT/TERM held off so a Ctrl-C lands before the first or after the last, never between. summary.json
+# goes last: it is the file a reader checks first, so it never names a run whose SARIF is not there.
+# sarif/ is carried forward file by file (a `secret` run keeps the last `sast` SARIF) — the same
+# merge the shared dir always had; whether stale SARIF belongs in the record is F03's question.
+scan_publish(){
+  local stage="$RUN_DIR/publish" f
+  if [ "$SARIF" = "1" ]; then
+    mkdir -p "$stage/sarif"
+    for f in "$PUB_SARIF"/* "$SARIF_DIR"/*; do
+      [ -f "$f" ] && cp -p "$f" "$stage/sarif/"
+    done
+    SARIF_DIR="$stage/sarif"; EVIDENCE="$stage/evidence.json"; REPORT_HTML="$stage/report-$TODAY.html"
+    scan_evidence
+  fi
+  trap '' INT TERM
+  if [ "$SARIF" = "1" ]; then
+    mkdir -p "$PUB_SARIF"
+    for f in "$stage/sarif"/*; do
+      [ -f "$f" ] && mv -f "$f" "$PUB_SARIF/"
+    done
+  fi
+  [ -f "$EVIDENCE" ] && mv -f "$EVIDENCE" "$PUB_EVIDENCE"
+  [ -f "$REPORT_HTML" ] && mv -f "$REPORT_HTML" "$PUB_REPORT"
+  mv -f "$SUMMARY" "$PUB_SUMMARY"
+  trap 'scan_abort 130' INT
+  trap 'scan_abort 143' TERM
+  SUMMARY="$PUB_SUMMARY"; SARIF_DIR="$PUB_SARIF"; EVIDENCE="$PUB_EVIDENCE"; REPORT_HTML="$PUB_REPORT"
+  # Lock-less runs' own records, once old enough that nobody is still reading them.
+  find "$RUNS_DIR" -mindepth 1 -maxdepth 1 -type d -mtime "+$SCAN_RUNS_KEEP_DAYS" -exec rm -rf {} + 2>/dev/null
+  return 0
+}
 
-printf '\n\033[36m── raw report: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}" "${SUMMARY#"$ROOT"/}"
+if [ "$LOCK_HELD" = "1" ]; then
+  scan_publish
+else
+  [ "$SARIF" = "1" ] && scan_evidence
+  note lock "this run's record: ${RUN_DIR#"$ROOT"/}/ — the shared summary.json is still the other run's"
+fi
+
+printf '\n\033[36m── run: %s\033[0m\n' "$RUN_ID"
+printf '\033[36m── raw report: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}" "${SUMMARY#"$ROOT"/}"
 [ "$SARIF" = "1" ] && printf '\033[36m── SARIF: %s/\033[0m\n' "${SARIF_DIR#"$ROOT"/}"
 [ -f "$EVIDENCE" ] && printf '\033[36m── evidence: %s (normalized findings; schema: docs/schema/evidence.md)\033[0m\n' "${EVIDENCE#"$ROOT"/}"
 printf '\033[36m── NEXT STEP — for triage + findings-%s.md, in Claude Code:  /sec-triage\033[0m\n' "$TODAY"

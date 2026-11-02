@@ -356,9 +356,18 @@ which `/sec-triage` could read mid-write. A `mkdir`-based lock in `.git/security
 serializes the *writers*: `summary.json` is written to a temp file and renamed (a reader sees the old
 record or the new one, never half of one), and a second run waits `SCAN_LOCK_WAIT` seconds (30 by
 default) for the lock. If it cannot take it, **the scan still runs** — a push is never blocked because
-someone else is scanning — it just writes its own `raw-<date>.<pid>.log` and says so. A lock left
+someone else is scanning — it just writes its own record and says so. A lock left
 behind by a killed scan is reclaimed on a dead owner PID or after `SCAN_LOCK_STALE_MIN` (60) minutes;
 `scan.sh doctor` prints whether the lock is free, held, or stale.
+
+Every run gets an id (`run_id` in `summary.json`) and builds its record in its own
+`scan-findings/runs/<run-id>/` first. Only the lock holder then publishes it into the shared
+record (`summary.json`, `sarif/`, `evidence.json`, `report-<date>.html`), in one short step at the
+very end that a Ctrl-C cannot split; `summary.json` goes last. A run without the lock never
+touches the shared record. It keeps its own complete record (raw log, summary, SARIF, evidence)
+in `runs/<run-id>/` for `SCAN_RUNS_KEEP_DAYS` (7) days. A cancelled run stops, publishes nothing
+and leaves the previous record as it was. `scan.sh evidence` / `report` rewrite the shared record,
+so without the lock they refuse (exit 1) instead of writing.
 
 > **The vendored kit is read-only.** Don't hand-edit `tools/security-audit-kit/` — not you, not a
 > teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next

@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **A scan that could not take the lock no longer overwrites the other run's record (F01).** Before,
+  only its raw log moved aside: `summary.json`, `sarif/`, `evidence.json`, `kit.sarif` and the HTML
+  report were still shared, so the lock-less run replaced the holder's record. Now every run gets
+  a `run_id` (in `summary.json`) and builds its record in `scan-findings/runs/<run-id>/`. Only the
+  lock holder publishes it to the shared paths, at the end, with INT/TERM held off for the few
+  renames; `summary.json` goes last. A lock-less run keeps its own complete record there (pruned
+  after `SCAN_RUNS_KEEP_DAYS`, default 7) and says where it is.
+- **Ctrl-C / TERM now ends the run.** The trap released the lock and then let the script carry on,
+  so a cancelled scan went on to write the shared record without the lock. A cancelled run now
+  exits 130/143, publishes nothing and leaves the previous record intact.
+- `scan.sh evidence` / `report` refuse (exit 1) instead of rewriting the shared record without the
+  lock. `evidence.json`, `kit.sarif` and the HTML report are written to a temp file and renamed into
+  place, like `summary.json`.
+- The raw log of a lock-less run moved from `raw-<date>.<pid>.log` to `runs/<run-id>/raw.log`.
+
+### Tests
+- **e2e no longer fails at random on its own assertions.** 56 checks piped output into `grep -q`;
+  `grep -q` exits on the first match, the writer gets SIGPIPE, and `pipefail` turned a match into a
+  failure (and a negated check into a false pass). Output size and timing decided which checks
+  broke on a given run. They now read from a here-string, like the kit's own code since v1.17.0.
+- e2e is hermetic against the caller's `VIRTUAL_ENV`, and the bootstrap legacy-pin fixture is cut
+  the way `scripts/release.sh` cuts a tag (versioned CHANGELOG, regenerated CHECKSUMS), so an
+  open `[Unreleased]` section no longer fails it.
+
 ## [1.18.0]
 
 ### Fixed (v1.18.0-rc.3 — release metadata and legacy upgrade verification)
