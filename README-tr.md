@@ -98,17 +98,17 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.17.0
-bash bootstrap.sh v1.17.0 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.17.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.19.0
+bash bootstrap.sh v1.19.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.19.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 # <sha>, tag'in isaret ettigi COMMIT'tir. Surum tag'leri annotated oldugu icin `git rev-parse <tag>`
 # sana tag NESNESINI verir ve --expect bunu reddeder. Commit'i acikca iste:
-#   git rev-parse v1.17.0^{commit}          # bu repo'nun bir klonunda
-#   gh api repos/<owner>/<repo>/git/refs/tags/v1.17.0 --jq .object.sha   # type=tag ise cozmen gerekir
+#   git rev-parse v1.19.0^{commit}          # bu repo'nun bir klonunda
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.19.0 --jq .object.sha   # type=tag ise cozmen gerekir
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.17.0`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.19.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
@@ -179,7 +179,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.17.0          # bir tag'e pinle
+  rev: v1.19.0          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -224,9 +224,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    (clone yok):
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.16.0
-   # latest tag       : v1.17.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.17.0
+   # vendored version : v1.18.0
+   # latest tag       : v1.19.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.19.0
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
    `make` hedefine baglanabilir.
@@ -236,9 +236,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.17.0   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.19.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.17.0'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.19.0'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
@@ -322,7 +322,7 @@ bash tools/security-audit-kit/scan.sh report     # tek dosyalik HTML raporu uret
 ```
 
 Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar (tarama gecti mi,
-boyut basina). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
+boyut basina, ve onu yazan kosunun `run_id`'si — asagidaki *Ayni anda iki tarama* bolumune bak). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
 -> `.../sarif/`; yani sira **`evidence.json`**: her boyuttan her bulgu **tek bir bicimde**,
 severity `critical|high|medium|low|info` olarak normalize edilmis ve aracin kendi degeri yaninda
 aynen korunmus halde. Var olma sebebi araclarin uyusmamasi: osv-scanner CVSS 9.1'lik bir advisory'ye

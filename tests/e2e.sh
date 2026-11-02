@@ -507,11 +507,13 @@ RELTEST="$(mktemp -d)"
 mkdir -p "$RELTEST/scripts"
 cp "$KIT_SRC/scripts/release.sh" "$RELTEST/scripts/release.sh"
 cp "$KIT_SRC/scan.sh" "$RELTEST/scan.sh"
-awk '!done && $0 == "## [1.18.0]" {$0="## [Unreleased]"; done=1} {print}' \
-  "$KIT_SRC/CHANGELOG.md" > "$RELTEST/CHANGELOG.md"
+# A synthetic CHANGELOG, not the kit's own: tied to a real version header, this check breaks the
+# moment the next release is prepared (the header it rewrites is no longer the top one).
+printf '# Changelog\n\n## [Unreleased]\n\n### Fixed\n- pending\n\n## [98.0.0] - 2026-01-01\n' \
+  > "$RELTEST/CHANGELOG.md"
 ( cd "$RELTEST" && git init -q )
-ROUT="$(cd "$RELTEST" && bash scripts/release.sh rc 1.18.0 --yes --no-gh 2>&1 || true)"
-grep -q "CHANGELOG top version is '1.17.0', expected '1.18.0'" <<<"$ROUT" \
+ROUT="$(cd "$RELTEST" && bash scripts/release.sh rc 99.0.0 --yes --no-gh 2>&1 || true)"
+grep -q "CHANGELOG top version is '98.0.0', expected '99.0.0'" <<<"$ROUT" \
   && ok "release: refuses an RC while CHANGELOG still stops at Unreleased" \
   || no "release: accepted an RC without its CHANGELOG version section"
 rm -rf "$RELTEST"
