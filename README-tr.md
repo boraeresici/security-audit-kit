@@ -359,8 +359,14 @@ altinda `mkdir` tabanli bir kilit *yazicilari* siraya sokuyor: `summary.json` on
 yazilip rename ediliyor (okuyan ya eski ya yeni kaydi gorur, asla yarisini degil) ve ikinci kosu
 kilit icin `SCAN_LOCK_WAIT` saniye (varsayilan 30) bekliyor. Alamazsa **tarama yine de kosar** —
 baskasi tarama yapiyor diye bir push asla bloklanmaz — sadece kendi kaydina yazar ve bunu soyler.
-Oldurulen bir taramadan kalan kilit, sahibinin PID'i olu ise ya da `SCAN_LOCK_STALE_MIN` (60)
-dakika sonra geri alinir; `scan.sh doctor` kilidin bos/tutulu/bayat oldugunu yazar.
+Kilit yalniz sahibi gercekten yoksa geri alinir, asla sadece yasi yuzunden degil (uzun bir tarama
+korunur): sahibin PID'i olu ise, canli ama baska bir surec ise (PID yeniden kullanimi; baslangic
+zamanindan anlasilir) ya da kilit baska bir host'ta alinmis ve heartbeat'i (her
+`SCAN_LOCK_HEARTBEAT_SEC`, 30 saniyede yenilenir) `SCAN_LOCK_STALE_MIN` (60) dakikadir susmus ise.
+Okunamayan bir kilit beklenmez, birkac saniye sonra geri alinir. Ayni bayat kilidi birden fazla kosu
+gorurse yalniz biri geri alir. Bir kosu kilidi yalniz kendi token'i hala gecerliyken siler ve
+yalniz o token'la yayinlar. Kilidi elinden alinan kosu kaydini `runs/<run-id>/` altinda tutar.
+`scan.sh doctor` kilidin bos/tutulu (kim tarafindan)/bayat (neden) oldugunu yazar.
 
 Her kosu bir kimlik alir (`summary.json` icinde `run_id`) ve kaydini once kendi
 `scan-findings/runs/<run-id>/` dizininde kurar. Ortak kayda (`summary.json`, `sarif/`,
