@@ -23,9 +23,25 @@ All notable changes to this project are documented here. The format is based on
   upload the directory, run every dimension you want uploaded in the same scan (e.g. `all`).
 - `summary.json` gains `provenance` and `artifacts`; `evidence.json` gains `scan.provenance`
   (both additive).
+- The end-of-scan output is now one closing summary (F14a). Lines other tools may read are kept:
+  `── run: <id>` (now followed by `· scan <cmd> · <s>s`), `NOT inspected:`, `BLOCKED (rc=…)`,
+  `NEXT STEP`. The hooks' own BLOCKED line no longer guesses the cause ("secret in staged changes").
+  It points at the summary, which says whether a finding or a failed scanner blocked.
+- `summary.json` gains `seconds` (run and per dimension; additive, not copied into evidence.json).
 - `scan.sh evidence` and `scan.sh report` now exit 1 when they cannot write their file (no SARIF,
   no evidence.json, no python3, builder failure). Scripts that called them and ignored a missing
   output should check the exit code. A scan's own exit code is not affected.
+
+### Added
+- **Closing summary and `scan.sh help` (F14a).** Every scan ends with one screen. It shows each
+  dimension with its status, time and reason, plus the dimensions the command does not cover
+  ("not in 'all': osv guarddog zizmor sbom"). One line names the dimensions left uninspected
+  because Docker is not running, or uvx/pipx is missing, and how to fix that; it appears on every
+  hook run, not only at install. When something blocks, the summary says whether a finding did,
+  with the ways to unblock (fix, allowlist with an expiry, `/sec-triage`, `--no-verify`), or a
+  scanner that failed ("not a finding; do not allowlist it"). `scan.sh help` (`-h`, `--help`)
+  prints the commands, gate tags, prerequisites, what `all` leaves out and the first-run path.
+  `summary.json` times every dimension and the run.
 
 ### Fixed
 - **py-deps audited whatever environment the shell had active (F29).** With no repo `.venv`, any

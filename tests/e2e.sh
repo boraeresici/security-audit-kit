@@ -1294,6 +1294,32 @@ print(p.get("commit"), p.get("dirty"), (p.get("kit") or {}).get("version") or "-
   [ "$F04RC" -eq 0 ] && grep -q 'gate result is unchanged' "$F02/out" \
     && ok "F04: a failed post-scan report is reported, and does not change the gate" || no "F04: post-scan report failure rc=$F04RC or silent"
   mv "$F02/report_html.py.bak" "$F02/repo/tools/security-audit-kit/lib/report_html.py"
+  echo "-- F14a: one closing summary — per-dimension status + time, coverage, why, what next --"
+  f04 env F02_DINFO=1 "$BASH" tools/security-audit-kit/scan.sh all
+  F14SUM="$(cat "$F03D/summary.json" 2>/dev/null)"
+  /usr/bin/python3 -I -c 'import json,sys
+d=json.loads(sys.argv[1]); ds=d["dimensions"]
+assert ds and all(isinstance(x.get("seconds"),(int,float)) and x["seconds"]>=0 for x in ds), ds
+assert isinstance(d.get("seconds"),(int,float))' "$F14SUM" 2>/dev/null \
+    && ok "F14a: summary.json times every dimension and the run (seconds)" || no "F14a: seconds missing in summary.json"
+  F14OUT="$(sed 's/\x1b\[[0-9;]*m//g' "$F02/out")"
+  grep -qE '^   secret +skipped +[0-9]+\.[0-9]s +no docker' <<<"$F14OUT" \
+    && grep -qE '^   sast +pass +[0-9]+\.[0-9]s' <<<"$F14OUT" \
+    && ok "F14a: closing table lists each dimension with status, time and reason" || no "F14a: no closing table"
+  grep -q "not in 'all': osv guarddog zizmor sbom" <<<"$F14OUT" \
+    && ok "F14a: the summary names the dimensions this command does not cover" || no "F14a: coverage gap not shown"
+  grep -q 'Docker is not running: secret container' <<<"$F14OUT" && grep -q 'start Docker' <<<"$F14OUT" \
+    && ok "F14a: one Docker line says what was not inspected and how to fix it" || no "F14a: no Docker line"
+  F14RC=0; f04 "$BASH" tools/security-audit-kit/scan.sh help || F14RC=$?
+  [ "$F14RC" -eq 0 ] && grep -q 'container' "$F02/out" && grep -q "not in 'all'" "$F02/out" \
+    && ok "F14a: scan.sh help lists commands, gate and coverage" || no "F14a: scan.sh help missing (rc=$F14RC)"
+  # pre-push blocked by a CRASHED scanner: say so, and do not suggest allowlisting it
+  f04 env F02_DINFO=1 F02_RC=2 "$BASH" tools/security-audit-kit/hooks/pre-push
+  grep -q 'scanner FAILED' "$F02/out" && grep -q 'not a finding' "$F02/out" && grep -q 'do not allowlist' "$F02/out" \
+    && ok "F14a: pre-push blocked by a crash says it is not a finding" || no "F14a: pre-push crash message missing"
+  f04 env F02_DINFO=1 F02_RC=1 "$BASH" tools/security-audit-kit/hooks/pre-push
+  grep -q 'allowlist with an expiry' "$F02/out" && grep -q -- '--no-verify' "$F02/out" && ! grep -q 'scanner FAILED' "$F02/out" \
+    && ok "F14a: pre-push blocked by findings lists the options" || no "F14a: pre-push findings message missing"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 

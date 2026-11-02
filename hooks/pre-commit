@@ -16,7 +16,7 @@ manifests='(^|/)(pyproject\.toml|uv\.lock|requirements[^/]*\.txt|Pipfile|package
 # 1) Staged-secret gate (every commit). Catches a secret in ANY staged file before it
 #    is ever committed — not just at push time.
 if ! bash "$KIT/scan.sh" staged; then
-  echo "[pre-commit] BLOCKED: secret in staged changes. Remove it or bypass with SKIP_SECURITY=1."
+  echo "[pre-commit] BLOCKED by the staged-secret scan (a finding, or a failed scanner — see above). Bypass: SKIP_SECURITY=1"
   exit 1
 fi
 
@@ -27,7 +27,7 @@ fi
 if grep -qE "$manifests" <<<"$(git diff --cached --name-only)"; then
   echo "[pre-commit] Dependency manifest changed -> scan.sh deps"
   if ! bash "$KIT/scan.sh" deps; then
-    echo "[pre-commit] BLOCKED: dependency finding. Fix it or bypass with SKIP_SECURITY=1."
+    echo "[pre-commit] BLOCKED by the dependency scan (a finding, or a failed scanner — see above). Bypass: SKIP_SECURITY=1"
     exit 1
   fi
 fi

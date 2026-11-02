@@ -1350,6 +1350,16 @@ scan_lock_release(){
 
 REPORT="${REPORT:-}"
 
+# help: the usage block at the top of this file, plus what `all` leaves out and what the tags mean.
+scan_help(){
+  awk '/^# Usage:/{on=1} on && /^#$/{exit} on{sub(/^# ?/,""); print}' "$KIT_DIR/scan.sh"
+  printf '\n  [HARD] blocks commit/push on a finding · [soft] reported, never blocks · [artifact] writes a file\n'
+  printf "  not in 'all': osv guarddog zizmor sbom — run them by name (or /sec-audit)\n"
+  printf '  Needs docker: secret staged container sbom osv · needs uvx or pipx: sast changed iac deps(pip-audit) guarddog zizmor\n'
+  printf '  Missing docker or uvx/pipx -> that dimension is "skipped" (not a pass); the run says which.\n'
+  printf '  Start here: scan.sh doctor -> scan.sh all -> read the closing summary -> /sec-triage\n'
+}
+case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
 [ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
@@ -1358,16 +1368,32 @@ REPORT="${REPORT:-}"
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
 [ "${1:-}" = "pkgcheck" ] && { shift; scan_pkgcheck "$@"; exit $?; }
 
+# Wall clock in milliseconds: bash 5's EPOCHREALTIME, else perl, else whole seconds (bash 3.2 on
+# macOS has neither %N nor EPOCHREALTIME; a duration rounded to the second is still a duration).
+now_ms(){
+  if [ -n "${EPOCHREALTIME:-}" ]; then local t="${EPOCHREALTIME/[.,]/}"; printf '%s\n' "$((10#$t / 1000))"
+  elif have perl; then perl -MTime::HiRes=time -e 'printf "%d\n", time()*1000'
+  else printf '%s\n' "$(( $(date +%s) * 1000 ))"; fi
+}
+
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
+# Columns: name, exit code, status, gate, milliseconds, reason (last: it is prose and may be empty).
 _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
-  "$@"; local c=$? st gate=allow
+  local t0; t0="$(now_ms)"
+  "$@"; local c=$? st gate=allow ms
+  ms=$(( $(now_ms) - t0 ))
   st="$DIM_STATUS"
   if [ -z "$st" ]; then
     case "$c" in 0) st=pass ;; 1) st=findings ;; "$RC_INDETERMINATE") st=indeterminate ;; *) st=error ;; esac
   fi
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && gate=block
   # Tabs/newlines would break the record; the reason is one line of prose.
-  printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$c" "$st" "$gate" "$(printf '%s' "${DIM_REASON:-$DIM_WARN}" | tr '\t\n' '  ')" >> "$RESULTS_FILE"
+  # A warn line explains a dimension that did not inspect; on pass/findings the last warn is just a
+  # notice (e.g. "VIRTUAL_ENV ignored") and would read as the cause of the result — so only an
+  # explicit dim_mark reason is kept there.
+  local why="$DIM_REASON"
+  case "$st" in pass|findings) ;; *) [ -n "$why" ] || why="$DIM_WARN" ;; esac
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$c" "$st" "$gate" "$ms" "$(printf '%s' "$why" | tr '\t\n' '  ')" >> "$RESULTS_FILE"
   # RC_INDETERMINATE is recorded but never blocks: it says "no opinion", not "finding".
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && return 1; return 0; }
 
@@ -1387,7 +1413,7 @@ run_scans(){
     zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report|help)"; return 2 ;;
   esac
   return $rc
 }
@@ -1539,8 +1565,10 @@ mkdir -p "$RUN_DIR"
 
 printf '\n===== %s  scan.sh %s  run %s =====\n' "$(date +%FT%T)" "$CMD" "$RUN_ID" >> "$LOG"
 
+RUN_T0="$(now_ms)"
 run_scans "$CMD" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
+RUN_SECONDS="$(awk -v ms="$(( $(now_ms) - RUN_T0 ))" 'BEGIN{printf "%.1f", ms/1000}')"
 
 # Machine-readable summary (consumed by /sec-triage; safe to parse). Schema 2 (F02): each dimension
 # says what happened (status + reason) and, separately, what it did to the gate. Contract in
@@ -1553,6 +1581,7 @@ blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$R
   printf '  "run_id": "%s",\n' "$RUN_ID"
   printf '  "command": "%s",\n' "$CMD"
   printf '  "exit_code": %s,\n' "$rc"
+  printf '  "seconds": %s,\n' "$RUN_SECONDS"
   printf '  "raw_log": "%s",\n' "${LOG#"$ROOT"/}"
   printf '  "sarif": %s,\n' "$([ "$SARIF" = "1" ] && echo true || echo false)"
   printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
@@ -1560,12 +1589,12 @@ blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$R
   printf '  "artifacts": %s,\n' "$(artifacts_json)"
   printf '  "dimensions": [\n'
   first=1
-  while IFS="$(printf '\t')" read -r dim code st gate why; do
+  while IFS="$(printf '\t')" read -r dim code st gate ms why; do
     [ -z "$dim" ] && continue
     [ "$first" = 1 ] || printf ',\n'
     first=0
-    printf '    {"name": "%s", "exit_code": %s, "status": "%s", "gate": "%s", "reason": %s}' \
-      "$dim" "$code" "$st" "$gate" "$(json_str "$why")"
+    printf '    {"name": "%s", "exit_code": %s, "status": "%s", "gate": "%s", "seconds": %s, "reason": %s}' \
+      "$dim" "$code" "$st" "$gate" "$(awk -v ms="$ms" 'BEGIN{printf "%.1f", ms/1000}')" "$(json_str "$why")"
   done < "$RESULTS_FILE"
   printf '\n  ]\n}\n'
 } > "$SUMMARY.$$.tmp" && mv -f "$SUMMARY.$$.tmp" "$SUMMARY"
@@ -1626,16 +1655,36 @@ else
   note lock "this run's record: ${RUN_DIR#"$ROOT"/}/ — the shared summary.json is still the other run's"
 fi
 
-printf '\n\033[36m── run: %s\033[0m\n' "$RUN_ID"
-printf '\033[36m── raw report: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}" "${SUMMARY#"$ROOT"/}"
+# ---- closing summary (F14a): one screen — every dimension with its status, time and why; what
+# this command does not cover; what was not inspected and how to fix it; what blocked; what next.
+printf '\n\033[36m── run: %s · scan %s · %ss\033[0m\n' "$RUN_ID" "$CMD" "$RUN_SECONDS"
+awk -F'\t' '{ why=$6; if (length(why) > 72) why=substr(why,1,69) "..."
+  printf "   %-10s %-14s %5.1fs  %s\n", $1, $3, $5/1000, why }' "$RESULTS_FILE"
+not_covered=""
+case "$CMD" in
+  all)  not_covered="osv guarddog zizmor sbom" ;;
+  fast) not_covered="secret (full history) sast container iac osv guarddog zizmor sbom" ;;
+esac
+[ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
+# The usual reason for a hole in coverage is the toolchain, not the repo: name the cause once.
+no_docker="$(awk -F'\t' '$3=="skipped" && $6 ~ /no docker/{printf " %s",$1}' "$RESULTS_FILE")"
+[ -n "$no_docker" ] && printf '\033[33m── Docker is not running:%s NOT inspected — start Docker and re-run "scan.sh %s"\033[0m\n' "$no_docker" "$CMD"
+no_uvx="$(awk -F'\t' '$3=="skipped" && $6 ~ /no uvx\/pipx/{printf " %s",$1}' "$RESULTS_FILE")"
+[ -n "$no_uvx" ] && printf '\033[33m── uvx/pipx not found:%s NOT inspected — install uv (https://docs.astral.sh/uv/) and re-run "scan.sh %s"\033[0m\n' "$no_uvx" "$CMD"
+printf '\033[36m── raw log: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}" "${SUMMARY#"$ROOT"/}"
 [ "$SARIF" = "1" ] && printf '\033[36m── SARIF: %s/\033[0m\n' "${SARIF_DIR#"$ROOT"/}"
-[ -f "$EVIDENCE" ] && printf '\033[36m── evidence: %s (normalized findings; schema: docs/schema/evidence.md)\033[0m\n' "${EVIDENCE#"$ROOT"/}"
-printf '\033[36m── NEXT STEP — for triage + findings-%s.md, in Claude Code:  /sec-triage\033[0m\n' "$TODAY"
+# Only a SARIF=1 run (re)builds evidence.json; after a SARIF=0 run the file on disk is an older run's.
+[ "$SARIF" = "1" ] && [ -f "$EVIDENCE" ] && printf '\033[36m── evidence: %s (normalized findings; schema: docs/schema/evidence.md)\033[0m\n' "${EVIDENCE#"$ROOT"/}"
 indet="$(awk -F'\t' -v k="$RC_INDETERMINATE" '$2==k{printf " %s",$1}' "$RESULTS_FILE")"
 [ -n "$indet" ] && printf '\033[33m── INDETERMINATE:%s — the dimension had nothing to inspect. NOT a pass; do not read the green as coverage.\033[0m\n' "$indet"
 uninspected="$(awk -F'\t' '$3=="skipped"||$3=="error"{printf " %s (%s)",$1,$3}' "$RESULTS_FILE")"
 [ -n "$uninspected" ] && printf '\033[33m── NOT inspected:%s — see "reason" in summary.json. Not a pass.\033[0m\n' "$uninspected"
 # Name what blocked, and as what: a crashed tool is not a finding to allowlist.
 blockers="$(awk -F'\t' '$4=="block"{printf " %s (%s)",$1,$3}' "$RESULTS_FILE")"
-[ "$rc" -ne 0 ] && printf '\033[31m── BLOCKED (rc=%s):%s — commit/push is blocked. findings: allowlist if FP, fix if real; error: fix the scan (see the raw log).\033[0m\n' "$rc" "$blockers"
+[ "$rc" -ne 0 ] && printf '\033[31m── BLOCKED (rc=%s):%s — commit/push is blocked.\033[0m\n' "$rc" "$blockers"
+crashed="$(awk -F'\t' '$4=="block" && $3=="error"{printf " %s",$1}' "$RESULTS_FILE")"
+found="$(awk -F'\t' '$4=="block" && $3!="error"{printf " %s",$1}' "$RESULTS_FILE")"
+[ -n "$crashed" ] && printf '\033[31m── scanner FAILED:%s — this is not a finding; do not allowlist it. Fix the scan (see the raw log) and re-run.\033[0m\n' "$crashed"
+[ -n "$found" ] && printf '\033[31m── to unblock%s: fix it · allowlist with an expiry if it is a false positive (nosemgrep / .gitleaks.toml / .pip-audit-ignore) · triage: /sec-triage in Claude Code · emergency: git commit/push --no-verify\033[0m\n' "$found"
+printf '\033[36m── NEXT STEP — for triage + findings-%s.md, in Claude Code:  /sec-triage\033[0m\n' "$TODAY"
 exit "$rc"

@@ -189,7 +189,12 @@ def scan_time(summary, scan: dict):
     when its dimensions, artifacts and provenance are the evidence's own."""
     if not summary:
         return None
-    for key in ("dimensions", "artifacts", "provenance"):
+
+    def bare(dims):  # durations differ per run and never reach evidence.json
+        return [{k: v for k, v in d.items() if k != "seconds"} for d in (dims or []) if isinstance(d, dict)]
+    if bare(summary.get("dimensions")) != bare(scan.get("dimensions")):
+        return None
+    for key in ("artifacts", "provenance"):
         if summary.get(key) != scan.get(key):
             return None
     if not summary.get("timestamp"):

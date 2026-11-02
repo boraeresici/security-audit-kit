@@ -412,3 +412,11 @@ class TestHonestHeader:
         scan = {"command": "all", "exit_code": 0, "dimensions": [{"name": "sast", "status": "pass"}]}
         body = self._render(tmp_path, monkeypatch, scan)
         assert "scan time unknown" in body
+
+
+class TestScanTimeIgnoresDurations:
+    def test_summary_with_seconds_still_matches_its_evidence(self):
+        scan = {"dimensions": [{"name": "sast", "status": "pass"}], "artifacts": [], "provenance": {"commit": "c"}}
+        summary = {"dimensions": [{"name": "sast", "status": "pass", "seconds": 2.5}], "artifacts": [],
+                   "provenance": {"commit": "c"}, "timestamp": "2026-11-02T10:00:00", "run_id": "r"}
+        assert rh.scan_time(summary, scan) == ("2026-11-02T10:00:00", "r")

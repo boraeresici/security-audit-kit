@@ -319,7 +319,15 @@ bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edi
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
 bash tools/security-audit-kit/scan.sh report     # tek dosyalik HTML raporu uret
+bash tools/security-audit-kit/scan.sh help       # komutlar, gate etiketleri, onkosullar, `all`'un disinda kalanlar
 ```
+
+**Ilk kosu:** `scan.sh doctor` → `scan.sh all` → kapanis ozetini oku → `/sec-triage`. Her tarama
+tek ekranlik bir kapanis ozetiyle biter: her boyutun durumu, suresi ve nedeni; komutun kapsamadigi
+boyutlar. Docker ya da uvx/pipx eksikse hangi boyutlarin denetlenmedigini ve nasil duzeltilecegini
+tek satirda yazar. Bu satir her hook kosusunda tekrarlanir, cunku kurulum gunu ile push gunu ayni
+gun degildir. Bir sey bloklarsa ozet bunun bir bulgu mu (bloku kaldirma yollariyla) yoksa coken bir
+tarayici mi (taramayi duzelt, asla allowlist'e ekleme) oldugunu soyler.
 
 Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar: gate'in karari
 (`gate.exit_code`, `gate.blocked_by`), onu yazan kosunun `run_id`'si (asagidaki *Ayni anda iki

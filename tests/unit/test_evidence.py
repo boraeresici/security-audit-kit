@@ -1024,3 +1024,18 @@ class TestSelectSources:
         assert doc["scan"]["provenance"] == prov
         assert doc["counts"]["total"] == 1
         assert "run_id" not in json.dumps(doc)  # run metadata stays in summary.json: evidence is diffable
+
+
+class TestRunTimingStaysOut:
+    def test_dimension_seconds_are_not_copied_into_evidence(self, tmp_path, monkeypatch):
+        # F14a: summary.json times each dimension; evidence.json must still diff to nothing on
+        # unchanged code, so the per-run duration stays in summary.json.
+        summary = {"schema_version": 2, "sarif": True, "artifacts": [],
+                   "dimensions": [{"name": "sast", "status": "pass", "gate": "allow", "seconds": 3.1}]}
+        sp, out = tmp_path / "summary.json", tmp_path / "evidence.json"
+        sp.write_text(json.dumps(summary))
+        monkeypatch.setattr(sys, "argv", ["evidence.py", "--sarif-dir", str(tmp_path), "--summary", str(sp),
+                                          "--out", str(out)])
+        assert evidence.main() == 0
+        doc = json.loads(out.read_text())
+        assert doc["scan"]["dimensions"] == [{"name": "sast", "status": "pass", "gate": "allow"}]

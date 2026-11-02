@@ -22,7 +22,13 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 - **Açık komutlar:** `scan.sh evidence`/`report` dosyalarını üretemezlerse 1 ile çıkıyor.
 - **Dogfood:** eskiden "findings present (exit 1)" diyen başlık, artık `blocked (exit 1): sast (scan error, not a finding), py-deps (findings)` diyor.
 
-**Sırada:** F14a + F25 (3b) → F30 (3c) → yayın kapısı F06–F08 (aşağıdaki performans girişine bak). Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+**F04** PR #42 ile `main`'de.
+
+**F14a** (2 Kasım, `feat/f14a-closing-summary`): her tarama artık tek ekranlık bir kapanış özetiyle bitiyor.
+- **Özetin içeriği:** her boyutun durumu, süresi ve nedeni; Docker ya da uvx eksikse ne yapılacağı; bloklayanın bulgu mu çöken tarayıcı mı olduğu. Ayrıca yeni bir `scan.sh help` komutu var.
+- **Dogfood bulgusu:** özet, `pass`/`findings` durumlarında ilgisiz bir uyarının "neden" gibi göründüğünü ortaya çıkardı; düzeltildi.
+
+**Sırada:** F25 (3b) → F30 (3c) → yayın kapısı F06–F08. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
 
 ## 2 Kasım 2026 — Performans ölçümü ve konumlandırma (F30–F32, R02 öne alındı)
 

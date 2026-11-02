@@ -469,7 +469,10 @@ def main() -> int:
 
     warnings: list = []
     summary = read_json(args.summary, warnings, "summary.json") or {}
-    dimensions = summary.get("dimensions") or []
+    # Durations are run metadata (they differ on every run), so they stay in summary.json: evidence
+    # must still diff to nothing over unchanged code.
+    dimensions = [{k: v for k, v in d.items() if k != "seconds"} if isinstance(d, dict) else d
+                  for d in (summary.get("dimensions") or [])]
 
     findings: list = []
     for path, tool, dimension in select_sources(summary, args.sarif_dir, warnings):

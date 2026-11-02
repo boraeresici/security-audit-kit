@@ -19,6 +19,7 @@ lives in [`evidence.json`](evidence.md).
   "run_id": "20261102T101500-4242",
   "command": "all",
   "exit_code": 1,
+  "seconds": 70.5,
   "raw_log": "docs/security/scan-findings/raw-2026-11-02.log",
   "sarif": false,
   "gate": {"exit_code": 1, "blocked_by": ["sast"]},
@@ -29,7 +30,7 @@ lives in [`evidence.json`](evidence.md).
   "artifacts": [{"path": "sarif/semgrep.sarif", "sha256": "…"}],
   "dimensions": [
     {"name": "secret",  "exit_code": 0, "status": "skipped",        "gate": "allow", "reason": "no docker -> gitleaks skipped"},
-    {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "reason": null},
+    {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "seconds": 3.1, "reason": null},
     {"name": "py-deps", "exit_code": 3, "status": "indeterminate",  "gate": "allow", "reason": "INDETERMINATE — no project venv, ..."},
     {"name": "js-deps", "exit_code": 0, "status": "not_applicable", "gate": "allow", "reason": "no JS project"},
     {"name": "iac",     "exit_code": 0, "status": "findings",       "gate": "allow", "reason": "2 failed check(s) (soft: reported, does not block)"}
@@ -53,7 +54,12 @@ questions: never read them as clean. The run prints a `NOT inspected` line for `
 and an `INDETERMINATE` line for `indeterminate`.
 
 `reason` is the human-readable line the scan printed for that outcome, or `null`. It is prose for
-people, not a stable machine key.
+people, not a stable machine key. On `pass`/`findings` it is set only when the dimension explains
+its result (e.g. soft findings); an unrelated notice printed along the way is not a reason.
+
+`seconds` (per dimension and for the whole run) is wall-clock time, to one decimal. Its resolution
+depends on the shell: milliseconds with bash 5 or perl, whole seconds otherwise. It is run metadata,
+so `evidence.json` does not copy it: evidence must still diff to nothing over unchanged code.
 
 Some tools exit 1 for both "found something" and "failed" (pip-audit, gitleaks, npm/pnpm/yarn
 audit, guarddog). The kit cannot tell those apart from the exit code, so they are recorded as
