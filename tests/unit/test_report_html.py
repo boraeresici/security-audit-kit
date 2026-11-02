@@ -249,7 +249,8 @@ class TestMain:
         assert "Suppressed" in body
         assert "Suppressed issue" in body
 
-    def test_missing_evidence_returns_zero_no_file(self, tmp_path, monkeypatch):
+    def test_missing_evidence_is_a_failure_no_file(self, tmp_path, monkeypatch):
+        # F04: asked to render with nothing to render from -> non-zero, so a caller can tell.
         ev = tmp_path / "nonexistent.json"
         out = tmp_path / "report.html"
 
@@ -258,7 +259,7 @@ class TestMain:
             ["report_html.py", "--evidence", str(ev), "--out", str(out)],
         )
         rc = rh.main()
-        assert rc == 0
+        assert rc == 1
         assert not out.exists()
 
     def test_invalid_schema_returns_one(self, tmp_path, monkeypatch):
@@ -306,3 +307,108 @@ class TestMain:
             assert f'class="chip {st}"' in body
             assert f".chip.{st}" in body  # styled, not just tagged
         assert 'title="no docker -&gt; gitleaks skipped"' in body
+
+
+# ---------------------------------------------------------------------------
+# verdict() — F04: the header never says "clean" about something it cannot vouch for
+# ---------------------------------------------------------------------------
+
+class TestVerdict:
+    P = {"name": "sast", "status": "pass", "gate": "allow"}
+
+    def test_missing_exit_code_is_unknown(self):
+        cls, text = rh.verdict({"dimensions": [self.P]}, 0)
+        assert cls == "unknown" and "clean" not in text
+
+    def test_null_exit_code_is_unknown(self):
+        cls, text = rh.verdict({"exit_code": None, "dimensions": [self.P]}, 0)
+        assert cls == "unknown" and "clean" not in text
+
+    def test_exit_3_is_not_a_pass(self):
+        cls, text = rh.verdict({"exit_code": 3, "dimensions": [self.P]}, 0)
+        assert cls == "incomplete" and "not a pass" in text
+
+    def test_exit_1_names_blockers_and_a_crash_is_not_a_finding(self):
+        dims = [{"name": "sast", "status": "error", "gate": "block"},
+                {"name": "py-deps", "status": "findings", "gate": "block"}]
+        cls, text = rh.verdict({"exit_code": 1, "dimensions": dims}, 2)
+        assert cls == "blocked"
+        assert "sast (scan error, not a finding)" in text and "py-deps (findings)" in text
+
+    def test_exit_1_schema1_still_blocked(self):
+        cls, text = rh.verdict({"exit_code": 1, "dimensions": [{"name": "osv", "status": "fail"}]}, 1)
+        assert cls == "blocked" and "exit 1" in text
+
+    def test_exit_0_complete_and_no_findings_is_clean(self):
+        dims = [self.P, {"name": "iac", "status": "not_applicable", "gate": "allow"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 0)
+        assert cls == "clean"
+
+    def test_exit_0_with_skipped_dimension_is_incomplete(self):
+        dims = [self.P, {"name": "secret", "status": "skipped", "gate": "allow"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 0)
+        assert cls == "incomplete" and "secret (skipped)" in text and "clean" not in text
+
+    def test_exit_0_with_error_or_indeterminate_is_incomplete(self):
+        for st in ("error", "indeterminate"):
+            dims = [self.P, {"name": "osv", "status": st, "gate": "allow"}]
+            cls, _ = rh.verdict({"exit_code": 0, "dimensions": dims}, 0)
+            assert cls == "incomplete"
+
+    def test_exit_0_without_dimensions_is_incomplete(self):
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": []}, 0)
+        assert cls == "incomplete" and "coverage unknown" in text
+
+    def test_exit_0_with_soft_findings_is_not_clean(self):
+        dims = [self.P, {"name": "container", "status": "findings", "gate": "allow"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 3)
+        assert cls == "findings" and "none blocking" in text
+
+
+class TestScanTime:
+    SCAN = {"dimensions": [{"name": "sast", "status": "pass"}], "artifacts": [{"path": "sarif/semgrep.sarif", "sha256": "a"}],
+            "provenance": {"commit": "c1"}}
+
+    def test_same_run_gives_its_timestamp(self):
+        summary = dict(self.SCAN, timestamp="2026-11-02T10:00:00", run_id="r1")
+        assert rh.scan_time(summary, self.SCAN) == ("2026-11-02T10:00:00", "r1")
+
+    def test_later_run_summary_is_not_used(self):
+        summary = dict(self.SCAN, timestamp="2026-11-03T10:00:00", run_id="r2",
+                       dimensions=[{"name": "secret", "status": "pass"}])
+        assert rh.scan_time(summary, self.SCAN) is None
+
+    def test_no_summary(self):
+        assert rh.scan_time(None, self.SCAN) is None
+
+
+class TestHonestHeader:
+    def _render(self, tmp_path, monkeypatch, scan, summary=None):
+        ev = tmp_path / "evidence.json"
+        ev.write_text(json.dumps(_minimal_evidence(scan=scan)), encoding="utf-8")
+        out = tmp_path / "report.html"
+        argv = ["report_html.py", "--evidence", str(ev), "--out", str(out), "--date", "2026-11-05"]
+        if summary is not None:
+            sp = tmp_path / "summary.json"
+            sp.write_text(json.dumps(summary), encoding="utf-8")
+            argv += ["--summary", str(sp)]
+        monkeypatch.setattr("sys.argv", argv)
+        assert rh.main() == 0
+        return out.read_text(encoding="utf-8")
+
+    def test_skipped_dimension_never_reads_clean(self, tmp_path, monkeypatch):
+        scan = {"command": "all", "exit_code": 0,
+                "dimensions": [{"name": "secret", "status": "skipped", "gate": "allow", "reason": "no docker"}]}
+        body = self._render(tmp_path, monkeypatch, scan)
+        assert "clean (exit 0)" not in body and "NOT complete" in body
+
+    def test_scan_and_report_dates_are_separate(self, tmp_path, monkeypatch):
+        scan = {"command": "all", "exit_code": 0, "dimensions": [{"name": "sast", "status": "pass"}]}
+        summary = dict(scan, timestamp="2026-11-02T10:00:00", run_id="20261102T100000-1")
+        body = self._render(tmp_path, monkeypatch, scan, summary)
+        assert "Scanned 2026-11-02T10:00:00" in body and "report generated 2026-11-05" in body
+
+    def test_unknown_scan_time_is_said(self, tmp_path, monkeypatch):
+        scan = {"command": "all", "exit_code": 0, "dimensions": [{"name": "sast", "status": "pass"}]}
+        body = self._render(tmp_path, monkeypatch, scan)
+        assert "scan time unknown" in body

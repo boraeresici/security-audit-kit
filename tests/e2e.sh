@@ -1265,6 +1265,35 @@ print(p.get("commit"), p.get("dirty"), (p.get("kit") or {}).get("version") or "-
   f02 secret F02_DINFO=1
   grep -q '"dirty": true' <<<"$F02SUM" && ok "F03: uncommitted changes -> provenance.dirty true" || no "F03: dirty tree not recorded"
   git -C "$F02/repo" checkout -q -- app.py
+  echo "-- F04: the report says what it can vouch for; explicit report/evidence failures are visible --"
+  F04R="$F03D/report-$(date +%F).html"
+  f04(){ (cd "$F02/repo" && env PATH="$F02S:$F02SYS" "$@" >"$F02/out" 2>&1); }
+  # a scan with secret skipped (no docker) and sast passing -> report must not say clean
+  f04 env F02_DINFO=1 SARIF=1 REPORT=html F02_SARIF="$F03SARIF" "$BASH" tools/security-audit-kit/scan.sh all
+  if [ -f "$F04R" ]; then
+    grep -q 'NOT complete' "$F04R" && ! grep -q 'clean (exit 0)' "$F04R" \
+      && ok "F04: a run with a skipped dimension is reported as NOT complete, never clean" || no "F04: incomplete run reported as clean"
+    grep -q "Scanned $(date +%F)T" "$F04R" && grep -q "report generated $(date +%F)" "$F04R" \
+      && ok "F04: scan time (from its own summary) and report date are shown apart" || no "F04: scan/report dates missing"
+  else no "F04: REPORT=html wrote no report"; fi
+  # a later SARIF=0 run publishes a new summary; re-rendering must not borrow its time
+  f02 secret F02_DINFO=1
+  f04 "$BASH" tools/security-audit-kit/scan.sh report
+  grep -q 'scan time unknown' "$F04R" && ok "F04: a later run's summary.json is not taken as this report's scan time" \
+    || no "F04: report borrowed another run's scan time"
+  # explicit commands fail visibly
+  rm -f "$F03D/evidence.json"
+  F04RC=0; f04 "$BASH" tools/security-audit-kit/scan.sh report || F04RC=$?
+  [ "$F04RC" -eq 1 ] && ok "F04: 'scan.sh report' with no evidence.json exits 1" || no "F04: report without evidence rc=$F04RC"
+  rm -rf "$F03D/sarif"
+  F04RC=0; f04 "$BASH" tools/security-audit-kit/scan.sh evidence || F04RC=$?
+  [ "$F04RC" -eq 1 ] && ok "F04: 'scan.sh evidence' with no SARIF exits 1" || no "F04: evidence without SARIF rc=$F04RC"
+  # post-scan report failure: noted, gate unchanged (the scan itself passed)
+  mv "$F02/repo/tools/security-audit-kit/lib/report_html.py" "$F02/report_html.py.bak"
+  F04RC=0; f04 env F02_DINFO=1 SARIF=1 REPORT=html "$BASH" tools/security-audit-kit/scan.sh secret || F04RC=$?
+  [ "$F04RC" -eq 0 ] && grep -q 'gate result is unchanged' "$F02/out" \
+    && ok "F04: a failed post-scan report is reported, and does not change the gate" || no "F04: post-scan report failure rc=$F04RC or silent"
+  mv "$F02/report_html.py.bak" "$F02/repo/tools/security-audit-kit/lib/report_html.py"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 

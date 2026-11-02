@@ -348,7 +348,12 @@ workflow uploads the whole `sarif/` directory, so nothing needs wiring.
 For a human audience, `REPORT=html` (or `scan.sh report`) renders the same record as **one
 self-contained `report-<date>.html`** — no server, no JS, no external fetch, so it opens offline and
 prints straight to PDF. It shows what SARIF can't: the triage decision on each scanner finding, and
-the suppressed ones on record.
+the suppressed ones on record. Its header says only what it can vouch for: *clean* only when every
+dimension that applies inspected something and nothing is reported. Otherwise it says *NOT complete*
+(naming what was skipped or crashed), *blocked* (naming each blocker, a crash as "scan error, not a
+finding") or *unknown*. Scan time and report date are shown apart. `scan.sh report` /
+`scan.sh evidence` exit 1 when they cannot produce their file; a report failure after a scan is
+printed but does not change the scan's exit code.
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus

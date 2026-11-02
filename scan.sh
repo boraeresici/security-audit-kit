@@ -1109,10 +1109,13 @@ EOF
 # suffix, and the shared path instead of the holder's staging dir (published a moment later).
 py_say(){ sed -e "s|\.$$\.tmp||g" -e "s|${RUN_DIR:-/nonexistent}/publish/|$LOG_DIR/|g"; }
 
+# Exit status (F04): 0 = written; 1 = it could not be. `scan.sh evidence` / `scan.sh report` exit with
+# it, so a caller can tell. At the end of a scan (SARIF=1 / REPORT=html) it is reported, not gated:
+# the gate is the scan's verdict, and a missing report does not change what the scanners found.
 scan_evidence(){
-  have python3 || { warn evidence "no python3 -> evidence.json skipped"; return 0; }
-  [ -f "$KIT_DIR/lib/evidence.py" ] || { warn evidence "lib/evidence.py missing -> skipped"; return 0; }
-  [ -d "$SARIF_DIR" ] || { warn evidence "no SARIF output yet (re-run with SARIF=1) -> evidence.json skipped"; return 0; }
+  have python3 || { warn evidence "no python3 -> evidence.json NOT written"; return 1; }
+  [ -f "$KIT_DIR/lib/evidence.py" ] || { warn evidence "lib/evidence.py missing -> evidence.json NOT written"; return 1; }
+  [ -d "$SARIF_DIR" ] || { warn evidence "no SARIF output yet (re-run with SARIF=1) -> evidence.json NOT written"; return 1; }
   # The judgment layer's decisions live in the findings file a human reads; fold them in when it
   # exists so evidence.json carries both halves (what the tools found, what we decided).
   local fargs=""
@@ -1122,19 +1125,20 @@ scan_evidence(){
   # shellcheck disable=SC2086
   python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" $fargs | py_say \
     && mv -f "$EVIDENCE.$$.tmp" "$EVIDENCE" \
-    || { rm -f "$EVIDENCE.$$.tmp"; warn evidence "builder failed -> evidence.json not updated"; return 0; }
+    || { rm -f "$EVIDENCE.$$.tmp"; warn evidence "builder failed -> evidence.json NOT updated"; return 1; }
   # The skills' own findings have no other SARIF home -> put them on the same review surface.
   # With no judgment findings kit_sarif.py writes NOTHING on purpose (an empty upload would close
   # every open kit alert) — so rename only what it actually wrote.
+  local rc=0
   if [ -f "$KIT_DIR/lib/kit_sarif.py" ]; then
     if python3 "$KIT_DIR/lib/kit_sarif.py" --evidence "$EVIDENCE" --out "$SARIF_DIR/kit.sarif.$$.tmp" | py_say; then
       [ -f "$SARIF_DIR/kit.sarif.$$.tmp" ] && mv -f "$SARIF_DIR/kit.sarif.$$.tmp" "$SARIF_DIR/kit.sarif"
     else
-      rm -f "$SARIF_DIR/kit.sarif.$$.tmp"; warn evidence "kit.sarif not emitted"
+      rm -f "$SARIF_DIR/kit.sarif.$$.tmp"; warn evidence "kit.sarif NOT emitted"; rc=1
     fi
   fi
-  [ "$REPORT" = "html" ] && scan_report
-  return 0
+  if [ "$REPORT" = "html" ]; then scan_report || rc=1; fi
+  return $rc
 }
 
 # One self-contained HTML file to attach, mail, or print to PDF — opt-in via REPORT=html, or
@@ -1142,13 +1146,15 @@ scan_evidence(){
 # offline in five years. Renders MORE than kit.sarif — including the triage decisions on scanner
 # findings, which SARIF leaves to each tool's own run.
 scan_report(){
-  have python3 || { warn report "no python3 -> HTML report skipped"; return 0; }
-  [ -f "$KIT_DIR/lib/report_html.py" ] || { warn report "lib/report_html.py missing -> skipped"; return 0; }
-  [ -f "$EVIDENCE" ] || { warn report "no evidence.json yet (re-run with SARIF=1) -> report skipped"; return 0; }
+  have python3 || { warn report "no python3 -> HTML report NOT written"; return 1; }
+  [ -f "$KIT_DIR/lib/report_html.py" ] || { warn report "lib/report_html.py missing -> report NOT written"; return 1; }
+  [ -f "$EVIDENCE" ] || { warn report "no evidence.json yet (re-run with SARIF=1) -> report NOT written"; return 1; }
+  # --date is when the report is generated; the scan's own time comes from summary.json, and only
+  # when that summary is the evidence's own run (report_html.py checks).
   python3 "$KIT_DIR/lib/report_html.py" --evidence "$EVIDENCE" --out "$REPORT_HTML.$$.tmp" \
-    --repo "$(basename "$ROOT")" --date "$TODAY" | py_say \
+    --repo "$(basename "$ROOT")" --date "$TODAY" --summary "$SUMMARY" | py_say \
     && mv -f "$REPORT_HTML.$$.tmp" "$REPORT_HTML" \
-    || { rm -f "$REPORT_HTML.$$.tmp"; warn report "report not written"; }
+    || { rm -f "$REPORT_HTML.$$.tmp"; warn report "report NOT written"; return 1; }
   return 0
 }
 
@@ -1579,7 +1585,7 @@ scan_publish(){
       [ -f "$f" ] && cp -p "$f" "$stage/sarif/"
     done
     SARIF_DIR="$stage/sarif"; EVIDENCE="$stage/evidence.json"; REPORT_HTML="$stage/report-$TODAY.html"
-    scan_evidence
+    scan_evidence || note evidence "post-scan evidence/report NOT complete (see above) — the gate result is unchanged"
   fi
   trap '' INT TERM
   if [ "$SARIF" = "1" ]; then
@@ -1614,7 +1620,9 @@ fi
 if [ "$LOCK_HELD" = "1" ]; then
   scan_publish
 else
-  [ "$SARIF" = "1" ] && scan_evidence
+  if [ "$SARIF" = "1" ]; then
+    scan_evidence || note evidence "post-scan evidence/report NOT complete (see above) — the gate result is unchanged"
+  fi
   note lock "this run's record: ${RUN_DIR#"$ROOT"/}/ — the shared summary.json is still the other run's"
 fi
 

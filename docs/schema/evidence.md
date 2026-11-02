@@ -59,6 +59,8 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
     // Copied from summary.json when present: WHAT was scanned, with what (commit, dirty tree, kit,
     // config, rules, tool pins, scope). It carries no time and no run id, so rule 4 still holds;
     // run metadata stays in summary.json. Fields: docs/schema/summary.md#provenance.
+    "artifacts": [{"path": "sarif/semgrep.sarif", "sha256": "…"}]
+    // Also copied from summary.json: the SARIF list this evidence was built against.
   },
   "counts": {
     "total": 3,
@@ -172,6 +174,28 @@ carrying a triage decision, which SARIF leaves to each tool's own run. Sections:
 gate, one chip per dimension with its status and, on hover, its reason), severity breakdown, findings table (severity + its source, tool /
 rule, `file:line`, message + evidence chain, decision + confidence), then **Suppressed** on record,
 then any builder warnings.
+
+**The header says only what it can vouch for (F04).** Its *Result* line is one of:
+
+| result | when |
+|---|---|
+| `clean (exit 0)` | the gate passed, every dimension that applies inspected something, and nothing is reported |
+| `passed (exit 0) — N finding(s) present, none blocking` | soft findings (`iac`, `container`) or reported findings that did not block |
+| `passed (exit 0) — NOT complete: <dim> (<status>) …` | a dimension was `skipped`, `error` or `indeterminate`, or no dimensions were recorded |
+| `blocked (exit N): <dim> (findings) / <dim> (scan error, not a finding)` | the gate blocked; a crashed tool is named as such |
+| `indeterminate (exit 3)` / `unknown` | nothing could be inspected, or no exit code was recorded at all |
+
+The scan time and the report date are shown separately. `evidence.json` carries no time, so the
+scan time comes from `summary.json`, and only when that summary is the evidence's own run (same
+`dimensions`, `artifacts` and `provenance`; `scan.artifacts` is copied into evidence for this). A
+`SARIF=0` run publishes a new summary but leaves evidence alone, so a later re-render says
+*scan time unknown* instead of borrowing that run's time.
+
+**Exit status.** `scan.sh evidence` and `scan.sh report` exit 1 when they cannot produce their file:
+no python3, a missing lib, no SARIF, no `evidence.json`, a builder failure or a `kit.sarif` that
+could not be written. After a scan (`SARIF=1`, `REPORT=html`), the same failure is printed with
+*"the gate result is unchanged"*. The scan's exit code is the scanners' verdict, and a report that
+could not be rendered does not change what they found.
 
 All tool- and skill-supplied text is HTML-escaped. A scanner message containing markup is data, not
 markup — a security tool whose own report is injectable would be an embarrassment, so the e2e

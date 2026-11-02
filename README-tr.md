@@ -350,7 +350,12 @@ workflow'u `sarif/` dizininin tamamini yukledigi icin ek bir baglanti gerekmez.
 Insan icin ise `REPORT=html` (ya da `scan.sh report`) ayni kaydi **tek basina yeterli bir
 `report-<tarih>.html`** olarak render eder — server yok, JS yok, disariya istek yok; offline
 acilir ve dogrudan PDF'e basilir. SARIF'in gosteremedigini gosterir: her tarayici bulgusunun
-triyaj karari ve kayit altindaki bastirilmis bulgular.
+triyaj karari ve kayit altindaki bastirilmis bulgular. Basligi yalniz kefil olabildigini soyler:
+*clean* ancak uygulanan her boyut gercekten bir sey denetlediyse ve raporlanan bulgu yoksa yazilir.
+Aksi halde *NOT complete* (atlanan ya da coken boyutun adiyla), *blocked* (her engelleyen adiyla;
+coken arac "scan error, not a finding" olarak) ya da *unknown* der. Tarama zamani ile rapor tarihi
+ayri gosterilir. `scan.sh report` / `scan.sh evidence` dosyalarini uretemezlerse 1 ile cikar;
+taramanin sonundaki rapor hatasi ekrana yazilir ama taramanin cikis kodunu degistirmez.
 
 Otomatik tetik (install sonrasi):
 - **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica
