@@ -773,6 +773,105 @@ SH
     && no "isolation: a cancelled run went on to the end of the script" \
     || ok "isolation: a cancelled run stops where it was cancelled"
 
+  echo "-- lock lifecycle: liveness, not age; release only your own token (F05) --"
+  # f05lock <pid> <host> <pstart> <heartbeat-epoch> <token>: plant a lock as another run would.
+  f05lock(){
+    rm -rf "$F01LOCK"; mkdir -p "$F01LOCK"
+    printf 'pid=%s\ntoken=%s\nhost=%s\npstart=%s\nstarted=%s\ncmd=all\n' "$1" "$5" "$2" "$3" "$4" > "$F01LOCK/owner"
+    printf '%s\n' "$4" > "$F01LOCK/heartbeat"
+  }
+  f05token(){ sed -n 's/^token=//p' "$F01LOCK/owner" 2>/dev/null; }
+  f05sum(){ python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('run_id',''))" "$F01FD/summary.json" 2>/dev/null; }
+  f05rid(){ sed -n 's/.*── run: \([0-9T]*-[0-9]*\).*/\1/p' | head -1; }
+  NOW="$(date +%s)"; ME="$(hostname 2>/dev/null || uname -n)"
+  MYSTART="$(ps -o lstart= -p $$ 2>/dev/null | sed 's/  *$//')"
+
+  # 1) A live, long-running holder: lock dir hours old, but its process is alive, it is the same
+  #    process (start time matches) and its heartbeat is fresh -> never reclaimed for age.
+  f05lock "$$" "$ME" "$MYSTART" "$NOW" f05-live
+  touch -t 202001010000 "$F01LOCK" "$F01LOCK/owner"
+  OUT="$(f01run L SCAN_LOCK_WAIT=1 SCAN_LOCK_STALE_MIN=1 2>&1)"
+  ! grep -q 'reclaimed' <<<"$OUT" && [ "$(f05token)" = f05-live ] \
+    && ok "lock: a live long-running holder is not reclaimed for its age" \
+    || no "lock: a LIVE holder's lock was taken because it was old"
+
+  # 2) PID reuse: the pid is alive, but it is not the process that took the lock (start differs).
+  if [ -n "$MYSTART" ]; then
+    f05lock "$$" "$ME" "Thu Jan  1 00:00:00 2015" "$NOW" f05-reused
+    OUT="$(f01run R SCAN_LOCK_WAIT=5 2>&1)"
+    grep -q 'stale lock reclaimed (pid reused' <<<"$OUT" && [ "$(f05sum)" = "$(f05rid <<<"$OUT")" ] \
+      && ok "lock: a reused pid is detected (start time) and the lock reclaimed" \
+      || no "lock: pid reuse not detected"
+  else
+    skip "lock: pid reuse (ps -o lstart unavailable)"
+  fi
+
+  # 3) Another host (shared .git, container): its pid means nothing here, so liveness is the
+  #    heartbeat alone — fresh: wait; silent past SCAN_LOCK_STALE_MIN: reclaim.
+  f05lock 1 elsewhere.invalid "-" "$NOW" f05-remote
+  OUT="$(f01run H SCAN_LOCK_WAIT=1 SCAN_LOCK_STALE_MIN=1 2>&1)"
+  ! grep -q 'reclaimed' <<<"$OUT" && [ "$(f05token)" = f05-remote ] \
+    && ok "lock: another host's lock with a fresh heartbeat is respected" \
+    || no "lock: a remote holder with a live heartbeat was reclaimed"
+  f05lock 1 elsewhere.invalid "-" "$((NOW - 7200))" f05-remote-dead
+  OUT="$(f01run H SCAN_LOCK_WAIT=5 SCAN_LOCK_STALE_MIN=1 2>&1)"
+  grep -q 'stale lock reclaimed (no heartbeat' <<<"$OUT" \
+    && ok "lock: a silent heartbeat (>SCAN_LOCK_STALE_MIN) is reclaimed" \
+    || no "lock: a dead remote holder's lock was not reclaimed"
+
+  # 4) An unreadable owner: reclaimed once past a short grace (it may be a lock being created
+  #    this instant), not after the full stale window — and never waited on forever.
+  rm -rf "$F01LOCK"; mkdir -p "$F01LOCK"; printf 'garbage\n' > "$F01LOCK/owner"
+  OUT="$(f01run G SCAN_LOCK_WAIT=1 2>&1)"
+  ! grep -q 'reclaimed' <<<"$OUT" && grep -q 'SEPARATE run directory' <<<"$OUT" \
+    && ok "lock: a just-created lock without a readable owner gets a grace period" \
+    || no "lock: a lock being created was reclaimed under its creator"
+  touch -t 202001010000 "$F01LOCK" "$F01LOCK/owner"
+  T0="$(date +%s)"
+  OUT="$(f01run G SCAN_LOCK_WAIT=30 2>&1)"
+  T1="$(date +%s)"
+  grep -q 'stale lock reclaimed (unreadable owner' <<<"$OUT" && [ $((T1 - T0)) -lt 20 ] \
+    && [ "$(f05sum)" = "$(f05rid <<<"$OUT")" ] \
+    && ok "lock: a corrupt lock is reclaimed promptly, not waited out" \
+    || no "lock: corrupt lock waited on or not reclaimed ($((T1 - T0))s)"
+  rm -rf "$F01LOCK"
+
+  # 5) The holder keeps a heartbeat while it runs, and nothing of it outlives the run.
+  f01run B F01_SLEEP=4 SCAN_LOCK_HEARTBEAT_SEC=1 > "$F01.b.out" 2>&1 &
+  BPID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$F01LOCK/owner" ] && break; sleep 1; done
+  sleep 3
+  HB="$(cat "$F01LOCK/heartbeat" 2>/dev/null || echo 0)"
+  AGE=$(( $(date +%s) - ${HB:-0} ))
+  wait "$BPID"
+  sleep 2
+  [ "$AGE" -le 2 ] && [ ! -d "$F01LOCK" ] \
+    && ok "lock: the holder heartbeats while running; the heartbeat stops with the run" \
+    || no "lock: heartbeat stale (${AGE}s) or it outlived the run"
+
+  # 6) A holder whose lock was taken over must neither delete the new owner's lock nor publish.
+  SNAP="$(f01snap)"
+  f01run T F01_SLEEP=4 > "$F01.t.out" 2>&1 &
+  TPID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$F01LOCK/owner" ] && break; sleep 1; done
+  f05lock "$$" "$ME" "$MYSTART" "$(date +%s)" f05-usurper
+  wait "$TPID"
+  [ "$(f05token)" = f05-usurper ] && [ "$(f01snap)" = "$SNAP" ] && grep -q 'lock is no longer ours' "$F01.t.out" \
+    && ok "lock: a holder releases and publishes only under its own token" \
+    || no "lock: a run deleted another owner's lock or published without it"
+  rm -rf "$F01LOCK"
+
+  # 7) Three runs find the same dead lock at once: exactly one reclaims it, and the three then
+  #    take the lock one after another — nobody runs lock-less, nobody holds it twice.
+  mkdir -p "$F01LOCK" && printf 'pid=999999 date=2020-01-01T00:00:00 cmd=all\n' > "$F01LOCK/owner"
+  for m in X Y Z; do f01run "$m" SCAN_LOCK_WAIT=30 F01_SLEEP=1 > "$F01.$m.out" 2>&1 & done
+  wait
+  RECL="$(cat "$F01".[XYZ].out | grep -c 'stale lock reclaimed')"
+  SEP="$(cat "$F01".[XYZ].out | grep -c 'SEPARATE run directory')"
+  [ "$RECL" = 1 ] && [ "$SEP" = 0 ] && [ ! -d "$F01LOCK" ] \
+    && ok "lock: concurrent reclaim of one stale lock — one reclaim, three serialized holders" \
+    || no "lock: concurrent reclaim raced (reclaims=$RECL, lock-less=$SEP)"
+
   rm -rf "$F01" "$F01BIN" "$F01".?.out
 else
   skip "run isolation (python3 unavailable)"
