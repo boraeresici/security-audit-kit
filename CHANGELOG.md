@@ -4,7 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.19.0] - 2026-11-02
+
+### Upgrade notes
+- `summary.json` gains a `run_id` field (additive; existing fields unchanged).
+- New directory `docs/security/scan-findings/runs/`. It holds the record of a run that could not
+  take the lock. Keep it out of commits the way you keep `raw-*.log` and `summary.json` out.
+- A lock-less run's raw log is now `runs/<run-id>/raw.log`, no longer `raw-<date>.<pid>.log`.
+- `scan.sh evidence` and `scan.sh report` now exit 1 when another scan holds the lock (they used
+  to rewrite the shared record anyway). Scripts that call them during a scan should retry.
+- Mixed versions on one repo: a lock written by an older kit is still honoured by this one, with
+  the older rule (dead pid, or older than `SCAN_LOCK_STALE_MIN`).
 
 ### Fixed
 - **A scan that could not take the lock no longer overwrites the other run's record (F01).** Before,
@@ -46,6 +56,8 @@ All notable changes to this project are documented here. The format is based on
 - e2e is hermetic against the caller's `VIRTUAL_ENV`, and the bootstrap legacy-pin fixture is cut
   the way `scripts/release.sh` cuts a tag (versioned CHANGELOG, regenerated CHECKSUMS), so an
   open `[Unreleased]` section no longer fails it.
+- The release-metadata gate test uses a synthetic CHANGELOG. It rewrote the kit's own `[1.18.0]`
+  header, so it broke as soon as a newer version section was on top.
 
 ## [1.18.0]
 
