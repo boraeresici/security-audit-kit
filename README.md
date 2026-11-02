@@ -319,8 +319,12 @@ bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from th
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
 ```
 
-Every run writes a machine-readable `docs/security/scan-findings/summary.json` (did the scan pass,
-per dimension, and the `run_id` of the run that wrote it — see *Two scans at once* below). Set `SARIF=1` to also emit per-tool SARIF (for GitHub code scanning / IDE) into
+Every run writes a machine-readable `docs/security/scan-findings/summary.json`: the gate's decision
+(`gate.exit_code`, `gate.blocked_by`), the `run_id` of the run that wrote it (see *Two scans at
+once* below), and per dimension what actually happened — `pass`, `findings`, `error`, `skipped`,
+`indeterminate` or `not_applicable`, with the reason. A dimension whose tool was missing or crashed
+is `skipped`/`error`, never `pass`. Contract and migration from the old `pass`/`fail` form:
+[docs/schema/summary.md](docs/schema/summary.md). Set `SARIF=1` to also emit per-tool SARIF (for GitHub code scanning / IDE) into
 `.../sarif/` — and, alongside it, **`evidence.json`**: every finding from every dimension in **one
 shape**, with severity normalized to `critical|high|medium|low|info` and the tool's own value kept
 verbatim next to it. It exists because the tools disagree: osv-scanner labels a CVSS 9.1 advisory

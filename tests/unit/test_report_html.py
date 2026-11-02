@@ -285,3 +285,24 @@ class TestMain:
         )
         rc = rh.main()
         assert rc == 1
+
+    def test_dimension_status_chips_v2(self, tmp_path, monkeypatch):
+        # summary.json schema 2 (F02): every status gets its own chip class, and the reason
+        # travels with it, so a skipped dimension never reads as a quiet pass.
+        dims = [
+            {"name": "sast", "status": "findings", "gate": "block", "reason": None},
+            {"name": "secret", "status": "skipped", "gate": "allow", "reason": "no docker -> gitleaks skipped"},
+            {"name": "osv", "status": "error", "gate": "allow", "reason": "osv-scanner exit 2"},
+            {"name": "iac", "status": "not_applicable", "gate": "allow", "reason": "no terraform"},
+            {"name": "py-deps", "status": "indeterminate", "gate": "allow", "reason": "no venv"},
+        ]
+        doc = _minimal_evidence(scan={"command": "all", "exit_code": 1, "dimensions": dims})
+        ev = self._write_evidence(tmp_path, doc)
+        out = tmp_path / "report.html"
+        monkeypatch.setattr("sys.argv", ["report_html.py", "--evidence", str(ev), "--out", str(out)])
+        assert rh.main() == 0
+        body = out.read_text(encoding="utf-8")
+        for st in ("findings", "skipped", "error", "not_applicable", "indeterminate"):
+            assert f'class="chip {st}"' in body
+            assert f".chip.{st}" in body  # styled, not just tagged
+        assert 'title="no docker -&gt; gitleaks skipped"' in body

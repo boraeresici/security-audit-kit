@@ -78,9 +78,19 @@ Bu tablo yukarıdaki F maddelerini tekrar etmez. “Koşullu” işler, belirtil
 
 Kilit bekleme süresi dolan tarama, diğer taramanın summary/SARIF/evidence/HTML dosyalarını değiştirmemeli. Her çalıştırma benzersiz dizin ve kimlik almalı; son tamamlanan çalışma işaretçisinin güncellenmesi açık bir sahiplik kuralına bağlı olmalı. İki eşzamanlı tarama ve kilit zaman aşımı testi tüm artifact'ların kendi çalışmasına ait kaldığını doğrulamalı. İptal edilmiş çalışma son başarılı kaydı bozmamalı.
 
+**Durum:** tamamlandı, v1.19.0 ile yayımlandı (PR #32). Eski SARIF'in taşınması F03'e bırakıldı.
+
 ### F02 — Durum ve politika
 
 Boyut sonucu en az `pass`, `findings`, `error`, `skipped`, `indeterminate`, `not_applicable` ayrımını ve nedenini taşımalı; adlandırma schema tasarımında kesinleşebilir. `gate` sonucu ayrı hesaplanmalı. Eksik Docker/uvx, eksik manifest, araç çökmesi ve soft-fail bulgusu için fixture olmalı. Mevcut tüketicilere schema geçişi belgelenmeli. Varsayılan fail-open kararını değiştirmeden yanlış `pass` giderilebilmeli.
+
+**Karar — 2 Kasım 2026:**
+- **Adlandırma:** karttaki altı ad aynen kullanıldı. `status` alanının değerleri yerinde değiştirildi ve `schema_version: 2` eklendi. Eski `fail` değeri kaldırıldı. Eski alanı koruyup yanına yeni bir alan eklemek de düşünüldü, ama o zaman eski alan atlanan boyutlar için yanlış `pass` yazmaya devam ederdi.
+- **Gate:** davranış değiştirilmedi; gate hâlâ dönüş kodundan hesaplanıyor. Durum, fonksiyonun açık işaretinden (`dim_mark`/`dim_skip`/`dim_na`/`dim_error`) ya da varsayılan eşlemeden geliyor. Tarama hatalarının bloklayıp bloklamayacağı ayrı bir politika sorusu olarak açık bırakıldı.
+- **Ayırt edilemeyen durumlar:** pip-audit, gitleaks, npm/pnpm/yarn audit ve guarddog, bulgu ile hata için aynı çıkış kodunu kullanıyor. Bunlar `findings` olarak kaydediliyor; bu sınırlama sözleşmede yazılı.
+- **Sözleşme:** [docs/schema/summary.md](../schema/summary.md).
+
+**Durum:** `feat/f02-status-policy` branch'inde uygulandı. e2e'ye 18 kontrol eklendi; araçlar shim'lendiği için offline ve deterministik çalışıyor. Rapordaki durum etiketleri için bir birim testi var.
 
 ### F03 — Artifact kökeni ve güncellik
 
@@ -93,6 +103,8 @@ Evidence yalnız aynı run manifestindeki çıktıları tüketmeli. Önceki SARI
 ### F05 — Kilit yaşam döngüsü
 
 Canlı ve uzun süren taramanın kilidi yalnız yaşı nedeniyle alınmamalı. Release yalnız kendi token'ını taşıyan kilidi kaldırmalı. Ölü PID, PID yeniden kullanımı, heartbeat yokluğu, aynı anda stale reclaim ve INT/TERM testleri yapılmalı. Bozuk kilit dosyası sonsuz beklemeye yol açmamalı.
+
+**Durum:** tamamlandı, v1.19.0 ile yayımlandı (PR #34).
 
 ### F06 — Politika farkındalığı olan paket cache'i
 
@@ -397,7 +409,7 @@ Seçilen alan için giriş sinyali, incelenecek sınırlar, uygulanmama nedeni, 
 
 **Karar — 2 Kasım 2026:** Sıra `PY_VENV` > repo `.venv` > aktif `VIRTUAL_ENV`. Aktif ortam ancak `pyvenv.cfg` taşıyorsa ve fiziksel yolu (symlink çözülmüş) `ROOT` altındaysa proje ortamı sayılır. Diğer durumlarda neden yazılır ve no-env yoluna düşülür: statik manifest ya da INDETERMINATE. Yabancı ortamı kabul etmek için iki seçenek vardı: `VIRTUAL_ENV`'e güvenen bir bayrak ya da yol veren `PY_VENV`. Yol veren seçildi. Kullanıcı hangi ortamı denetlettiğini adıyla söylüyor; bayrak ise yine shell'in o an aktif ettiği şeye bağlı kalırdı. `PY_VENV` açık bir seçim olduğu için sonucu normal pip-audit sonucu gibi sayılır; denetim satırı ortamı ve seçilme nedenini yazar. `bin/python` içermeyen bir `PY_VENV` hatadır (rc=1); sessiz fallback yapılmaz. Yeni durum adı eklenmedi: üretilen sonuçlar mevcut `pass`/`findings`/`indeterminate`, F02'nin adlandırmasıyla çakışmıyor. F25'in rehberi henüz yazılmadığı için geçiş notu CHANGELOG'daki "Upgrade notes" altında.
 
-**Durum:** `fix/f29-py-deps-env` branch'inde uygulandı. e2e'ye 9 kontrol eklendi; kabul kriterlerindeki beş fixture ve `PY_VENV` için iki durum test ediliyor. Ölçülen pyenv-global vakası artık rc=0 ve INDETERMINATE.
+**Durum:** uygulandı, PR #38 ile `main`'de (yayımlanmadı). e2e'ye 9 kontrol eklendi; kabul kriterlerindeki beş fixture ve `PY_VENV` için iki durum test ediliyor. Ölçülen pyenv-global vakası artık rc=0 ve INDETERMINATE.
 
 ## Güncel teslim sırası — ana planlama kaynağı
 

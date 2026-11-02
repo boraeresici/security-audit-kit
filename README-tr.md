@@ -321,8 +321,12 @@ bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.j
 bash tools/security-audit-kit/scan.sh report     # tek dosyalik HTML raporu uret
 ```
 
-Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar (tarama gecti mi,
-boyut basina, ve onu yazan kosunun `run_id`'si — asagidaki *Ayni anda iki tarama* bolumune bak). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
+Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar: gate'in karari
+(`gate.exit_code`, `gate.blocked_by`), onu yazan kosunun `run_id`'si (asagidaki *Ayni anda iki
+tarama* bolumune bak) ve boyut basina gercekte ne oldugu — `pass`, `findings`, `error`, `skipped`,
+`indeterminate` ya da `not_applicable`, nedeniyle birlikte. Araci eksik olan ya da coken bir boyut
+`skipped`/`error` olur, asla `pass` degil. Sozlesme ve eski `pass`/`fail` bicimden gecis:
+[docs/schema/summary.md](docs/schema/summary.md). `SARIF=1` ile arac-basina SARIF de uretilir (GitHub code scanning / IDE icin)
 -> `.../sarif/`; yani sira **`evidence.json`**: her boyuttan her bulgu **tek bir bicimde**,
 severity `critical|high|medium|low|info` olarak normalize edilmis ve aracin kendi degeri yaninda
 aynen korunmus halde. Var olma sebebi araclarin uyusmamasi: osv-scanner CVSS 9.1'lik bir advisory'ye

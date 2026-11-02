@@ -72,6 +72,9 @@ RC_INDETERMINATE=3
 
 # trivy: skip build-output dirs (noise + memory + speed). Comma-separated glob patterns.
 TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelte-kit,**/.turbo}"
+# The exit code trivy is told to use for findings — internal, so container (soft) can tell findings
+# from a clean run and from a failed one.
+TRIVY_FINDINGS_RC=5
 
 # js-deps: which directories hold a JS project. JS_DIRS (space separated) overrides the search
 # outright; otherwise every tracked package.json is considered except the paths JS_SKIP_RE drops —
@@ -204,7 +207,14 @@ SEMGREP_CONFIGS="$SEMGREP_CONFIGS_BASE$SEMGREP_CONFIGS_LOCAL"
 
 have(){ command -v "$1" >/dev/null 2>&1; }
 say(){ printf '\033[36m[scan:%s]\033[0m %s\n' "$1" "$2"; }
-warn(){ printf '\033[33m[scan:%s] SKIP: %s\033[0m\n' "$1" "$2"; }
+warn(){ printf '\033[33m[scan:%s] SKIP: %s\033[0m\n' "$1" "$2"; DIM_WARN="$2"; }
+# What a dimension's outcome WAS, for summary.json (F02) — separate from the gate. The return code
+# still decides the gate exactly as before; these only stop "docker missing" or "the tool crashed"
+# from being recorded as a pass. Unmarked: 0 pass, 1 findings, 3 indeterminate, other error.
+dim_mark(){ DIM_STATUS="$1"; [ -n "${2:-}" ] && DIM_REASON="$2"; return 0; }
+dim_skip(){ warn "$1" "$2"; dim_mark skipped "$2"; }          # could have run, a tool was missing
+dim_na(){ warn "$1" "$2"; dim_mark not_applicable "$2"; }     # nothing of this kind in the repo
+dim_error(){ warn "$1" "$2"; dim_mark error "$2"; }           # the tool ran and failed
 # Same colour, no "SKIP:" — for things that were not skipped but must not go unread (the lock).
 note(){ printf '\033[33m[scan:%s] %s\033[0m\n' "$1" "$2"; }
 
@@ -260,7 +270,7 @@ py_manifests(){
 
 scan_py_deps(){
   has_tracked '(^|/)(pyproject\.toml|requirements[^/]*\.txt|uv\.lock|Pipfile)$' \
-    || { warn deps "no Python project"; return 0; }
+    || { dim_na deps "no Python project"; return 0; }
   local flags=""
   [ -f .pip-audit-ignore ] && flags="$(awk '/^[^#]/{printf " --ignore-vuln %s",$1}' .pip-audit-ignore)"
   # Audit THIS repo's environment — not uvx's ephemeral one, and not whatever venv the caller
@@ -273,7 +283,7 @@ scan_py_deps(){
   local venv="" why=""
   if [ -n "$PY_VENV" ]; then
     [ -x "$PY_VENV/bin/python" ] \
-      || { warn deps "PY_VENV=$PY_VENV has no bin/python -> cannot audit the env you named"; return 1; }
+      || { dim_error deps "PY_VENV=$PY_VENV has no bin/python -> cannot audit the env you named"; return 1; }
     venv="$PY_VENV"; why="PY_VENV"
   elif [ -x "$ROOT/.venv/bin/python" ]; then
     venv="$ROOT/.venv"; why="repo .venv"
@@ -297,7 +307,7 @@ scan_py_deps(){
   export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
   say deps "pip-audit --strict (==$PIP_AUDIT_VER, env $label — $why)"
   # shellcheck disable=SC2086
-  pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags || { [ $? -eq 127 ] && { warn deps "no uvx/pipx -> pip-audit skipped"; return 0; }; return 1; }
+  pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags || { [ $? -eq 127 ] && { dim_skip deps "no uvx/pipx -> pip-audit skipped"; return 0; }; return 1; }
 }
 
 # No environment to inspect — the normal shape for a project that runs in a container. Auditing the
@@ -367,23 +377,32 @@ scan_js_deps(){
   local dirs; dirs="$(js_dirs)"
   if [ -z "$dirs" ]; then
     if has_tracked '(^|/)package\.json$'; then
-      warn deps "package.json found but none is auditable (vendor path, or no lockfile) -> set JS_DIRS to point at the real JS project"
+      dim_skip deps "package.json found but none is auditable (vendor path, or no lockfile) -> set JS_DIRS to point at the real JS project"
     else
-      warn deps "no JS project"
+      dim_na deps "no JS project"
     fi
     return 0
   fi
-  local rc=0 dir
+  local rc=0 dir n=0 skipped=0 c
   while IFS= read -r dir; do
     [ -n "$dir" ] || continue
+    n=$((n+1))
     ( cd "$ROOT/$dir" || exit 1
       # Audit ALL deps (incl. dev/build) — vulns in build tooling (vite/undici/…) are real; the
       # triage layer decides reachability. (Previously --prod/--omit=dev hid them.)
       if   [ -f pnpm-lock.yaml ]    && have pnpm; then say deps "pnpm audit ($dir)"; pnpm audit --audit-level high
       elif [ -f yarn.lock ]         && have yarn; then say deps "yarn audit ($dir)"; yarn npm audit --severity high
       elif [ -f package-lock.json ] && have npm;  then say deps "npm audit ($dir)";  npm audit --audit-level=high
-      else warn deps "$dir: no lockfile with an installed package manager (pnpm/yarn/npm) -> skipped"; fi ) || rc=1
+      else warn deps "$dir: no lockfile with an installed package manager (pnpm/yarn/npm) -> skipped"; exit 4; fi )
+    c=$?
+    # 4 = this directory was not audited (the subshell's warn cannot reach DIM_* out here)
+    if [ "$c" -eq 4 ]; then skipped=$((skipped+1)); elif [ "$c" -ne 0 ]; then rc=1; fi
   done <<<"$dirs"
+  if [ "$skipped" -gt 0 ] && [ "$skipped" -eq "$n" ]; then
+    dim_mark skipped "no installed package manager for any JS project's lockfile -> nothing audited"
+  elif [ "$skipped" -gt 0 ]; then
+    dim_mark "" "$skipped of $n JS project(s) not audited (no installed package manager for the lockfile)"
+  fi
   return $rc
 }
 
@@ -399,7 +418,7 @@ git_extra_mounts(){
 
 # ---- secret, full history (gitleaks detect) ----
 scan_secret(){
-  docker_ok || { warn secret "no docker -> gitleaks skipped"; return 0; }
+  docker_ok || { dim_skip secret "no docker -> gitleaks skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
   local rep=""; [ "$SARIF" = "1" ] && rep="--report-format sarif --report-path /repo/$(sarif_rel gitleaks.sarif)"
   say secret "gitleaks detect (full history)"
@@ -410,7 +429,7 @@ scan_secret(){
 
 # ---- secret, staged changes only (gitleaks protect --staged) — sub-second ----
 scan_secret_staged(){
-  docker_ok || { warn secret "no docker -> staged secret scan skipped"; return 0; }
+  docker_ok || { dim_skip secret "no docker -> staged secret scan skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
   say secret "gitleaks protect --staged"
   # shellcheck disable=SC2086
@@ -426,8 +445,19 @@ scan_sast(){
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
   say sast "semgrep ($paths, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $paths \
-    || { [ $? -eq 127 ] && { warn sast "no uvx/pipx -> semgrep skipped"; return 0; }; return 1; }
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $paths
+  semgrep_rc $?
+}
+
+# semgrep --error: 1 = findings at the gated severity; 2+ = the scan itself failed (bad config,
+# parse/network error). Both block, as they always did — but a crash is not a finding.
+semgrep_rc(){
+  case "$1" in
+    0) return 0 ;;
+    1) return 1 ;;
+    127) dim_skip sast "no uvx/pipx -> semgrep skipped"; return 0 ;;
+    *) dim_error sast "semgrep exit $1 (scan error, not a finding)"; return 1 ;;
+  esac
 }
 
 # ---- sast on changed files only (diff-aware, fast) ----
@@ -446,51 +476,75 @@ changed_files(){
 }
 scan_sast_changed(){
   local files; files="$(changed_files | sort -u | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)"
-  [ -z "$files" ] && { warn sast "no changed files vs base -> semgrep skipped"; return 0; }
+  [ -z "$files" ] && { dim_na sast "no changed files vs base -> semgrep skipped"; return 0; }
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
   say sast "semgrep (changed files, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $files \
-    || { [ $? -eq 127 ] && { warn sast "no uvx/pipx -> semgrep skipped"; return 0; }; return 1; }
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $files
+  semgrep_rc $?
 }
 
 # ---- iac (checkov) ----
 scan_iac(){
   local tf="${TF_DIR:-}"
   [ -z "$tf" ] && tf="$(git ls-files '*.tf' | head -1 | xargs -r dirname)"
-  [ -z "$tf" ] && { warn iac "no terraform"; return 0; }
+  [ -z "$tf" ] && { dim_na iac "no terraform"; return 0; }
   say iac "checkov ($tf, ==$CHECKOV_VER)"
-  pyrun checkov "$CHECKOV_VER" checkov --directory "$tf" --framework terraform --soft-fail \
-    || { [ $? -eq 127 ] && warn iac "no uvx/pipx -> checkov skipped"; return 0; }
+  # Soft: --soft-fail keeps the gate open, so the exit code no longer says whether checks failed;
+  # the summary line does. Read it, so failed checks are recorded as findings and not as a pass.
+  local out rc failed
+  out="$(pyrun checkov "$CHECKOV_VER" checkov --directory "$tf" --framework terraform --soft-fail)"; rc=$?
+  [ -n "$out" ] && printf '%s\n' "$out"
+  case "$rc" in
+    0) ;;
+    127) dim_skip iac "no uvx/pipx -> checkov skipped"; return 0 ;;
+    *) dim_error iac "checkov exit $rc (scan error, not a finding)"; return 0 ;;
+  esac
+  failed="$(awk -F'Failed checks: ' 'NF>1{split($2,a,","); n+=a[1]} END{print n+0}' <<<"$out")"
+  [ "$failed" -gt 0 ] && dim_mark findings "$failed failed check(s) (soft: reported, does not block)"
+  return 0
 }
 
 # ---- container/fs (trivy) — soft ----
 scan_container(){
-  docker_ok || { warn container "no docker -> trivy skipped"; return 0; }
+  docker_ok || { dim_skip container "no docker -> trivy skipped"; return 0; }
   say container "trivy fs (report, soft)"
   # .trivyignore.yaml auto-detect does not work in this docker setup -> pass it explicitly
   # (only if present; for deliberately accepted findings, committed to the repo).
   local ign=""; [ -f "$ROOT/.trivyignore.yaml" ] && ign="--ignorefile /repo/.trivyignore.yaml"
   local skip=""; [ -n "$TRIVY_SKIP_DIRS" ] && skip="--skip-dirs $TRIVY_SKIP_DIRS"
-  local out="--exit-code 0"; [ "$SARIF" = "1" ] && out="--exit-code 0 --format sarif --output /repo/$(sarif_rel trivy.sarif)"
+  # Soft: findings must not block, but they must be told apart from a clean run — so trivy exits
+  # TRIVY_FINDINGS_RC on findings and that code is recorded as findings, then mapped back to 0.
+  local out="--exit-code $TRIVY_FINDINGS_RC"
+  [ "$SARIF" = "1" ] && out="$out --format sarif --output /repo/$(sarif_rel trivy.sarif)"
   # shellcheck disable=SC2086
   docker run --rm -v "$ROOT:/repo" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
     --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
+  local rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    "$TRIVY_FINDINGS_RC") dim_mark findings "CRITICAL/HIGH findings (soft: reported, does not block)"; return 0 ;;
+    *) dim_error container "trivy exit $rc (scan error, not a finding)"; return "$rc" ;;
+  esac
 }
 
 # ---- sbom (syft) ----
 scan_sbom(){
-  docker_ok || { warn sbom "no docker -> syft skipped"; return 0; }
+  docker_ok || { dim_skip sbom "no docker -> syft skipped"; return 0; }
   say sbom "syft -> sbom.cyclonedx.json + sbom.spdx.json"
   docker run --rm -v "$ROOT:/repo" -w /repo "$(img anchore/syft "$SYFT_VER" "$SYFT_DIGEST")" dir:/repo \
     -o cyclonedx-json=/repo/sbom.cyclonedx.json -o spdx-json=/repo/sbom.spdx.json
+  local rc=$?
+  # syft produces an inventory, not findings: any non-zero is a failure (it blocks, as before).
+  [ "$rc" -eq 0 ] || dim_error sbom "syft exit $rc (SBOM not produced)"
+  return "$rc"
 }
 
 # ---- osv (OSV-Scanner) — broad multi-ecosystem dep CVE, OPTIONAL (not in 'all') ----
 # Complements pip-audit/npm: scans lockfiles across ecosystems (py/js/go/rust/...) against
 # OSV.dev. Standalone + opt-in so it doesn't double-gate with the other dep scanners.
 scan_osv(){
-  docker_ok || { warn osv "no docker -> osv-scanner skipped"; return 0; }
+  docker_ok || { dim_skip osv "no docker -> osv-scanner skipped"; return 0; }
 
   # Reachability (opt-in): osv-scanner can tell whether a vulnerable symbol is actually CALLED.
   # Two rules make this safe to offer:
@@ -507,7 +561,7 @@ scan_osv(){
     case "$OSV_CALL_ANALYSIS" in
       *rust*)
         if [ "${OSV_ALLOW_BUILD_SCRIPTS:-0}" != "1" ]; then
-          warn osv "call-analysis=rust RUNS dependency build scripts (executing untrusted code to decide reachability) -> refused; set OSV_ALLOW_BUILD_SCRIPTS=1 to accept that"
+          dim_error osv "call-analysis=rust RUNS dependency build scripts (executing untrusted code to decide reachability) -> refused; set OSV_ALLOW_BUILD_SCRIPTS=1 to accept that"
           return 1
         fi
         warn osv "call-analysis=rust with OSV_ALLOW_BUILD_SCRIPTS=1 — build scripts from the dependency tree WILL execute"
@@ -524,8 +578,8 @@ scan_osv(){
   case "$rc" in
     0) return 0 ;;                                              # scanned, clean
     1) return 1 ;;                                              # vulnerabilities found (HARD)
-    128) warn osv "no lockfiles found -> nothing to scan"; return 0 ;;
-    *) warn osv "osv-scanner exit $rc (scan error, not a finding)"; return 0 ;;
+    128) dim_na osv "no lockfiles found -> nothing to scan"; return 0 ;;
+    *) dim_error osv "osv-scanner exit $rc (scan error, not a finding)"; return 0 ;;
   esac
 }
 
@@ -534,11 +588,11 @@ scan_osv(){
 # typosquats, compromised-maintainer metadata, malicious install scripts. `verify` checks each
 # declared dependency against the LIVE registry, so this dimension needs network. Standalone + opt-in.
 scan_guarddog(){
-  { have uvx || have pipx; } || { warn guarddog "no uvx/pipx -> guarddog skipped"; return 0; }
+  { have uvx || have pipx; } || { dim_skip guarddog "no uvx/pipx -> guarddog skipped"; return 0; }
   local pyreqs npmpkgs rc=0 f
   pyreqs="$(git ls-files | grep -E '(^|/)requirements[^/]*\.txt$' | grep -v node_modules || true)"
   npmpkgs="$(git ls-files | grep -E '(^|/)package\.json$' | grep -v node_modules || true)"
-  [ -z "$pyreqs" ] && [ -z "$npmpkgs" ] && { warn guarddog "no requirements*.txt or package.json -> nothing to verify"; return 0; }
+  [ -z "$pyreqs" ] && [ -z "$npmpkgs" ] && { dim_na guarddog "no requirements*.txt or package.json -> nothing to verify"; return 0; }
   say guarddog "guarddog verify (malicious/typosquat deps, ==$GUARDDOG_VER, needs network)"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -665,9 +719,9 @@ EOF
 # token over-permissioning, unpinned actions). Runs OFFLINE by default (no GitHub API), so it is
 # deterministic and air-gap friendly. Standalone + opt-in. Tune with ZIZMOR_ARGS (e.g. --min-severity).
 scan_zizmor(){
-  { have uvx || have pipx; } || { warn zizmor "no uvx/pipx -> zizmor skipped"; return 0; }
+  { have uvx || have pipx; } || { dim_skip zizmor "no uvx/pipx -> zizmor skipped"; return 0; }
   has_tracked '^\.github/workflows/.*\.(yml|yaml)$' \
-    || { warn zizmor "no .github/workflows -> nothing to scan"; return 0; }
+    || { dim_na zizmor "no .github/workflows -> nothing to scan"; return 0; }
   say zizmor "zizmor --offline (.github, ==$ZIZMOR_VER)"
   local rc
   if [ "$SARIF" = "1" ]; then
@@ -677,8 +731,13 @@ scan_zizmor(){
     pyrun zizmor "$ZIZMOR_VER" zizmor --offline $ZIZMOR_ARGS .github/
     rc=$?
   fi
-  # zizmor exits non-zero when it has findings (it warns, not errors, on workflow syntax by default).
-  [ "$rc" -eq 0 ] && return 0 || return 1
+  # zizmor: 0 clean, 10-14 findings (by highest severity), anything else = it failed. Every
+  # non-zero blocks, as before; only the label differs.
+  case "$rc" in
+    0) return 0 ;;
+    1[0-4]) return 1 ;;
+    *) dim_error zizmor "zizmor exit $rc (scan error, not a finding)"; return 1 ;;
+  esac
 }
 
 # ---- rules-test: run semgrep's own rule tests over the repo's local rules ----
@@ -1294,7 +1353,15 @@ REPORT="${REPORT:-}"
 [ "${1:-}" = "pkgcheck" ] && { shift; scan_pkgcheck "$@"; exit $?; }
 
 # Record each dimension's exit code to RESULTS_FILE (survives the tee subshell).
-_dim(){ local name="$1"; shift; "$@"; local c=$?; printf '%s\t%s\n' "$name" "$c" >> "$RESULTS_FILE"
+_dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
+  "$@"; local c=$? st gate=allow
+  st="$DIM_STATUS"
+  if [ -z "$st" ]; then
+    case "$c" in 0) st=pass ;; 1) st=findings ;; "$RC_INDETERMINATE") st=indeterminate ;; *) st=error ;; esac
+  fi
+  [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && gate=block
+  # Tabs/newlines would break the record; the reason is one line of prose.
+  printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$c" "$st" "$gate" "$(printf '%s' "${DIM_REASON:-$DIM_WARN}" | tr '\t\n' '  ')" >> "$RESULTS_FILE"
   # RC_INDETERMINATE is recorded but never blocks: it says "no opinion", not "finding".
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && return 1; return 0; }
 
@@ -1406,25 +1473,32 @@ printf '\n===== %s  scan.sh %s  run %s =====\n' "$(date +%FT%T)" "$CMD" "$RUN_ID
 run_scans "$CMD" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
 
-# Machine-readable summary (consumed by /sec-triage; safe to parse).
+# JSON string or null: the reason is free prose from a warn line.
+json_str(){ [ -n "$1" ] || { printf 'null'; return; }
+  local v="${1//\\/\\\\}"; v="${v//\"/\\\"}"; printf '"%s"' "$v"; }
+
+# Machine-readable summary (consumed by /sec-triage; safe to parse). Schema 2 (F02): each dimension
+# says what happened (status + reason) and, separately, what it did to the gate. Contract in
+# docs/schema/summary.md.
+blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$RESULTS_FILE")"
 {
   printf '{\n'
+  printf '  "schema_version": 2,\n'
   printf '  "timestamp": "%s",\n' "$(date +%FT%T)"
   printf '  "run_id": "%s",\n' "$RUN_ID"
   printf '  "command": "%s",\n' "$CMD"
   printf '  "exit_code": %s,\n' "$rc"
   printf '  "raw_log": "%s",\n' "${LOG#"$ROOT"/}"
   printf '  "sarif": %s,\n' "$([ "$SARIF" = "1" ] && echo true || echo false)"
+  printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
   printf '  "dimensions": [\n'
   first=1
-  while IFS="$(printf '\t')" read -r dim code; do
+  while IFS="$(printf '\t')" read -r dim code st gate why; do
     [ -z "$dim" ] && continue
     [ "$first" = 1 ] || printf ',\n'
     first=0
-    st=pass
-    [ "$code" -ne 0 ] && st=fail
-    [ "$code" -eq "$RC_INDETERMINATE" ] && st=indeterminate
-    printf '    {"name": "%s", "exit_code": %s, "status": "%s"}' "$dim" "$code" "$st"
+    printf '    {"name": "%s", "exit_code": %s, "status": "%s", "gate": "%s", "reason": %s}' \
+      "$dim" "$code" "$st" "$gate" "$(json_str "$why")"
   done < "$RESULTS_FILE"
   printf '\n  ]\n}\n'
 } > "$SUMMARY.$$.tmp" && mv -f "$SUMMARY.$$.tmp" "$SUMMARY"
@@ -1484,5 +1558,9 @@ printf '\033[36m── raw report: %s   summary: %s\033[0m\n' "${LOG#"$ROOT"/}" 
 printf '\033[36m── NEXT STEP — for triage + findings-%s.md, in Claude Code:  /sec-triage\033[0m\n' "$TODAY"
 indet="$(awk -F'\t' -v k="$RC_INDETERMINATE" '$2==k{printf " %s",$1}' "$RESULTS_FILE")"
 [ -n "$indet" ] && printf '\033[33m── INDETERMINATE:%s — the dimension had nothing to inspect. NOT a pass; do not read the green as coverage.\033[0m\n' "$indet"
-[ "$rc" -ne 0 ] && printf '\033[31m── HARD finding (rc=%s): commit/push is blocked; allowlist if FP, fix if real.\033[0m\n' "$rc"
+uninspected="$(awk -F'\t' '$3=="skipped"||$3=="error"{printf " %s (%s)",$1,$3}' "$RESULTS_FILE")"
+[ -n "$uninspected" ] && printf '\033[33m── NOT inspected:%s — see "reason" in summary.json. Not a pass.\033[0m\n' "$uninspected"
+# Name what blocked, and as what: a crashed tool is not a finding to allowlist.
+blockers="$(awk -F'\t' '$4=="block"{printf " %s (%s)",$1,$3}' "$RESULTS_FILE")"
+[ "$rc" -ne 0 ] && printf '\033[31m── BLOCKED (rc=%s):%s — commit/push is blocked. findings: allowlist if FP, fix if real; error: fix the scan (see the raw log).\033[0m\n' "$rc" "$blockers"
 exit "$rc"
