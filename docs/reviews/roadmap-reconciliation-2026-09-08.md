@@ -4,6 +4,22 @@ Tarih: 8 Eylül 2026 · Baz: yerel `main / 48fad91`.
 
 Güncel uygulama sırası ve kabul kriterleri [birleşik iş listesinde](application-backlog-2026-09-08.md). Bu belge, eski roadmap maddelerinin neden kapandığını, birleştiğini veya ertelendiğini açıklar. İncelenen kaynaklar: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG ve ilgili uygulama kodu. Yerel kaynakların tarihi beyanları güncel ürün/sağlayıcı ölçümü sayılmadı; dış araç lisansları ve yetenekleri yeniden araştırılmadı.
 
+## 2 Kasım 2026 — SOCNova, yeni açık takibi ve agent erişimi (R15 notu)
+
+Bir Gemini konuşmasındaki “SOC NOVA” iddiaları kontrol edildi. Ürün SOCRadar değil; SOCNova Bilişim A.Ş.'nin yapay zekâ destekli SOC platformu (socnova.com). Sitesi yalnız MITRE ATT&CK'i anıyor; Gemini'nin saydığı Sigma/YARA/Kestrel vb. kütüphaneler sitede yok. Gemini kiti uç nokta denetim aracı sanmıştı; kit bir repo/tedarik zinciri tarayıcısıdır. Kite alınacak yeni çekirdek özellik çıkmadı; web UI kararı (F26 → koşullu R13) değişmedi. Taramalar arası yeni açık bildirimi, alarm/agent entegrasyonu ve Dependabot iş bölümü **R15** koşullu not kartında tutuluyor; teslim sırası değişmedi.
+
+## 21 Ekim 2026 — py-deps ortam seçimi (F29)
+
+F01 branch'inde tam e2e çalıştırılırken temiz `main`'de de görülen 6 py-deps hatası incelendi. Neden, geliştirici shell'inde pyenv global yorumlayıcısını gösteren `VIRTUAL_ENV` idi. `scan_py_deps()` repo `.venv`'i yokken bu değişkeni proje ortamı kabul ettiği için venv'siz fixture INDETERMINATE yerine HARD blok üretti. Test tarafı (`unset VIRTUAL_ENV`) F01 branch'inde düzeltildi. Ürün davranışı **F29** kartına alındı: P1, sıra 3a, F02 durum adlandırmasıyla uyumlu. Yanlış `pass` olasılığı kod yolundan çıkarımdır, ölçülmedi.
+
+## 11 Ekim 2026 — Cloudflare özellik karşılaştırması
+
+Yerel `078cf18` ile [Cloudflare karşılaştırması](../compare/cloudflare-security-audit-skill.md) yapıldı. Threat model, kanıt zinciri, sinyalle derin inceleme ve JSON/SARIF/HTML zaten mevcut; tekrar geliştirme açılmadı. Mevcut “independent” triyaj talimatı ayrı doğrulayıcı bağlamı sağlamıyor; kapsam notu da doğrulanan kapsam defteri değil.
+
+F11 yürütme/artifact sınırlarıyla, F12 belirsizlik semantiğiyle, F19 sürümlü karar şeması ve eski kararın yeniden doğrulanmasıyla genişletildi. Yeni **F27** whole-repo kapsam kaydı ve **F28** bağımsız doğrulama pilotu, F19 sonrası 9a sırasındadır. F28'in F12c kalite bağımlılığı korunur; AI hattı performans işlerini bloke etmez. **R14** uzman alan içerikleri koşullu rezervdir. R05 generate-only ve R09 en son kararları değişmedi.
+
+Bu tur kod veya skill prompt'u değiştirilmedi; yeni güvenlik taraması/eval çalıştırılmadı. Önceki RC/CI sonuçları yeniden doğrulanmış sayılmaz. Dış `main` içerikleri webden okundu; uzak commit SHA alınamadığı için karşılaştırma pinli benchmark değildir. Ayrıntılı kanıt ve kaynaklar karşılaştırma dosyasında, kabul kriterleri birleşik backlog'dadır.
+
 ## 14 Eylül 2026 — SkillSpector ve UI öncelik kararı
 
 Kullanıcı değerlendirmesi üzerine [birleşik backlog](application-backlog-2026-09-08.md) üç kartla genişletildi: **F26** sunucusuz HTML rapor kullanılabilirliği, **R12** SkillSpector pilotu/adaptörü, **R13** koşullu yerel tarama UI'si. Varsayılan sıra mevcut P0/P1 güvenilirlik ve kapsam işleri → F26 → R12; R13 ancak rapor kullanımının yetmediği görülürse açılır. F26/R12 teslim sırasına 8a/8b olarak, F19/cache genişlemesinden önce yerleştirildi; bunlar AI runner veya kalıcı karar deposu gerektirmez.

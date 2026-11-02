@@ -10,6 +10,9 @@
 # Requires git; docker (gitleaks) and uvx/pipx (semgrep) are used if present, else skipped.
 # Usage:  bash tests/e2e.sh        (exit 0 = all assertions passed)
 set -uo pipefail
+# Hermetic: py-deps audits an active VIRTUAL_ENV when the repo has no .venv (by design), so the
+# caller's shell would decide what the no-venv fixtures see. Tests that need one set it themselves.
+unset VIRTUAL_ENV
 
 KIT_SRC="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0; FAIL=0
@@ -75,27 +78,27 @@ int("1")
 PY
 git -c user.email=e2e@test -c user.name=e2e add semgrep-rules >/dev/null 2>&1
 RDOC="$($SCAN doctor 2>/dev/null)"
-printf '%s' "$RDOC" | grep -q 'semgrep cfg .*--config semgrep-rules' \
+grep -q 'semgrep cfg .*--config semgrep-rules' <<<"$RDOC" \
   && ok "rules: local rules appended to the stack-auto packs" || no "rules: local rules not composed"
-printf '%s' "$RDOC" | grep -q 'semgrep cfg .*p/python' \
+grep -q 'semgrep cfg .*p/python' <<<"$RDOC" \
   && no "rules: a rule test fixture leaked into stack detection" || ok "rules: rule fixtures do not define the stack"
-printf '%s' "$RDOC" | grep -q 'WILL NOT GATE: local-warning-rule' \
+grep -q 'WILL NOT GATE: local-warning-rule' <<<"$RDOC" \
   && ok "rules: a non-ERROR rule is reported as non-gating" || no "rules: silent non-gating rule not surfaced"
-printf '%s' "$RDOC" | grep -q 'rule tests present' \
+grep -q 'rule tests present' <<<"$RDOC" \
   && ok "rules: rule tests detected" || no "rules: rule tests not detected"
 # The whole point of the composition: adding one local rule must NOT cost you the registry packs.
 ODOC="$(SEMGREP_CONFIGS='--config p/owasp-top-ten' $SCAN doctor 2>/dev/null)"
-printf '%s' "$ODOC" | grep -q 'semgrep cfg .*p/owasp-top-ten --config semgrep-rules' \
+grep -q 'semgrep cfg .*p/owasp-top-ten --config semgrep-rules' <<<"$ODOC" \
   && ok "rules: local rules append even when SEMGREP_CONFIGS overrides the base" || no "rules: override drops local rules"
-printf '%s' "$ODOC" | grep -q 'OVERRIDE is missing what stack-auto would add' \
+grep -q 'OVERRIDE is missing what stack-auto would add' <<<"$ODOC" \
   && ok "rules: a frozen override reports the packs it now misses" || no "rules: override rot not surfaced"
-printf '%s' "$(SEMGREP_LOCAL_RULES=off $SCAN doctor 2>/dev/null)" | grep -q 'DISABLED by SEMGREP_LOCAL_RULES=off' \
+grep -q 'DISABLED by SEMGREP_LOCAL_RULES=off' <<<"$(SEMGREP_LOCAL_RULES=off $SCAN doctor 2>/dev/null)" \
   && ok "rules: off switch honoured" || no "rules: off switch ignored"
 # Regression (v1.12.0 class): rule files shipped INSIDE the vendored kit must never become the
 # consumer's rules — discovery is anchored at $ROOT literally, not by searching the tree.
 mkdir -p tools/security-audit-kit/semgrep-rules
 cp semgrep-rules/local.yaml tools/security-audit-kit/semgrep-rules/kit-own.yaml
-printf '%s' "$($SCAN doctor 2>/dev/null)" | grep -q 'config tools/security-audit-kit/semgrep-rules' \
+grep -q 'config tools/security-audit-kit/semgrep-rules' <<<"$($SCAN doctor 2>/dev/null)" \
   && no "rules: the vendored kit's own rules reached the consumer" || ok "rules: vendored kit's own rules stay out of the consumer's config"
 rm -rf tools/security-audit-kit/semgrep-rules
 rm -rf semgrep-rules && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
@@ -104,12 +107,12 @@ echo "-- allowlist surface (doctor lists every suppression path) --"
 # A dependency CVE is reported by py-deps + osv + container, so a suppression written to one file
 # leaves the others firing. doctor has to make a half-applied suppression visible.
 ADOC="$($SCAN doctor 2>/dev/null)"
-printf '%s' "$ADOC" | grep -q 'allowlists (a suppression must cover every path' \
+grep -q 'allowlists (a suppression must cover every path' <<<"$ADOC" \
   && ok "doctor: allowlist section present" || no "doctor: allowlist section missing"
 for f in .gitleaks.toml .pip-audit-ignore osv-scanner.toml .trivyignore.yaml .security-exclusions.md; do
-  printf '%s' "$ADOC" | grep -q -- "$f" || { no "doctor: $f not listed"; break; }
+  grep -q -- "$f" <<<"$ADOC" || { no "doctor: $f not listed"; break; }
 done
-printf '%s' "$ADOC" | grep -q 'osv-scanner.toml' && printf '%s' "$ADOC" | grep -q '.trivyignore.yaml' \
+grep -q 'osv-scanner.toml' <<<"$ADOC" && grep -q '.trivyignore.yaml' <<<"$ADOC" \
   && ok "doctor: the two paths triage used to forget are listed" || no "doctor: osv/trivy paths missing"
 
 echo "-- allowlist audit (decay detection) --"
@@ -127,14 +130,14 @@ ignoreUntil = 2099-01-01
 EOF
 AOUT="$($SCAN allowlist 2>&1)"; ARC=$?
 [ "$ARC" -ne 0 ] && ok "allowlist: exits non-zero when a suppression has decayed" || no "allowlist: decay not gated"
-printf '%s' "$AOUT" | grep -q 'EXPIRED GHSA-aaaa-bbbb-cccc' \
+grep -q 'EXPIRED GHSA-aaaa-bbbb-cccc' <<<"$AOUT" \
   && ok "allowlist: an expired deferral is named with its date" || no "allowlist: expired entry not caught"
-printf '%s' "$AOUT" | grep -q 'GHSA-aaaa-bbbb-cccc is suppressed in .pip-audit-ignore but not in osv-scanner.toml' \
+grep -q 'GHSA-aaaa-bbbb-cccc is suppressed in .pip-audit-ignore but not in osv-scanner.toml' <<<"$AOUT" \
   && ok "allowlist: cross-path gap reported (an entry in one path does not silence the others)" || no "allowlist: cross-path gap missed"
 # The id present in BOTH files must not be reported — a detector that cries wolf stops being read.
-printf '%s' "$AOUT" | grep -q 'GHSA-dddd-eeee-ffff is suppressed' \
+grep -q 'GHSA-dddd-eeee-ffff is suppressed' <<<"$AOUT" \
   && no "allowlist: false positive on an id covered in both paths" || ok "allowlist: no false positive on a fully-covered id"
-printf '%s' "$AOUT" | grep -q 'with no expiry' \
+grep -q 'with no expiry' <<<"$AOUT" \
   && ok "allowlist: entries with no expiry are counted" || no "allowlist: missing-expiry count absent"
 # .trivyignore.yaml also carries misconfig checks (AVD-/DS-/KSV-) and license ids. pip-audit can
 # never report those, so comparing them manufactures a gap that cannot exist — the noise that made
@@ -146,7 +149,7 @@ licenses:
   - id: LGPL-3.0-or-later
 EOF
 TOUT="$($SCAN allowlist 2>&1)"
-printf '%s' "$TOUT" | grep -qE '(AVD-DS-0002|LGPL-3.0-or-later) is suppressed' \
+grep -qE '(AVD-DS-0002|LGPL-3.0-or-later) is suppressed' <<<"$TOUT" \
   && no "allowlist: non-advisory ids (misconfig/license) compared across paths" \
   || ok "allowlist: only package-advisory namespaces are cross-checked (no misconfig/license noise)"
 rm -f .trivyignore.yaml
@@ -155,15 +158,15 @@ cat > .pip-audit-ignore <<'EOF'
 GHSA-dddd-eeee-ffff  # no fix yet; expires 2099-01-01
 EOF
 $SCAN allowlist >/dev/null 2>&1 && ok "allowlist: clean when every path agrees and nothing expired" || no "allowlist: false alarm on a clean set"
-printf '%s' "$($SCAN doctor 2>/dev/null)" | grep -q 'audit: nothing expired' \
+grep -q 'audit: nothing expired' <<<"$($SCAN doctor 2>/dev/null)" \
   && ok "allowlist: doctor carries a one-line verdict" || no "allowlist: doctor summary missing"
 rm -f .pip-audit-ignore osv-scanner.toml
 
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
 DOC="$($SCAN doctor 2>/dev/null)"
-printf '%s' "$DOC" | grep -q 'semgrep cfg .*owasp-top-ten.*secrets.*(stack-auto' && ok "cfg: base packs auto" || no "cfg: base packs missing"
-printf '%s' "$DOC" | grep -q 'semgrep cfg.*p/python' && no "cfg: python pack on non-python repo" || ok "cfg: no language pack on bash repo"
+grep -q 'semgrep cfg .*owasp-top-ten.*secrets.*(stack-auto' <<<"$DOC" && ok "cfg: base packs auto" || no "cfg: base packs missing"
+grep -q 'semgrep cfg.*p/python' <<<"$DOC" && no "cfg: python pack on non-python repo" || ok "cfg: no language pack on bash repo"
 # Plant a python+react stack -> should pull p/python and p/react.
 mkdir -p stack/backend stack/frontend
 echo 'django==5.0' > stack/backend/requirements.txt
@@ -172,12 +175,12 @@ printf '{ "dependencies": { "react": "^18" } }\n' > stack/package.json
 echo 'export const A=1' > stack/frontend/app.tsx
 git -c user.email=e2e@test -c user.name=e2e add stack >/dev/null 2>&1
 DOC2="$($SCAN doctor 2>/dev/null)"
-printf '%s' "$DOC2" | grep -q 'p/python' && printf '%s' "$DOC2" | grep -q 'p/django' \
-  && printf '%s' "$DOC2" | grep -q 'p/react' && ok "cfg: stack packs auto-selected (python+django+react)" || no "cfg: stack packs not selected"
+grep -q 'p/python' <<<"$DOC2" && grep -q 'p/django' <<<"$DOC2" \
+  && grep -q 'p/react' <<<"$DOC2" && ok "cfg: stack packs auto-selected (python+django+react)" || no "cfg: stack packs not selected"
 # Explicit override wins verbatim, nothing appended. Capture first (env-prefixed pipeline +
 # pipefail is fragile) — same command-substitution form as the base/stack assertions above.
 OVR="$(SEMGREP_CONFIGS='--config p/custom' $SCAN doctor 2>/dev/null)"
-printf '%s' "$OVR" | grep -q 'semgrep cfg --config p/custom (base from env/conf' && ok "cfg: env override wins" || no "cfg: env override ignored"
+grep -q 'semgrep cfg --config p/custom (base from env/conf' <<<"$OVR" && ok "cfg: env override wins" || no "cfg: env override ignored"
 # Robust cleanup: `git rm` fails silently on staged-but-uncommitted paths (no -f), leaving them
 # tracked. Remove the working tree then `git add -A` the path to stage its removal from the index.
 rm -rf stack; git -c user.email=e2e@test -c user.name=e2e add -A stack >/dev/null 2>&1
@@ -199,17 +202,17 @@ if [ -d "$KIT_FX" ]; then
     rm -rf "$dst"
   }
   D="$(doctor_of django)"
-  { printf '%s' "$D" | grep -q 'p/python' && printf '%s' "$D" | grep -q 'p/django'; } \
+  { grep -q 'p/python' <<<"$D" && grep -q 'p/django' <<<"$D"; } \
     && ok "matrix django: python+django packs" || no "matrix django: python+django packs"
   D="$(doctor_of react)"
-  { printf '%s' "$D" | grep -q 'p/javascript' && printf '%s' "$D" | grep -q 'p/react'; } \
+  { grep -q 'p/javascript' <<<"$D" && grep -q 'p/react' <<<"$D"; } \
     && ok "matrix react: js+react packs" || no "matrix react: js+react packs"
   D="$(doctor_of terraform)"
-  printf '%s' "$D" | grep -qi 'terraform' && ok "matrix terraform: detected" || no "matrix terraform: detected"
-  { printf '%s' "$D" | grep -q 'p/python' || printf '%s' "$D" | grep -q 'p/javascript'; } \
+  grep -qi 'terraform' <<<"$D" && ok "matrix terraform: detected" || no "matrix terraform: detected"
+  { grep -q 'p/python' <<<"$D" || grep -q 'p/javascript' <<<"$D"; } \
     && no "matrix terraform: leaked a language pack" || ok "matrix terraform: base-only packs"
   D="$(doctor_of monorepo)"
-  { printf '%s' "$D" | grep -q 'p/python' && printf '%s' "$D" | grep -q 'p/react'; } \
+  { grep -q 'p/python' <<<"$D" && grep -q 'p/react' <<<"$D"; } \
     && ok "matrix monorepo: python+react packs" || no "matrix monorepo: python+react packs"
 else
   skip "stack fixture matrix (fixtures dir missing)"
@@ -231,11 +234,11 @@ if [ -f tools/security-audit-kit/CHECKSUMS ]; then
   # would inherit that failure and mask the assertion.
   printf 'v0.0.1 %s %s\n' "$(printf '0%.0s' $(seq 40))" "$(printf 'f%.0s' $(seq 64))" > "$KV"
   VOUT="$($SCAN verify 2>&1)"
-  printf '%s' "$VOUT" | grep -q '^PIN ' && ok "verify: pin/content mismatch detected (digest)" || no "verify: pin digest mismatch NOT detected"
+  grep -q '^PIN ' <<<"$VOUT" && ok "verify: pin/content mismatch detected (digest)" || no "verify: pin digest mismatch NOT detected"
   # Legacy 2-field pin (no digest): falls back to comparing the tag against the CHANGELOG.
   printf 'v0.0.1 %s\n' "$(printf '0%.0s' $(seq 40))" > "$KV"
   VOUT="$($SCAN verify 2>&1)"
-  printf '%s' "$VOUT" | grep -q '^PIN ' && ok "verify: pin/content mismatch detected (legacy label)" || no "verify: legacy pin mismatch NOT detected"
+  grep -q '^PIN ' <<<"$VOUT" && ok "verify: pin/content mismatch detected (legacy label)" || no "verify: legacy pin mismatch NOT detected"
   # A branch pin has no version label to compare -> must stay quiet, not false-positive.
   printf 'main %s\n' "$(printf '0%.0s' $(seq 40))" > "$KV"
   $SCAN verify >/dev/null 2>&1 && ok "verify: branch pin does not false-positive" || no "verify: branch pin should pass"
@@ -414,9 +417,9 @@ echo 'requests==2.31.0' > "$VP/repo/requirements.txt"
 ( cd "$VP/repo" && git init -q . && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
   # An unrelated venv is active: the repo's own .venv must still be the one audited.
   DOUT="$(VIRTUAL_ENV="$VP/foreign" bash "$KIT_SRC/scan.sh" deps 2>&1 || true)"
-  printf '%s' "$DOUT" | grep -q 'env \.venv' \
+  grep -q 'env \.venv' <<<"$DOUT" \
     && ok "py-deps: repo .venv wins over active VIRTUAL_ENV" || no "py-deps: wrong venv selected"
-  printf '%s' "$DOUT" | grep -q 'is not this repo.s venv' \
+  grep -q 'is not this repo.s venv' <<<"$DOUT" \
     && ok "py-deps: mismatch warned" || no "py-deps: mismatch not warned" )
 cd "$TARGET" || exit 1
 
@@ -461,19 +464,29 @@ echo "-- bootstrap SHA-verify (--expect enforcement, offline local repo) --"
 # Build a throwaway 'kit repo' (local, offline) with a tag, then bootstrap from it.
 KITREPO="$(mktemp -d)"
 if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$KITREPO"/; else cp -R "$KIT_SRC"/. "$KITREPO"/ && rm -rf "$KITREPO/.git"; fi
-( cd "$KITREPO" && git init -q && git -c user.email=e2e@test -c user.name=e2e add -A \
-    && git -c user.email=e2e@test -c user.name=e2e commit -qm kit && git tag v1.18.0-rc.99 )
+# Cut the fixture the way scripts/release.sh cuts a tag: the newest CHANGELOG section carries the
+# tag's version and CHECKSUMS is regenerated. Taking the working tree as-is would tie this test to
+# whatever the CHANGELOG says today — an open `[Unreleased]` (every PR adds one) or a stale
+# CHECKSUMS would fail the legacy-pin check below for a reason that has nothing to do with bootstrap.
+# Fixed fixture version 99.0.0: never a real release, independent of the repo's state.
+awk '!done && /^## \[/ { if ($0 ~ /^## \[Unreleased\]/) { print "## [99.0.0]"; done=1; next }
+                          print "## [99.0.0]"; print ""; done=1 } { print }' \
+  "$KITREPO/CHANGELOG.md" > "$KITREPO/CHANGELOG.md.e2e" && mv "$KITREPO/CHANGELOG.md.e2e" "$KITREPO/CHANGELOG.md"
+# `checksums` lists tracked files -> stage first, then hash, then stage the new CHECKSUMS.
+( cd "$KITREPO" && git init -q && git add -A && bash scan.sh checksums >/dev/null 2>&1 \
+    && git -c user.email=e2e@test -c user.name=e2e add -A \
+    && git -c user.email=e2e@test -c user.name=e2e commit -qm kit && git tag v99.0.0-rc.99 )
 GOOD="$(git -C "$KITREPO" rev-parse HEAD)"
 # wrong --expect -> must REFUSE and must NOT vendor
 T1="$(mktemp -d)"; ( cd "$T1" && git init -q )
-if ( cd "$T1" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v1.18.0-rc.99 --expect=deadbeefdeadbeef ) >/dev/null 2>&1; then
+if ( cd "$T1" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v99.0.0-rc.99 --expect=deadbeefdeadbeef ) >/dev/null 2>&1; then
   no "bootstrap: wrong --expect should be REFUSED"
 else
   [ -d "$T1/tools/security-audit-kit" ] && no "bootstrap: refused but still vendored" || ok "bootstrap: wrong --expect refused (no vendor)"
 fi
 # correct --expect -> succeeds + vendors
 T2="$(mktemp -d)"; ( cd "$T2" && git init -q )
-if ( cd "$T2" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v1.18.0-rc.99 --expect="$GOOD" ) >/dev/null 2>&1; then
+if ( cd "$T2" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v99.0.0-rc.99 --expect="$GOOD" ) >/dev/null 2>&1; then
   [ -f "$T2/tools/security-audit-kit/.kit-version" ] && ok "bootstrap: correct --expect succeeds + vendors" || no "bootstrap: succeeded but no vendor"
 else
   no "bootstrap: correct --expect should succeed"
@@ -498,7 +511,7 @@ awk '!done && $0 == "## [1.18.0]" {$0="## [Unreleased]"; done=1} {print}' \
   "$KIT_SRC/CHANGELOG.md" > "$RELTEST/CHANGELOG.md"
 ( cd "$RELTEST" && git init -q )
 ROUT="$(cd "$RELTEST" && bash scripts/release.sh rc 1.18.0 --yes --no-gh 2>&1 || true)"
-printf '%s' "$ROUT" | grep -q "CHANGELOG top version is '1.17.0', expected '1.18.0'" \
+grep -q "CHANGELOG top version is '1.17.0', expected '1.18.0'" <<<"$ROUT" \
   && ok "release: refuses an RC while CHANGELOG still stops at Unreleased" \
   || no "release: accepted an RC without its CHANGELOG version section"
 rm -rf "$RELTEST"
@@ -510,17 +523,17 @@ if docker_ok; then
   # Reachability is opt-in and must NOT loosen the gate: call analysis drops uncalled vulns by
   # default, so it is always paired with --all-vulns — the finding set and exit code stay the same,
   # and what you gain is a called/uncalled signal for triage.
-  printf '%s' "$($SCAN osv 2>&1)" | grep -q 'reachability:' \
+  grep -q 'reachability:' <<<"$($SCAN osv 2>&1)" \
     && no "osv: call analysis on by default (would silently shrink the finding set)" \
     || ok "osv: reachability is opt-in, off by default"
-  printf '%s' "$(OSV_CALL_ANALYSIS=go $SCAN osv 2>&1)" | grep -q 'reachability: go, gate unchanged' \
+  grep -q 'reachability: go, gate unchanged' <<<"$(OSV_CALL_ANALYSIS=go $SCAN osv 2>&1)" \
     && ok "osv: OSV_CALL_ANALYSIS=go enables the reachability signal" || no "osv: call analysis not wired"
   # Rust call analysis works by RUNNING the dependency tree's build scripts. A scanner that
   # executes untrusted code to decide what to report is an own-goal — refuse unless asked twice.
   ROUT="$(OSV_CALL_ANALYSIS=rust $SCAN osv 2>&1)"; RRC=$?
-  printf '%s' "$ROUT" | grep -q 'RUNS dependency build scripts' && [ "$RRC" -ne 0 ] \
+  grep -q 'RUNS dependency build scripts' <<<"$ROUT" && [ "$RRC" -ne 0 ] \
     && ok "osv: rust call analysis refused (executes dependency build scripts)" || no "osv: rust refusal missing"
-  printf '%s' "$(OSV_CALL_ANALYSIS=rust OSV_ALLOW_BUILD_SCRIPTS=1 $SCAN osv 2>&1)" | grep -q 'WILL execute' \
+  grep -q 'WILL execute' <<<"$(OSV_CALL_ANALYSIS=rust OSV_ALLOW_BUILD_SCRIPTS=1 $SCAN osv 2>&1)" \
     && ok "osv: the rust override is allowed but says what it does" || no "osv: rust override missing"
 else
   skip "osv (docker unavailable)"
@@ -569,10 +582,10 @@ if have node; then
  {"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"REAL\"}"}}
 ]}}
 JSON
-  node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null | grep -q 'recall:     50.0%' \
+  grep -q 'recall:     50.0%' <<<"$(node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null)" \
     && ok "eval: score.mjs precision/recall math" || no "eval: score.mjs math wrong"
   # Mock without confidence must print "not available" and NOT crash.
-  node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null | grep -q 'calibration: not available' \
+  grep -q 'calibration: not available' <<<"$(node tools/security-audit-kit/tests/eval/score.mjs eval_mock.json 2>/dev/null)" \
     && ok "eval: score.mjs handles missing confidence gracefully" || no "eval: score.mjs crashes on no-confidence mock"
   # Calibration metrics: a mock with known confidence values must produce correct Brier, ECE, and
   # threshold-cost numbers. 6 cases: 2 TP@0.9, 1 TP@0.6(suppressed), 1 FN@0.3, 1 TN@0.1, 1 FP@0.8(noise).
@@ -587,10 +600,10 @@ JSON
 ]}}
 JSON
   CALOUT="$(node tools/security-audit-kit/tests/eval/score.mjs eval_cal_mock.json 2>/dev/null)"
-  printf '%s' "$CALOUT" | grep -q 'Brier:' \
-    && printf '%s' "$CALOUT" | grep -q 'ECE:' \
-    && printf '%s' "$CALOUT" | grep -q 'suppressed REALs: 1' \
-    && printf '%s' "$CALOUT" | grep -q 'noise FPs:        1' \
+  grep -q 'Brier:' <<<"$CALOUT" \
+    && grep -q 'ECE:' <<<"$CALOUT" \
+    && grep -q 'suppressed REALs: 1' <<<"$CALOUT" \
+    && grep -q 'noise FPs:        1' <<<"$CALOUT" \
     && ok "eval: score.mjs calibration metrics (Brier, ECE, threshold cost)" \
     || no "eval: score.mjs calibration metrics wrong"
   rm -f eval_cal_mock.json
@@ -606,10 +619,10 @@ JSON
 ]}}
 JSON
   MOUT="$(node tools/security-audit-kit/tests/eval/score.mjs eval_matrix_mock.json 2>/dev/null)"
-  printf '%s' "$MOUT" | grep -q '3 backends' \
-    && printf '%s' "$MOUT" | grep -qE 'alpha +2 +100\.0%' \
-    && printf '%s' "$MOUT" | grep -qE 'beta +2 +.*0\.0%' \
-    && printf '%s' "$MOUT" | grep -q 'dead.*not measured' \
+  grep -q '3 backends' <<<"$MOUT" \
+    && grep -qE 'alpha +2 +100\.0%' <<<"$MOUT" \
+    && grep -qE 'beta +2 +.*0\.0%' <<<"$MOUT" \
+    && grep -q 'dead.*not measured' <<<"$MOUT" \
     && ok "eval: head-to-head table scores each backend separately, dead one not scored 0%" \
     || no "eval: multi-provider scoring wrong"
   rm -f eval_matrix_mock.json
@@ -635,12 +648,12 @@ mkdir -p "$LOCK" && printf 'pid=%s date=%s cmd=all\n' "$$" "$(date +%FT%T)" > "$
 BEFORE="$(wc -c < "$DAYLOG" 2>/dev/null || echo 0)"
 LOCKOUT="$(SCAN_LOCK_WAIT=1 $SCAN iac 2>&1)"
 AFTER="$(wc -c < "$DAYLOG" 2>/dev/null || echo 0)"
-printf '%s' "$LOCKOUT" | grep -q 'SEPARATE log' \
+grep -q 'SEPARATE run directory' <<<"$LOCKOUT" \
   && [ "$BEFORE" = "$AFTER" ] \
-  && ls docs/security/scan-findings/raw-"$(date +%F)".*.log >/dev/null 2>&1 \
+  && ls docs/security/scan-findings/runs/*/raw.log >/dev/null 2>&1 \
   && ok "lock: a second run scans anyway, into its own log (shared log untouched)" \
   || no "lock: contention handling wrong (interleaved or scan skipped)"
-rm -rf "$LOCK"; rm -f docs/security/scan-findings/raw-"$(date +%F)".*.log
+rm -rf "$LOCK" docs/security/scan-findings/runs
 
 # A lock directory outlives a killed scan; if that were permanent, every later run would be
 # pushed out of the shared record forever.
@@ -648,20 +661,132 @@ mkdir -p "$LOCK" && printf 'pid=999999 date=2020-01-01T00:00:00 cmd=all\n' > "$L
 # Capture, then grep: `| grep -q` exits at the first match, the scan takes SIGPIPE and pipefail
 # turns that into 141 — the exact false-negative shape v1.17.0 removed from the kit itself.
 STALEOUT="$(SCAN_LOCK_WAIT=1 $SCAN iac 2>&1 || true)"
-printf '%s' "$STALEOUT" | grep -q 'stale lock reclaimed' \
+grep -q 'stale lock reclaimed' <<<"$STALEOUT" \
   && ok "lock: a dead owner's lock is reclaimed, not waited on" || no "lock: stale lock not reclaimed"
 [ ! -d "$LOCK" ] && ok "lock: released again after the reclaiming run" || no "lock: not released after reclaim"
 grep -q 'run lock' <($SCAN doctor 2>/dev/null) && ok "doctor: reports the run lock" || no "doctor: no run-lock line"
+
+echo "-- run isolation: every run its own directory; only the lock holder publishes (F01) --"
+# A separate throwaway repo, so the record here is ours alone. zizmor is the one SARIF-writing
+# dimension whose tool runs through uvx -> a PATH shim stands in for it: no docker, no network,
+# and each run stamps its own marker into the SARIF it writes, so we can tell whose file is where.
+if have python3; then
+  F01="$(mktemp -d)"; F01BIN="$(mktemp -d)"
+  F01SCAN="bash $TARGET/tools/security-audit-kit/scan.sh"
+  cat > "$F01BIN/uvx" <<'SH'
+#!/bin/sh
+[ -n "${F01_SLEEP:-}" ] && sleep "$F01_SLEEP"
+printf '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"zizmor","rules":[]}},"results":[],"properties":{"marker":"%s"}}]}\n' "${F01_MARK:-none}"
+SH
+  chmod +x "$F01BIN/uvx"
+  (
+    cd "$F01" || exit 1
+    git init -q && mkdir -p .github/workflows && printf 'on: push\njobs: {}\n' > .github/workflows/ci.yml
+    git -c user.email=e2e@test -c user.name=e2e add -A && git -c user.email=e2e@test -c user.name=e2e commit -qm init
+  )
+  F01FD="$F01/docs/security/scan-findings"
+  F01LOCK="$F01/.git/security-audit-cache/scan.lock"
+  # Run a scan in the F01 repo: f01run <marker> [extra env...]
+  f01run(){ local m="$1"; shift; ( cd "$F01" && exec env PATH="$F01BIN:$PATH" SARIF=1 F01_MARK="$m" "$@" $F01SCAN zizmor ); }
+  # One fingerprint over the whole shared record: summary, sarif/, evidence, report.
+  f01snap(){ ( cd "$F01FD" && find summary.json evidence.json sarif report-*.html -type f 2>/dev/null \
+    | LC_ALL=C sort | xargs cat 2>/dev/null ) | cksum; }
+  f01runs(){ find "$F01FD/runs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' '; }
+
+  # 1) An uncontended run publishes the shared record and leaves no staging behind.
+  OUTA="$(f01run A REPORT=html 2>&1)"
+  RIDA="$(printf '%s' "$OUTA" | sed -n 's/.*── run: \([0-9T]*-[0-9]*\).*/\1/p' | head -1)"
+  grep -q '"marker":"A"' "$F01FD/sarif/zizmor.sarif" 2>/dev/null \
+    && ok "isolation: the lock holder publishes its SARIF to the shared record" \
+    || no "isolation: holder's SARIF missing from the shared record"
+  [ -n "$RIDA" ] && python3 -c "import json,sys;d=json.load(open(sys.argv[1]));sys.exit(d.get('run_id')!=sys.argv[2])" \
+      "$F01FD/summary.json" "$RIDA" 2>/dev/null \
+    && ok "isolation: shared summary.json names the run that wrote it (run_id)" \
+    || no "isolation: summary.json run_id missing or wrong (run '${RIDA:-?}')"
+  [ -f "$F01FD/evidence.json" ] && ls "$F01FD"/report-*.html >/dev/null 2>&1 \
+    && ok "isolation: evidence.json + HTML report published" || no "isolation: evidence/report not published"
+  [ "$(f01runs)" = 0 ] && ! ls "$F01FD"/*.tmp "$F01FD"/sarif/*.tmp >/dev/null 2>&1 \
+    && ok "isolation: the holder leaves no run/staging dir or temp file behind" \
+    || no "isolation: holder left staging behind"
+
+  # 2) A run that cannot take the lock must not touch ONE byte of the shared record — summary,
+  #    SARIF, evidence, report — and keeps a complete record of its own under runs/<id>/.
+  SNAP="$(f01snap)"
+  mkdir -p "$F01LOCK" && printf 'pid=%s date=%s cmd=all\n' "$$" "$(date +%FT%T)" > "$F01LOCK/owner"
+  OUTB="$(f01run B SCAN_LOCK_WAIT=0 REPORT=html 2>&1)"
+  RIDB="$(printf '%s' "$OUTB" | sed -n 's/.*── run: \([0-9T]*-[0-9]*\).*/\1/p' | head -1)"
+  [ "$(f01snap)" = "$SNAP" ] \
+    && ok "isolation: a lock-less run leaves summary/sarif/evidence/report untouched" \
+    || no "isolation: a lock-less run CHANGED the shared record"
+  RDB="$F01FD/runs/$RIDB"
+  [ -n "$RIDB" ] && grep -q '"marker":"B"' "$RDB/sarif/zizmor.sarif" 2>/dev/null \
+    && [ -f "$RDB/evidence.json" ] && [ -f "$RDB/raw.log" ] \
+    && python3 -c "import json,sys;d=json.load(open(sys.argv[1]));sys.exit(d.get('run_id')!=sys.argv[2])" "$RDB/summary.json" "$RIDB" \
+    && ok "isolation: the lock-less run keeps its own complete record in runs/<id>/" \
+    || no "isolation: lock-less run's own record incomplete (runs/${RIDB:-?})"
+  grep -q "runs/$RIDB" <<<"$OUTB" \
+    && ok "isolation: the lock-less run says where its record went" || no "isolation: lock-less run did not name its run dir"
+
+  # 3) evidence/report re-render the SHARED record; without the lock they must refuse, not write.
+  EVRC=0; ( cd "$F01" && SCAN_LOCK_WAIT=0 $F01SCAN evidence ) >/dev/null 2>&1 || EVRC=$?
+  RPRC=0; ( cd "$F01" && SCAN_LOCK_WAIT=0 $F01SCAN report ) >/dev/null 2>&1 || RPRC=$?
+  [ "$EVRC" -ne 0 ] && [ "$RPRC" -ne 0 ] && [ "$(f01snap)" = "$SNAP" ] \
+    && ok "isolation: evidence/report refuse to rewrite the shared record without the lock" \
+    || no "isolation: evidence/report wrote without the lock (rc=$EVRC/$RPRC)"
+  rm -rf "$F01LOCK"
+
+  # 4) Two real runs overlapping: the holder publishes, the other stays in its own dir, ids differ.
+  f01run D F01_SLEEP=4 > "$F01.d.out" 2>&1 &
+  DPID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$F01LOCK/owner" ] && break; sleep 1; done
+  f01run E SCAN_LOCK_WAIT=0 > "$F01.e.out" 2>&1
+  wait "$DPID"
+  RIDD="$(sed -n 's/.*── run: \([0-9T]*-[0-9]*\).*/\1/p' "$F01.d.out" | head -1)"
+  RIDE="$(sed -n 's/.*── run: \([0-9T]*-[0-9]*\).*/\1/p' "$F01.e.out" | head -1)"
+  [ -n "$RIDD" ] && [ -n "$RIDE" ] && [ "$RIDD" != "$RIDE" ] \
+    && grep -q '"marker":"D"' "$F01FD/sarif/zizmor.sarif" \
+    && grep -q '"marker":"E"' "$F01FD/runs/$RIDE/sarif/zizmor.sarif" 2>/dev/null \
+    && python3 -c "import json,sys;d=json.load(open(sys.argv[1]));sys.exit(d.get('run_id')!=sys.argv[2])" "$F01FD/summary.json" "$RIDD" \
+    && ok "isolation: overlapping runs — holder published, the other kept to runs/<id>, distinct ids" \
+    || no "isolation: overlapping runs mixed their records (D=${RIDD:-?} E=${RIDE:-?})"
+  rm -rf "$F01FD/runs"
+
+  # 5) A cancelled holder (Ctrl-C reaches the whole process group) must not publish a half run,
+  #    and must stop — not release the lock and carry on writing without it.
+  SNAP="$(f01snap)"
+  # Not via f01run: a backgrounded function is a subshell of its own, and `wait` would return as
+  # soon as THAT dies, before scan.sh has finished cleaning up. Here the job's pid is scan.sh.
+  set -m
+  ( cd "$F01" && exec env PATH="$F01BIN:$PATH" SARIF=1 F01_MARK=C F01_SLEEP=20 $F01SCAN zizmor ) > "$F01.c.out" 2>&1 &
+  CPID=$!
+  set +m
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$F01LOCK/owner" ] && break; sleep 1; done
+  kill -TERM -- "-$CPID" 2>/dev/null
+  CRC=0; wait "$CPID" || CRC=$?
+  [ "$CRC" -ne 0 ] && [ "$(f01snap)" = "$SNAP" ] \
+    && ok "isolation: a cancelled run exits non-zero and leaves the last record intact" \
+    || no "isolation: a cancelled run published or carried on (rc=$CRC)"
+  [ ! -d "$F01LOCK" ] && [ "$(f01runs)" = 0 ] \
+    && ok "isolation: a cancelled holder releases its lock and drops its staging" \
+    || no "isolation: cancelled holder left its lock or staging behind"
+  grep -q 'NEXT STEP' "$F01.c.out" \
+    && no "isolation: a cancelled run went on to the end of the script" \
+    || ok "isolation: a cancelled run stops where it was cancelled"
+
+  rm -rf "$F01" "$F01BIN" "$F01".?.out
+else
+  skip "run isolation (python3 unavailable)"
+fi
 
 echo "-- pkgcheck: the pre-install gate (offline; fixtures, no network) --"
 PKGCHECK="tools/security-audit-kit/lib/pkgcheck.py"
 if have python3; then
   # 1) command parsing: what gets checked, and what must NOT be mistaken for a package name.
   PARSED="$(python3 $PKGCHECK --command 'npm i lodash react@18.2.0 && pip install requests==2.32.3 -r reqs.txt')"
-  printf '%s' "$PARSED" | grep -q '^npm	lodash	$' \
-    && printf '%s' "$PARSED" | grep -q '^npm	react	18.2.0$' \
-    && printf '%s' "$PARSED" | grep -q '^pypi	requests	2.32.3$' \
-    && ! printf '%s' "$PARSED" | grep -q 'reqs.txt' \
+  grep -q '^npm	lodash	$' <<<"$PARSED" \
+    && grep -q '^npm	react	18.2.0$' <<<"$PARSED" \
+    && grep -q '^pypi	requests	2.32.3$' <<<"$PARSED" \
+    && ! grep -q 'reqs.txt' <<<"$PARSED" \
     && ok "pkgcheck: parses install targets, ignores -r <file> (that is scan.sh deps' job)" \
     || no "pkgcheck: install-target parsing wrong"
   # `npm install` with no argument installs the lockfile that is already in the repo, and a
@@ -676,7 +801,7 @@ if have python3; then
   # `--classify` exits 1 on BLOCK and 2 on INDETERMINATE by design (the hook reads that code),
   # and this harness runs with pipefail — so capture the verdict, never grep through the pipe.
   V_BLOCK="$(python3 $PKGCHECK --classify < gd_block.json || true)"
-  printf '%s' "$V_BLOCK" | grep -q '^BLOCK	typosquatting' \
+  grep -q '^BLOCK	typosquatting' <<<"$V_BLOCK" \
     && ok "pkgcheck: typosquat blocks" || no "pkgcheck: typosquat did not block"
   # The FP guard, and it is the load-bearing one: measured on 18 of the most-installed packages,
   # threat-* rules fire on django/pandas/next/webpack. Blocking on them would block `pip install
@@ -684,14 +809,14 @@ if have python3; then
   echo '{"package":"pandas","issues":2,"errors":{},"results":{"threat-process-download-exec":[{"l":1}],"capability-process-spawn":[{"l":2}]}}' \
     > gd_note.json
   V_NOTE="$(python3 $PKGCHECK --classify < gd_note.json || true)"
-  printf '%s' "$V_NOTE" | grep -q '^NOTE' \
+  grep -q '^NOTE' <<<"$V_NOTE" \
     && ok "pkgcheck: threat-* rules that fire on popular packages report, never block" \
     || no "pkgcheck: over-blocking — a legitimate package would be refused"
   # guarddog prints "No risks found" and exits 0 when the DOWNLOAD failed; reporting that as
   # clean would be a lie the caller cannot detect.
   echo '{"package":"x","issues":0,"errors":{"download-package":"404"}}' > gd_err.json
   V_ERR="$(python3 $PKGCHECK --classify < gd_err.json || true)"
-  printf '%s' "$V_ERR" | grep -q '^INDETERMINATE' \
+  grep -q '^INDETERMINATE' <<<"$V_ERR" \
     && ok "pkgcheck: a failed download is INDETERMINATE, never 'clean'" \
     || no "pkgcheck: failed download reported as clean"
   rm -f gd_block.json gd_note.json gd_err.json

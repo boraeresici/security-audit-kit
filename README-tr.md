@@ -358,10 +358,18 @@ durum; ikisi de ayni `raw-<tarih>.log` dosyasina yaziyordu (satirlar birbirine g
 altinda `mkdir` tabanli bir kilit *yazicilari* siraya sokuyor: `summary.json` once gecici dosyaya
 yazilip rename ediliyor (okuyan ya eski ya yeni kaydi gorur, asla yarisini degil) ve ikinci kosu
 kilit icin `SCAN_LOCK_WAIT` saniye (varsayilan 30) bekliyor. Alamazsa **tarama yine de kosar** —
-baskasi tarama yapiyor diye bir push asla bloklanmaz — sadece kendi `raw-<tarih>.<pid>.log` dosyasina
-yazar ve bunu soyler. Oldurulen bir taramadan kalan kilit, sahibinin PID'i olu ise ya da
-`SCAN_LOCK_STALE_MIN` (60) dakika sonra geri alinir; `scan.sh doctor` kilidin bos/tutulu/bayat
-oldugunu yazar.
+baskasi tarama yapiyor diye bir push asla bloklanmaz — sadece kendi kaydina yazar ve bunu soyler.
+Oldurulen bir taramadan kalan kilit, sahibinin PID'i olu ise ya da `SCAN_LOCK_STALE_MIN` (60)
+dakika sonra geri alinir; `scan.sh doctor` kilidin bos/tutulu/bayat oldugunu yazar.
+
+Her kosu bir kimlik alir (`summary.json` icinde `run_id`) ve kaydini once kendi
+`scan-findings/runs/<run-id>/` dizininde kurar. Ortak kayda (`summary.json`, `sarif/`,
+`evidence.json`, `report-<tarih>.html`) yalniz kilit sahibi, en sonda, Ctrl-C'nin bolemeyecegi kisa
+bir adimla yayinlar; `summary.json` en son gider. Kilidi alamayan kosu ortak kayda hic dokunmaz;
+kendi tam kaydini (ham log, ozet, SARIF, evidence) `SCAN_RUNS_KEEP_DAYS` (7) gun boyunca
+`runs/<run-id>/` altinda tutar. Iptal edilen kosu durur, hicbir sey yayinlamaz ve onceki kaydi
+oldugu gibi birakir. `scan.sh evidence` / `report` ortak kaydi yeniden yazdigi icin kilit yoksa
+yazmak yerine reddeder (cikis 1).
 
 > **Vendor'daki kit salt-okunurdur.** `tools/security-audit-kit/` elle duzenlenmez — ne sen, ne bir
 > takim arkadasin, ne de triyaj sirasinda tarayiciyi "duzelten" bir AI asistani. Duzenleme bir
