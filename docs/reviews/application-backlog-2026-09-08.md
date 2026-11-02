@@ -10,6 +10,10 @@ Kaynak: [8 Eylül 2026 çok rollü değerlendirme](application-review-2026-09-08
 
 **Güncelleme — 11 Ekim 2026:** [Cloudflare karşılaştırması](../compare/cloudflare-security-audit-skill.md), yerel `078cf18` koduyla eşlendi. **F27** kayıtlı deep-review kapsamı ve **F28** bağımsız doğrulama pilotu eklendi; **R14** alan playbook'ları koşullu rezervdir. F11/F12/F19 kabul kriterleri genişletildi. P0/P1 sırası korunur; F19 → F27 → F28 yeni AI inceleme hattıdır. F26/R12 önceki yerinde kalır. Bunlar plan değişiklikleridir; özellikler henüz uygulanmadı.
 
+**Güncelleme — 21 Ekim 2026:** F01 uygulaması sırasında yerel e2e'deki py-deps hataları incelendi. Neden, geliştirici shell'inde tanımlı `VIRTUAL_ENV` idi; testler hermetik yapıldı. Aynı inceleme bir ürün hatası da gösterdi: repo `.venv`'i yokken projeye ait olmayan aktif ortam denetleniyor. **F29** olarak eklendi (P1, sıra 3a). Bu bir plan değişikliğidir; düzeltme henüz uygulanmadı.
+
+**Not — 2 Kasım 2026:** SOCNova karşılaştırması, taramalar arası yeni açık takibi, agent/alarm entegrasyonu ve Dependabot rolü **R15** koşullu not kartına alındı. Kritik değil; teslim sırası değişmedi.
+
 P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki güvenilirlik ve kullanılabilirlik paketi. P2: ölçüm ve talebe göre geliştirme. P0 etiketi CVSS veya istismar şiddeti değildir. Efor: K ≈ 0,5–2, O ≈ 3–5, B ≈ 6–10 mühendis-gün; test ve doküman dahil kaba tahmin, takvim sözü değil.
 
 ## Öncelik tablosu
@@ -44,6 +48,7 @@ P0: sonuç/kayıt güvenini doğrudan bozan doğrulanmış hata. P1: sonraki gü
 | F26 | Sunucusuz HTML raporda arama, filtre ve bulgu detayları | Geliştirme / Ö | P2 | Raporlama + UX | K–O | F04, F14; F16 kapsam/eksiklik sözleşmesi |
 | F27 | Deep incelemede kapsam defteri ve tekrar inceleme | Geliştirme / K+Ö | P2 | AI + veri | O | F03, F04, F19 |
 | F28 | Bağımsız doğrulayıcı pilotu ve kapsam kontrolü | Araştırma / K+Ö | P2 | AI + QA | O pilot | F11, F12c, F19, F27 |
+| F29 | py-deps: projeye ait olmayan aktif ortamı denetleme | Hata / D+K | P1 | Backend + güvenlik | K | — ; durum adlandırması F02 ile uyumlu |
 
 ## Roadmap'ten gelen ek / koşullu kartlar
 
@@ -65,6 +70,7 @@ Bu tablo yukarıdaki F maddelerini tekrar etmez. “Koşullu” işler, belirtil
 | R12 | SkillSpector: skill güvenliği tarama boyutu | P2 pilot adayı | Güvenlik + veri | K pilot; O entegrasyon | F11/F13; entegrasyon F02/F03/F16; varsayılan sıra F26 sonrası |
 | R13 | CLI üstünde tarama başlatan yerel UI | Koşullu P2 | Backend + UX | O–B | F26 kullanım verisi; F01–F05, F11/F24; R12 kararı sonrası |
 | R14 | Sinyalle seçilen uzman inceleme playbook’ları | Koşullu P2 | Güvenlik + AI | K seçim; O / alan | F12 eval kapsamı, F27; gerçek tüketicide kapsam açığı |
+| R15 | Yeni açık takibi, olay çıkışı ve agent erişimi | Not / koşullu | Güvenlik + entegrasyon | a: K; b: K–O; c: O–B; d: O | a: yok; b: F01; c: F03, F19; d: c, F11, F13; gerçek tüketici talebi |
 
 ## İş kartları / kabul kriterleri
 
@@ -362,6 +368,33 @@ Gerçek tüketicide mevcut skill/scanner'ların kaçırdığı kaynak inceleme i
 
 Seçilen alan için giriş sinyali, incelenecek sınırlar, uygulanmama nedeni, en az bir gerçek bulgu/FP ikizi ve kaynak referansları hazırlanmalı. Yeni kurallar F12 dev ölçümüne, kapsam F27'ye bağlanmalı. R10 ile yalnız ihtiyaç duyulan referanslar ayrılmalı; tüm skill ağacı yeniden düzenlenmez. Yeni scanner, canlı test veya exploit yürütme eklenmez. Kod/metin alınacaksa uygulama tarihinde sürüm ve lisans doğrulanıp atıf korunur.
 
+### R15 — Yeni açık takibi, olay çıkışı ve agent erişimi (not)
+
+**Kayıt — 2 Kasım 2026:** Kullanıcı sorusundan doğdu: bağımlılıklarda yeni yayınlanan açıklar için tarama arasında da uyarı alınabilir mi, sonuç bir AI agent'a (MCP vb.) ve alarm/observer araçlarına bağlanabilir mi. SOCNova (yapay zekâ destekli SOC platformu, socnova.com) karşılaştırmasında kite alınacak yeni çekirdek özellik bulunmadı: AI triyaj, FP ayıklama, tehdit skoru ve vaka kaydının karşılıkları (`/sec-triage`, allowlist decay, KEV/EPSS, `findings-<tarih>.md`) mevcut. CLI'ya ek web UI F26 → koşullu R13 kararıyla zaten planda. Bu kart şu an kritik değil; sıra değiştirmez, aşağıdaki tetiklerle yeniden değerlendirilir.
+
+**Bugünkü boşluk:** Tarama yalnız commit/push/elle çalışıyor. Kod değişmeden bağımlılığa yeni açık yayınlanırsa bir sonraki taramaya kadar görünmez. Kitin kendi repo'sundaki haftalık self-audit tüketici için şablon değil.
+
+**Aşamalar ve koşullar:**
+
+- **R15a — Dependabot rehberi (doküman):** GitHub tüketicisine Dependency graph, Dependabot alerts / security updates, `dependabot.yml` ve auto-triage kurulumunu ve kitle iş bölümünü (Dependabot sürekli tetik; kit reachability, KEV/EPSS, fix maliyeti, Dependabot PR'ının guarddog/pkgcheck kapısı) anlatır. Kit kullanımını doğrudan artırmaz; “taramalar arası boşluk ne olacak” sorusunu cevaplar. F14 yardım/kapsam işiyle birlikte ele alınabilir. Ayrıca kitin kendi repo'sunda `.github/dependabot.yml` yok; `github-actions` ekosistemi SHA pinli action'ları izleyebilir (R11 ile ilişkili, docker/pyrun araç pinlerini kapsamaz).
+- **R15b — Zamanlanmış tüketici CI şablonu:** Günlük `SARIF=1 scan.sh osv` + deps, yalnız rapor, build kırmaz. GitHub'da SARIF Code Scanning'e yüklenir; yeni/kapanan uyarı takibi ve bildirimi GitHub yapar.
+- **R15c — Fark ve olay çıkışı:** `evidence_diff` (yeni / çözülen / devam eden; `indeterminate` boyutta “çözüldü” yok, ilk koşu baseline), yalnız yeni CVE'ler için KEV/EPSS, JSONL (SIEM / SOCNova), Prometheus textfile metrikleri (observer/alarm araçları), isteğe bağlı webhook. Dependabot uyarılarıyla tek kuyruk GHSA↔CVE alias eşlemesi gerektirir. Kit ağa çıkmaz; dış gönderim ayrı adımdır ve F13 tablosunda yer alır. F03 ve F19 olmadan satır kayması sahte “yeni” üretir.
+- **R15d — Salt okunur MCP sunucusu:** `get_summary`, `list_findings`, `get_finding`, `diff_since`, `coverage_gaps`; yerel stdio, opsiyonel bileşen. Tarama başlatma ve karar yazma MCP'ye açılmaz: bulgu metni taranan koddan gelir (prompt injection, F11) ve kararların tek kaynağı `findings-<tarih>.md` kalır.
+
+**Açılma tetiği:** Gerçek bir tüketicinin taramalar arası açık bildirimi veya alarm/agent entegrasyonu talebi. R15a doküman olduğu için F14 sırasında tetik beklemeden alınabilir.
+
+### F29 — py-deps ortam seçimi
+
+**Bulgu — 21 Ekim 2026 (D+K):** `scan_py_deps()` (`scan.sh:252`), repoda `.venv` yoksa aktif `$VIRTUAL_ENV`'i projenin ortamı kabul ediyor (`scan.sh:264`). Bu değişkenin bu repoya ait olup olmadığına, hatta gerçek bir venv olup olmadığına bakılmıyor. Aynı fonksiyonun yorumu başka projenin ortamını denetlemeyi “sessizce yanlış cevap” diye tanımlıyor; repo `.venv`'i varken bu kural uygulanıyor, yokken uygulanmıyor. Geliştirici makinesinde `VIRTUAL_ENV` pyenv'in global yorumlayıcısını (`~/.pyenv/versions/3.12.9`) gösterirken, venv'siz yalnız `pyproject.toml` içeren fixture'da beklenen INDETERMINATE yerine global yorumlayıcı denetlendi. pip-audit `Dependency not found on PyPI` hatası verdi ve gate HARD blokladı (rc=1). Aynı yol, temiz bir yabancı ortamda yanlış `pass` da üretebilir; bu ikinci sonuç kod yolundan çıkarımdır, ayrıca ölçülmedi. CI'da `VIRTUAL_ENV` tanımlı olmadığı için e2e bunu görmüyordu; e2e F01 branch'inde `unset VIRTUAL_ENV` ile hermetik yapıldı, ürün davranışı değişmedi.
+
+**Kabul kriterleri:**
+
+- Aktif `VIRTUAL_ENV` yalnız bu repoya bağlanabiliyorsa (ör. yolu `ROOT` altında) proje ortamı sayılmalı. Bağlanamıyorsa davranış açıkça seçilmeli: no-env yoluna düşmek (statik manifest okuma veya INDETERMINATE) ya da açık bir opt-in değişkeniyle kabul etmek. Seçim ve gerekçe karta işlenmeli.
+- `pyvenv.cfg` taşımayan (venv olmayan) bir `VIRTUAL_ENV` venv sayılmamalı.
+- Projeye ait olmayan ortam denetlenmişse bu sonuç `pass` veya HARD bulgu olarak raporlanmamalı. Çıktı hangi ortamın denetlendiğini ve neden seçildiğini söylemeli; `summary.json` durumu F02'nin durum adlandırmasıyla uyumlu olmalı.
+- Fixture'lar: repo `.venv` + yabancı `VIRTUAL_ENV` (mevcut test korunur), `.venv` yok + yabancı gerçek venv, `.venv` yok + venv olmayan yorumlayıcı (pyenv global örneği), `.venv` yok + `ROOT` altındaki venv, `VIRTUAL_ENV` tanımsız.
+- Mevcut kullanıcılar için davranış değişikliği CHANGELOG'da ve F25 geçiş notunda belirtilmeli; README/README-tr'deki ortam seçimi açıklaması güncellenmeli.
+
 ## Güncel teslim sırası — ana planlama kaynağı
 
 Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki işler tek PR olmak zorunda değil. Koşullu işler açılmadığında sonraki bağımsız işi bekletmez. Önceki Paket A/B/C sırası bu tabloyla değiştirilmiştir.
@@ -372,6 +405,7 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | 1 | **F09 + F23 tamamlandı** | 234 unit test, 93+ offline e2e assertion; pytest/e2e dahil beş required check uzakta etkin. F01–F06 regresyonları ilgili düzeltmeyle eklenir |
 | 2 | **F01 → F05** çalıştırma izolasyonu ve kilit sahipliği | Cache ve rapor öncesi ortak kayıt yarışlarını gider |
 | 3 | **F02 → F03 → F04** durum, güncel kanıt, doğru rapor | Eksik/eskimiş tarama temiz görünmesin; F01 ve F02 schema tasarımı beraber yapılır. F23'teki unit test fixture'ları F02–F04 düzeltmeleriyle genişletilir |
+| 3a | **F29** py-deps ortam seçimi | Yabancı ortamın sonucu bu repoya ait gibi raporlanmasın; durum adlandırması F02 ile uyumlu olsun. Küçük ve bağımsız, F02 sonrasını beklemeden de alınabilir |
 | 4 | **F06 → F07 → F08 → F25** cache politikası, release, kanal ve geçiş rehberi | Bir sonraki stabil yayın için güvenilirlik kapısı; F07 zorunlu kontrollerine F09 dahil. F25 tüketicinin sürüm geçişinde ne yapacağını bilmesini sağlar |
 | 5 | **F13 + F11 + F24** veri akışı, kit tehdit modeli ve config doğrulama | Yanlış yerellik iddiasını gider; F24 config'in çalıştırılabilir doğasını somut kontrol altına alır. R02/R06 için sınırları tanımla |
 | 6 | **F18** platform/yol matrisi ve kalan WSL2 doğrulaması | Taşınabilirlik temel ürün vaadi; WSL2 ortamı yoksa diğer testler devam eder |
@@ -385,7 +419,7 @@ Aşağıdaki sıra tek ekip için önerilen varsayılandır; aynı satırdaki i�
 | 11 | **R02** skills-only plugin, ihtiyaç varsa | F10/F11/F14 tamam; vendor öncesi deneme kolaylığı sağlar |
 | 12 | **F21b / R03** ihtiyaç açılan genişletme | Monorepo maliyeti varsa F21b; Python/JS triyaj yükü varsa R03. Birbirinin önkoşulu değiller |
 | 13 | **F17** ihtiyaç kadar modüler bakım | Stabil davranış üstünde küçük dilimler; tüm işi bekleten yeniden yazım yok |
-| 14 | **R04/R05/R06/R07/R08/R10/R11/R13/R14** koşullu rezerv | Yalnız karttaki tetik ve bağımlılıklar oluşursa planlanır. R11 pin eskimesi veya CVE tetiklediğinde; R13 F26 kullanımında tarama kontrolü ihtiyacı doğrulanınca açılır |
+| 14 | **R04/R05/R06/R07/R08/R10/R11/R13/R14/R15** koşullu rezerv | Yalnız karttaki tetik ve bağımlılıklar oluşursa planlanır. R11 pin eskimesi veya CVE tetiklediğinde; R13 F26 kullanımında tarama kontrolü ihtiyacı doğrulanınca açılır |
 | 15 | **R09 wizard** en son | Aktif öncelikli işler sonrası, güncel UX verisiyle yeniden tasarım |
 
 **Bağımsız AI ölçüm hattı:** F12a sıra 1 ile aynı planlama döneminde başlayabilir; API anahtarı gerektirmez. F12b uygun backend erişimiyle, F12c ise sonuçlar yeterliyse takip eder. Bu bir paralel ajan çalıştırma talimatı değil; geliştirme bağımlılığı tarifidir. Üretim varsayılanı ölçülmeden prompt/eşik değişmez; deterministik düzeltmeler bu hattı beklemez. R04/R05 ilgili F12 kapıları tamamlanmadan açılmaz.
