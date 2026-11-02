@@ -16,7 +16,13 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 
 **F03** (2 Kasım, `feat/f03-artifact-provenance`): evidence yalnız bu çalıştırmanın manifestteki, hash'i tutan SARIF dosyalarını kullanıyor; provenance `summary.json` ve evidence'ta. Ortak `sarif/` önceki çalıştırmaların dosyalarını artık taşımıyor; F01'de açık bırakılan soru böylece kapandı.
 
-**Sırada:** F03 tamamlandı (PR #40). Sıradaki işler: F04 → F14a + F25 → F30 (aşağıdaki performans girişine bak). Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+**F04** (2 Kasım, `fix/f04-honest-report`) ile teslim sırasının 3. maddesi tamamlandı.
+- **Rapor başlığı:** yalnız kefil olabildiğini yazıyor (`clean`, `NOT complete`, `blocked`, `unknown`). Çöken bir araç bulgu olarak değil, "scan error, not a finding" olarak gösteriliyor.
+- **Tarih:** tarama zamanı ile rapor tarihi ayrı.
+- **Açık komutlar:** `scan.sh evidence`/`report` dosyalarını üretemezlerse 1 ile çıkıyor.
+- **Dogfood:** eskiden "findings present (exit 1)" diyen başlık, artık `blocked (exit 1): sast (scan error, not a finding), py-deps (findings)` diyor.
+
+**Sırada:** F14a + F25 (3b) → F30 (3c) → yayın kapısı F06–F08 (aşağıdaki performans girişine bak). Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
 
 ## 2 Kasım 2026 — Performans ölçümü ve konumlandırma (F30–F32, R02 öne alındı)
 

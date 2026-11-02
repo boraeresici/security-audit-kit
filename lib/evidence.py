@@ -514,6 +514,9 @@ def main() -> int:
             # Content identity (commit, dirty, kit, config, tools, scope) — no run id or time, so
             # two runs over unchanged code still diff to nothing.
             **({"provenance": summary["provenance"]} if summary.get("provenance") else {}),
+            # The SARIF list it was built against — content too (paths + sha256), and what lets the
+            # report tell whether a summary.json is this evidence's own run.
+            **({"artifacts": summary["artifacts"]} if "artifacts" in summary else {}),
         },
         "counts": {"total": len(findings), "by_severity": by_severity, "by_decision": by_decision},
         "findings": findings,

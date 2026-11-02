@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format is based on
   upload the directory, run every dimension you want uploaded in the same scan (e.g. `all`).
 - `summary.json` gains `provenance` and `artifacts`; `evidence.json` gains `scan.provenance`
   (both additive).
+- `scan.sh evidence` and `scan.sh report` now exit 1 when they cannot write their file (no SARIF,
+  no evidence.json, no python3, builder failure). Scripts that called them and ignored a missing
+  output should check the exit code. A scan's own exit code is not affected.
 
 ### Fixed
 - **py-deps audited whatever environment the shell had active (F29).** With no repo `.venv`, any
@@ -56,6 +59,17 @@ All notable changes to this project are documented here. The format is based on
   error/skipped dimension's output, a file changed after the scan, a listed file that is missing
   or a leftover, is named in `warnings` and printed by the builder. The shared `sarif/` is replaced,
   not merged.
+- **The HTML report could say "clean" about a scan that never looked (F04).** The header's gate
+  line was "clean (exit 0)" for any zero exit code, even with dimensions skipped, crashed or
+  unrecorded, and "findings present (exit 1)" when a crashed tool blocked. It now shows one result:
+  `clean` (complete coverage, nothing reported), `passed — N finding(s), none blocking`,
+  `passed — NOT complete: <dim> (<status>)`, `blocked (exit N): <dim> (findings | scan error, not
+  a finding)`, `indeterminate (exit 3)` or `unknown` (no exit code). Scan time and report date are
+  shown apart. The scan time comes from `summary.json` only when it is the evidence's own run, so a
+  later `SARIF=0` run's time is never borrowed. `evidence.json` now also carries `scan.artifacts`.
+  `scan.sh evidence` / `scan.sh report` exit 1 when they cannot produce their file. They used to
+  exit 0 after a warning; `report_html.py` with no evidence.json now exits 1. After a scan, the
+  same failure is printed with "the gate result is unchanged".
 
 ## [1.19.1] - 2026-11-02
 

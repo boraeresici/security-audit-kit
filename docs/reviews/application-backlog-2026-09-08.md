@@ -116,6 +116,16 @@ Evidence yalnız aynı run manifestindeki çıktıları tüketmeli. Önceki SARI
 
 Çıkış kodu yoksa veya kapsam eksikse HTML `clean` dememeli. Araç hatası bulgu gibi sunulmamalı; sıfır gate kodu “bütün boyutlar temiz” anlamına gelmemeli. Tarama tarihi ile rapor üretim tarihi ayrılmalı. Açıkça çağrılan `report`/`evidence` üretilemediyse makine tarafından anlaşılabilir başarısızlık dönmeli; isteğe bağlı tarama sonrası rapor hatasının gate'e etkisi ayrıca belgelenmeli. Null/missing/3/1/0 durumları test edilmeli.
 
+**Karar — 2 Kasım 2026:**
+- **Sonuç satırı:** raporun başlığı tek bir sonuç gösteriyor: `clean`, `passed — bulgular var ama bloklamıyor`, `passed — NOT complete`, `blocked` (her engelleyenin adıyla; çöken araç "scan error, not a finding" olarak), `indeterminate` ya da `unknown`. `clean` yalnız iki koşul birlikte sağlanırsa yazılıyor: uygulanan her boyut bir şey denetledi ve raporlanan bulgu yok.
+- **Tarama zamanı:** `summary.json`'dan alınıyor, ama yalnız summary evidence'ın kendi çalıştırmasına aitse. Bunu anlamak için `dimensions`, `artifacts` ve `provenance` karşılaştırılıyor; `scan.artifacts` bu yüzden evidence'a eklendi. Evidence'a zaman yazılmadı, böylece aynı içerik yine aynı evidence'ı veriyor. Rapor tarihi bunun yanında ayrıca gösteriliyor.
+- **Açık komutlar:** `scan.sh evidence` / `scan.sh report` dosyalarını üretemezlerse 1 ile çıkıyor.
+- **Tarama sonrası hata:** `SARIF=1` / `REPORT=html` ile tarama sonunda oluşan bir hata ekrana basılıyor, ama gate'i değiştirmiyor. Gerekçe: gate tarayıcıların kararıdır; render edilemeyen bir rapor onların bulduğunu değiştirmez.
+
+**Durum:** `fix/f04-honest-report` branch'inde uygulandı.
+- 15 birim testi eklendi: `verdict` için null/missing/3/1/0, `scan_time` ve başlık.
+- 6 e2e kontrolü eklendi. Bunlar `main`'deki eski kodla çalıştırıldığında 6'sı da kırmızı çıktı.
+
 ### F05 — Kilit yaşam döngüsü
 
 Canlı ve uzun süren taramanın kilidi yalnız yaşı nedeniyle alınmamalı. Release yalnız kendi token'ını taşıyan kilidi kaldırmalı. Ölü PID, PID yeniden kullanımı, heartbeat yokluğu, aynı anda stale reclaim ve INT/TERM testleri yapılmalı. Bozuk kilit dosyası sonsuz beklemeye yol açmamalı.

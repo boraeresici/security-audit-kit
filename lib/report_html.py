@@ -17,6 +17,7 @@ Usage:  report_html.py --evidence <evidence.json> --out <report.html> [--repo <n
 from __future__ import annotations
 
 import argparse
+import datetime
 import html
 import json
 import sys
@@ -53,6 +54,10 @@ h2{font-size:1.05rem;margin:2.4rem 0 .8rem;letter-spacing:-.005em}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.9rem}
 .chip{font-size:.8rem;padding:.16rem .55rem;border-radius:999px;border:1px solid var(--line);
   background:transparent;font-variant-numeric:tabular-nums}
+.verdict.clean b{color:var(--ok)}
+.verdict.blocked b{color:var(--bad)}
+.verdict.incomplete b,.verdict.unknown b,.verdict.findings b{color:var(--medium)}
+.meta .verdict{grid-column:1/-1}
 .chip.pass{color:var(--ok);border-color:currentColor}
 .chip.fail,.chip.findings,.chip.error{color:var(--bad);border-color:currentColor}
 .chip.error,.chip.skipped,.chip.indeterminate{border-style:dashed}
@@ -145,20 +150,69 @@ def table(findings: list) -> str:
     )
 
 
+# Statuses under which a dimension looked at nothing (summary.json schema 2).
+NOT_INSPECTED = ("skipped", "error", "indeterminate")
+
+
+def verdict(scan: dict, reported: int) -> tuple:
+    """(css class, text) for the report header — F04. "clean" only when the gate passed, every
+    dimension that applies inspected something, and nothing was reported. Everything short of that
+    says what it is: unknown, blocked (and by what), incomplete, or passed with findings."""
+    code = scan.get("exit_code")
+    dims = scan.get("dimensions") or []
+    if not isinstance(code, int) or isinstance(code, bool):
+        return "unknown", "unknown — no gate result recorded; do not read this as a pass"
+    if code == 3:
+        return "incomplete", "indeterminate (exit 3) — nothing could be inspected; not a pass"
+    if code != 0:
+        blockers = [d for d in dims if d.get("gate") == "block"] or \
+                   [d for d in dims if d.get("status") not in ("pass", None) and "gate" not in d]
+        named = ", ".join(
+            f'{d.get("name")} (scan error, not a finding)' if d.get("status") == "error"
+            else f'{d.get("name")} ({d.get("status")})' for d in blockers)
+        return "blocked", f"blocked (exit {code})" + (f": {named}" if named else "")
+    if not dims:
+        return "incomplete", "passed (exit 0) — no dimensions recorded, coverage unknown"
+    missing = [d for d in dims if d.get("status") in NOT_INSPECTED]
+    if missing:
+        named = ", ".join(f'{d.get("name")} ({d.get("status")})' for d in missing)
+        return "incomplete", f"passed (exit 0) — NOT complete: {named} not inspected"
+    if reported or any(d.get("status") == "findings" for d in dims):
+        return "findings", f"passed (exit 0) — {reported} finding(s) present, none blocking"
+    return "clean", "clean (exit 0) — every dimension that applies was inspected"
+
+
+def scan_time(summary, scan: dict):
+    """(timestamp, run_id) of the run this evidence came from, or None. evidence.json carries no
+    time on purpose, and summary.json may already belong to a later run (a SARIF=0 pre-commit
+    publishes a new summary but leaves evidence.json alone) — so the summary's time is used only
+    when its dimensions, artifacts and provenance are the evidence's own."""
+    if not summary:
+        return None
+    for key in ("dimensions", "artifacts", "provenance"):
+        if summary.get(key) != scan.get(key):
+            return None
+    if not summary.get("timestamp"):
+        return None
+    return summary.get("timestamp"), summary.get("run_id")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Render evidence.json as a single-file HTML report")
     ap.add_argument("--evidence", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--repo", default="")
-    ap.add_argument("--date", default="", help="scan date; falls back to summary metadata")
+    ap.add_argument("--date", default="", help="report generation date (default: today)")
+    ap.add_argument("--summary", default="", help="summary.json, for the scan time when it is the same run")
     args = ap.parse_args()
 
     try:
         with open(args.evidence, encoding="utf-8") as fh:
             doc = json.load(fh)
     except FileNotFoundError:
-        print(f"[scan:report] no evidence.json at {args.evidence} -> no report written")
-        return 0
+        # Asked to render, nothing to render from: that is a failure the caller must be able to see.
+        print(f"[scan:report] no evidence.json at {args.evidence} -> no report written", file=sys.stderr)
+        return 1
     except ValueError as exc:
         print(f"[scan:report] evidence.json is not valid JSON ({exc})", file=sys.stderr)
         return 1
@@ -188,9 +242,23 @@ def main() -> int:
         for d in dimensions
     ) or '<span class="chip">no dimensions recorded</span>'
 
-    gate = "findings present (exit 1)" if scan.get("exit_code") else "clean (exit 0)"
+    gate_cls, gate = verdict(scan, len(reported))
     repo = args.repo or "this repository"
-    date = args.date or "—"
+    generated = args.date or datetime.date.today().isoformat()
+    summary = None
+    if args.summary:
+        try:
+            with open(args.summary, encoding="utf-8") as fh:
+                summary = json.load(fh)
+        except (OSError, ValueError):
+            summary = None
+    when = scan_time(summary, scan)
+    if when:
+        scanned = f"Scanned {when[0]}" + (f" (run {when[1]})" if when[1] else "")
+        date = when[0][:10]
+    else:
+        scanned = "scan time unknown (no summary.json from the same run)"
+        date = generated
     warnings = doc.get("warnings") or []
     warn_html = ""
     if warnings:
@@ -203,12 +271,12 @@ def main() -> int:
 <title>Security scan report — {esc(repo)} — {esc(date)}</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <h1>Security scan report</h1>
-<p class="sub">{esc(repo)} · {esc(date)} · generated locally by security-audit-kit — nothing left this machine.</p>
+<p class="sub">{esc(repo)} · {esc(scanned)} · report generated {esc(generated)} by security-audit-kit, locally — nothing left this machine.</p>
 
 <div class="panel">
   <div class="meta">
     <div><span>Scope</span><b>{esc(scan.get("command") or "—")}</b></div>
-    <div><span>Gate</span><b>{esc(gate)}</b></div>
+    <div class="verdict {gate_cls}"><span>Result</span><b>{esc(gate)}</b></div>
     <div><span>Findings</span><b>{total}</b></div>
     <div><span>Reported / suppressed</span><b>{len(reported)} / {len(suppressed)}</b></div>
   </div>
