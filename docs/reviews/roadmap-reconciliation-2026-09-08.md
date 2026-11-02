@@ -16,7 +16,7 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 
 **F03** (2 Kasım, `feat/f03-artifact-provenance`): evidence yalnız bu çalıştırmanın manifestteki, hash'i tutan SARIF dosyalarını kullanıyor; provenance `summary.json` ve evidence'ta. Ortak `sarif/` önceki çalıştırmaların dosyalarını artık taşımıyor; F01'de açık bırakılan soru böylece kapandı.
 
-**Sırada:** F03 → F04 → F14 + F25. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+**Sırada:** F03 tamamlandı (PR #40). Sıradaki işler: F04 → F14a + F25 → F30 (aşağıdaki performans girişine bak). Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
 
 ## 2 Kasım 2026 — Performans ölçümü ve konumlandırma (F30–F32, R02 öne alındı)
 
