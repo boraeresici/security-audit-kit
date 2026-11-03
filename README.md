@@ -1,5 +1,10 @@
 # security-audit-kit — portable local security scanning
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+  <img alt="security-audit-kit — pinned scanners find, Claude judges, your git hooks gate. A scan.sh all run: secret pass, sast findings, py-deps pass, js-deps not_applicable, container skipped (no docker), iac pass; blocked by sast, next step /sec-triage." src="docs/assets/banner-light.svg" width="100%">
+</picture>
+
 [![ci](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml)
 [![self-audit](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

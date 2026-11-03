@@ -1,5 +1,10 @@
 # security-audit-kit — tasinabilir yerel guvenlik tarama
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+  <img alt="security-audit-kit — sabitlenmis tarayicilar bulur, Claude degerlendirir, git hook'lariniz engeller. Bir scan.sh all kosusu: secret pass, sast findings, py-deps pass, js-deps not_applicable, container skipped (docker yok), iac pass; sast engelledi, sonraki adim /sec-triage." src="docs/assets/banner-light.svg" width="100%">
+</picture>
+
 [![ci](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml)
 [![self-audit](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
