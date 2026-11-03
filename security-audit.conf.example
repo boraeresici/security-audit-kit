@@ -13,9 +13,9 @@
 #   js/py package manager + manifest auto-detected
 
 # --- SAST (semgrep) scan root ---
-# Narrow to source directories instead of the whole repo (faster, less noise).
-# Example: a backend + frontend source layout.
-: "${SAST_PATHS:=backend frontend}"
+# Left unset, semgrep scans the whole repo. Narrow it to your source directories (faster, less
+# noise). A directory listed here that does not exist is skipped, and the run says so.
+# : "${SAST_PATHS:=backend frontend}"
 
 # Semgrep rulesets. LEAVE UNSET to let scan.sh auto-select packs from your stack
 # (base p/owasp-top-ten + p/secrets, plus per-language/framework: p/python, p/django,

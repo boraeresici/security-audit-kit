@@ -37,6 +37,11 @@ Read the first three before updating: they change what scripts that read the kit
 - `summary.json` gains `provenance` and `artifacts`; `evidence.json` gains `scan.provenance` and
   `scan.artifacts` (all additive).
 - `summary.json` gains `seconds` (run and per dimension; additive, not copied into evidence.json).
+- `SAST_PATHS` entries that do not exist are now skipped, and the run names them; if none exist,
+  the whole repo is scanned. If your `.security-audit.conf` has the line the old example shipped
+  (`SAST_PATHS:=backend frontend`) and your repo has neither directory, sast now actually runs: it
+  used to crash on every scan. Expect real findings where there was a scanner error. Fix or delete
+  that line.
 
 ### Added
 - **Closing summary and `scan.sh help` (F14a).** Every scan ends with one screen. It shows each
@@ -72,6 +77,17 @@ Read the first three before updating: they change what scripts that read the kit
   - `doctor` shows the cached DB and its age.
   - `provenance.trivy_db.updated_at` names the DB used (so evidence.json does too), and the
     top-level `trivy_db` records its age.
+
+### Fixed (v1.20.0-rc.3 — rc.2 dogfood)
+- **sast crashed on every scan of a fresh install, since v1.0.** The example config shipped
+  `: "${SAST_PATHS:=backend frontend}"` as an *active* line, and `install.sh` copies it to
+  `.security-audit.conf`. In any repo without both directories, semgrep exited 2 (`Invalid scanning
+  root`) and the gate blocked every push. Before 1.20.0 this was reported as a "HARD finding";
+  with F02 it showed as `sast (error)`. Both dogfood repos hit it. The example now leaves
+  `SAST_PATHS` commented out, so the default is the whole repo, as the README always said. A
+  `SAST_PATHS` entry that does not exist is skipped, and the run names it. If none exist, the
+  whole repo is scanned. Existing installs that carry the old line are therefore fixed without
+  editing their config.
 
 ### Fixed (v1.20.0-rc.2 — rc.1 dogfood)
 - **`bootstrap.sh --check` told an RC tester to "update" to an older release.** With the repo

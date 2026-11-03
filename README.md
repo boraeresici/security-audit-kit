@@ -719,7 +719,7 @@ rules. `scan.sh doctor` prints the resolved set. For customization, one file per
    (template: `security-audit.conf.example`).
 2. Tune the values for your project and **commit it** (team-shared):
    ```sh
-   : "${SAST_PATHS:=backend frontend}"     # narrow source directories
+   : "${SAST_PATHS:=backend frontend}"     # narrow source directories (a missing one is skipped, and said)
    : "${TF_DIR:=infra/terraform}"          # terraform directory
    # : "${JS_DIRS:=frontend}"              # js-deps: where the JS app is (see below)
    # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: audit a venv outside the repo (see below)
