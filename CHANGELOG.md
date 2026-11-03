@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Upgrade notes
+- `bootstrap.sh --check` now exits `2` when it cannot tell (kit repo unreachable, no release tags).
+  It used to exit `1`, the same code as "update available"; automation that treated non-zero as
+  "update" should check for 1. Release candidates are offered only with `--channel=rc` (or
+  `KIT_CHANNEL=rc`); before, an RC pin was offered newer RCs implicitly.
 - The pkgcheck cache format changed (findings, not verdicts). Entries written by older kits are
   ignored, so each package is scanned once more on its next check (~15-20 s), and then cached again.
 - semgrep and trivy no longer scan `docs/security/scan-findings/`. If your repo committed scan
@@ -29,6 +33,11 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **Update channels (F08).** `bootstrap.sh --check` follows the stable channel by default, so an
+  RC is never offered to someone who did not opt in. `--channel=rc` / `KIT_CHANNEL=rc` adds release
+  candidates. On stable, a newer RC is named with the opt-in, never offered. "Cannot tell" (an
+  unreachable repo, no tags) exits 2, apart from "update available" (1). A repo with no release
+  tags used to end the check silently with exit 1 (pipefail on an empty tag list).
 - **A stricter pkgcheck policy did not apply to packages already checked (F06).** The cache stored
   the verdict, so a package allowed once stayed allowed after `PKGCHECK_BLOCK_EXTRA` named one of
   its rules, and a rule moved to `PKGCHECK_REPORT_EXTRA` kept blocking. The cache now keeps

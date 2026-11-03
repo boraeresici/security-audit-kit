@@ -592,11 +592,18 @@ F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" 
 [ "$F25RC" -eq 0 ] && ! grep -q 'UPDATE AVAILABLE' <<<"$F25OUT" && grep -q 'ahead of the latest release' <<<"$F25OUT" \
   && ok "F25: an RC pin newer than the latest final is not told to 'update' (downgrade) to it" \
   || no "F25: RC pin offered a downgrade (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
-# ...but a newer RC of its own line IS offered to an RC tester
+# F08: a newer RC is offered ONLY on the rc channel, chosen explicitly; the default (stable) says
+# it exists and how to opt in, and never offers it.
 ( cd "$F25K2" && git tag v4.0.0-rc.2 )
 F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check 2>&1)" || F25RC=$?
+[ "$F25RC" -eq 0 ] && ! grep -q 'UPDATE AVAILABLE' <<<"$F25OUT" && grep -q 'v4.0.0-rc.2.*--channel=rc' <<<"$F25OUT" \
+  && ok "F08: on the default (stable) channel a newer RC is mentioned, never offered" \
+  || no "F08: stable channel offered an RC (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check --channel=rc 2>&1)" || F25RC=$?
 [ "$F25RC" -eq 1 ] && grep -q 'UPDATE AVAILABLE -> .*v4.0.0-rc.2' <<<"$F25OUT" \
-  && ok "F25: an RC pin is offered the newer RC" || no "F25: newer RC not offered (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+  && ok "F08: --channel=rc offers the newer RC" || no "F08: rc channel did not offer the newer RC (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+F25RC=0; F25OUT="$(cd "$F25C" && KIT_CHANNEL=rc KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check 2>&1)" || F25RC=$?
+[ "$F25RC" -eq 1 ] && ok "F08: KIT_CHANNEL=rc selects the rc channel too" || no "F08: KIT_CHANNEL ignored (rc=$F25RC)"
 # ...and the final, once it exists (rc.10 > rc.2 numerically, final > every rc)
 ( cd "$F25K2" && git tag v4.0.0-rc.10 && git tag v4.0.0 )
 F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check 2>&1 || true)"
@@ -606,7 +613,24 @@ grep -q 'UPDATE AVAILABLE -> .*v4.0.0$' <<<"$F25OUT" && ok "F25: an RC pin is of
 printf 'v4.0.0 0000000000000000000000000000000000000000\n' > "$F25C/tools/security-audit-kit/.kit-version"
 F25RC=0; (cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check >/dev/null 2>&1) || F25RC=$?
 [ "$F25RC" -eq 0 ] && ok "F25: a pin at the latest final is up to date" || no "F25: latest final pin rc=$F25RC"
-rm -rf "$F25K" "$F25C" "$F25K2"
+# F08 card fixture: v1.17.0 / v1.18.0-rc.1 / v1.18.0 -> a v1.17.0 pin is offered v1.18.0, not the RC
+F08K="$(mktemp -d)"; printf '# Changelog\n\n## [1.18.0] - 2026-01-01\n\n### Upgrade notes\n- None.\n' > "$F08K/CHANGELOG.md"
+( cd "$F08K" && git init -q && git add -A && git -c user.email=e2e@test -c user.name=e2e commit -qm k \
+    && git tag v1.17.0 && git tag v1.18.0-rc.1 && git tag v1.18.0 )
+printf 'v1.17.0 0000000000000000000000000000000000000000\n' > "$F25C/tools/security-audit-kit/.kit-version"
+F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F08K" bash "$KIT_SRC/bootstrap.sh" --check 2>&1)" || F25RC=$?
+[ "$F25RC" -eq 1 ] && grep -q 'UPDATE AVAILABLE -> .*v1.18.0$' <<<"$F25OUT" \
+  && ok "F08: card fixture — the stable v1.18.0 is offered, not v1.18.0-rc.1" || no "F08: card fixture (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+# unreachable repo / no tags: "cannot tell" (2), never confused with "update available" (1)
+F25RC=0; (cd "$F25C" && KIT_REPO="$F08K.missing" bash "$KIT_SRC/bootstrap.sh" --check >/dev/null 2>&1) || F25RC=$?
+[ "$F25RC" -eq 2 ] && ok "F08: an unreachable kit repo exits 2, not 1 (update available)" || no "F08: unreachable repo rc=$F25RC"
+F08E="$(mktemp -d)"; ( cd "$F08E" && git init -q && git commit -q --allow-empty -m e -c user.email=e2e@test -c user.name=e2e 2>/dev/null \
+  || git -c user.email=e2e@test -c user.name=e2e commit -q --allow-empty -m e )
+F25RC=0; (cd "$F25C" && KIT_REPO="$F08E" bash "$KIT_SRC/bootstrap.sh" --check >/dev/null 2>&1) || F25RC=$?
+[ "$F25RC" -eq 2 ] && ok "F08: a kit repo with no release tags exits 2" || no "F08: no-tags repo rc=$F25RC"
+F25RC=0; (cd "$F25C" && KIT_REPO="$F08K" bash "$KIT_SRC/bootstrap.sh" --check --channel=beta >/dev/null 2>&1) || F25RC=$?
+[ "$F25RC" -eq 2 ] && ok "F08: an unknown channel is refused" || no "F08: unknown channel rc=$F25RC"
+rm -rf "$F25K" "$F25C" "$F25K2" "$F08K" "$F08E"
 # install.sh re-run: an existing config is kept, and settings added since are named
 F25I="$(mktemp -d)"
 # shellcheck disable=SC2016  # the config line is a literal: its ${...} is for scan.sh to expand

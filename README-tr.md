@@ -220,8 +220,9 @@ Bootstrap **kopya (vendor)** yapar — projenin `git`'i kit repo'sunu takip etme
 yani "upstream degisti" demez. Iki yolla ogrenirsin:
 
 1. **`--check` (yerlesik, salt-okunur).** Vendor'daki `.kit-version`'i kit
-   repo'sundaki en son release tag'i ile `git ls-remote` uzerinden karsilastirir (release candidate
-   ancak hic final surum yoksa onerilir). Ardindan aradaki her surumun **upgrade notes**'unu yazar;
+   repo'sundaki en son **stabil** release tag'i ile `git ls-remote` uzerinden karsilastirir. Release
+   candidate'ler yalniz rc kanalinda onerilir; bu kanali `--check --channel=rc` ya da `KIT_CHANNEL=rc`
+   ile acikca secersin. Stabil kanalda daha yeni bir RC varsa adi gecer ama onerilmez. Ardindan aradaki her surumun **upgrade notes**'unu yazar;
    bunlari o tag'in CHANGELOG'undan tek commit'lik shallow fetch ile okur. Vendor'daki kopyana
    dokunmaz:
    ```bash
@@ -234,8 +235,8 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    #     Read the first three before updating: they change what scripts that read the kit's output see.
    #     - **`summary.json` schema 2 (breaking for parsers of `status`).** The value "fail" is gone: ...
    ```
-   Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
-   `make` hedefine baglanabilir. Her surum bir *Upgrade notes* bolumu tasir (release script'i
+   Cikis kodu: `0` = guncel, `1` = guncelleme var, `2` = belirlenemedi (kit repo'suna erisilemedi,
+   release tag'i yok) — periyodik kontrol veya bir `make` hedefine baglanabilir. Her surum bir *Upgrade notes* bolumu tasir (release script'i
    bolum yoksa tag kesmez); "yapacak bir sey yok" boylece ima edilmez, yazilir. Guncellemeden sonra
    `install.sh`'i tekrar calistirmak `.security-audit.conf`'unu korur ve yeni ornekte olup senin
    config'inde olmayan ayarlari adlariyla soyler.

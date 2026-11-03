@@ -159,6 +159,12 @@ Missing gh, a failed API, empty/missing/pending check-runs and an unverifiable r
 
 In a local tag fixture containing `v1.17.0`, `v1.18.0-rc.1`, `v1.18.0`, the default suggestion must be the latest stable. An RC must be suggested only with explicit channel selection. Access error, update available and up-to-date results must be distinguished. Offline fixture tests are sufficient; no release should be opened for the test.
 
+**Status — 2026-11-03:** implemented on `dev/plugin-readiness`.
+- **Channels:** `bootstrap.sh --check` gains `--channel=stable|rc` and `KIT_CHANNEL`; the default is `stable`. On stable an RC is never offered; a newer RC is only named, together with how to opt in.
+- **Exit codes:** 0 = up to date, 1 = update available, 2 = cannot tell (unreachable repo or no tags).
+- **Also fixed:** with no release tags, `--check` ended silently with exit 1 (pipefail on an empty tag list).
+- **Tests:** 7 offline fixture tests, including the card's fixture (`v1.17.0` / `v1.18.0-rc.1` / `v1.18.0`).
+
 ### F09 — Test automation
 
 An e2e job that requires no external API key must run on PRs and be added to the required check list. E2e must have an explicit offline mode; the test result must publish pass/fail/skip counts. F01–F06 fixtures must enter regression coverage. Real scanner smoke tests must check version/adapter compatibility in a separate job; a missing toolchain must not count as a passing test there.

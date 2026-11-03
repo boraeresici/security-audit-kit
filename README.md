@@ -220,8 +220,9 @@ The bootstrap **vendors a copy**, so your project's `git` does not track the kit
 repo — it won't tell you upstream changed. Two ways to find out:
 
 1. **`--check` (built in, read-only).** Compares the vendored `.kit-version`
-   against the newest release tag in the kit repo via `git ls-remote` (a release candidate is
-   offered only if no final release exists). It then prints the **upgrade notes** of every version
+   against the newest **stable** release tag in the kit repo via `git ls-remote`. Release
+   candidates are offered only on the rc channel, which you opt into with `--check --channel=rc`
+   or `KIT_CHANNEL=rc`. On stable, a newer RC is mentioned but never offered. It then prints the **upgrade notes** of every version
    in between, read from that tag's CHANGELOG with a one-commit shallow fetch. Your vendored copy
    is not touched:
    ```bash
@@ -234,8 +235,8 @@ repo — it won't tell you upstream changed. Two ways to find out:
    #     Read the first three before updating: they change what scripts that read the kit's output see.
    #     - **`summary.json` schema 2 (breaking for parsers of `status`).** The value "fail" is gone: ...
    ```
-   Exit code: `0` = up to date, `1` = update available — so you can wire it into a
-   periodic check or a `make` target. Every release carries an *Upgrade notes* section (the release
+   Exit code: `0` = up to date, `1` = update available, `2` = cannot tell (kit repo unreachable,
+   no release tags), so you can wire it into a periodic check or a `make` target. Every release carries an *Upgrade notes* section (the release
    script refuses to tag without one), so "nothing to do" is stated rather than implied. Re-running
    `install.sh` after an update keeps your `.security-audit.conf` and names any setting the new
    example has that your config does not.

@@ -13,8 +13,10 @@
 #   bash bootstrap.sh v1.0.0 --scan          # also run a full scan after install
 #   bash bootstrap.sh v1.0.0 --expect=<sha>  # REFUSE unless the ref resolves to <sha> (enforce the pin)
 #   bash bootstrap.sh --check                # IS THERE AN UPDATE? (no clone, read-only)
+#   bash bootstrap.sh --check --channel=rc   # ...including release candidates (opt-in)
+#     exit: 0 = up to date, 1 = update available, 2 = cannot tell (repo unreachable, no tags)
 #
-# Override (env): KIT_REPO, KIT_REF, DEST_REL, KIT_EXPECT_SHA.
+# Override (env): KIT_REPO, KIT_REF, DEST_REL, KIT_EXPECT_SHA, KIT_CHANNEL (stable|rc).
 set -euo pipefail
 
 # --- configurable ---
@@ -28,13 +30,15 @@ DO_CHECK=0
 ALLOW_REF_CHANGE=0
 EXPECT_SHA=""
 REF_ARG=""
+CHANNEL="${KIT_CHANNEL:-stable}"
 for a in "$@"; do
   case "$a" in
     --scan) RUN_SCAN=1 ;;
     --check|check) DO_CHECK=1 ;;
     --allow-ref-change) ALLOW_REF_CHANGE=1 ;;
     --expect=*) EXPECT_SHA="${a#--expect=}" ;;
-    -*) echo "unknown flag: $a (--scan | --check | --expect=<sha> | --allow-ref-change)"; exit 2 ;;
+    --channel=*) CHANNEL="${a#--channel=}" ;;
+    -*) echo "unknown flag: $a (--scan | --check [--channel=stable|rc] | --expect=<sha> | --allow-ref-change)"; exit 2 ;;
     *) REF_ARG="$a" ;;
   esac
 done
@@ -94,22 +98,32 @@ upgrade_notes(){
 # update land": compares the local .kit-version against the newest remote semver tag, and prints
 # what the versions in between ask a consumer to do.
 if [ "$DO_CHECK" = "1" ]; then
+  # Exit 2 = "cannot tell": it must never read as 1 ("update available") in automation.
+  case "$CHANNEL" in stable|rc) ;; *) echo "ERROR: unknown channel '$CHANNEL' (stable | rc)"; exit 2 ;; esac
   cur="(no vendor)"; [ -f "$ROOT/$DEST_REL/.kit-version" ] && cur="$(awk '{print $1}' "$ROOT/$DEST_REL/.kit-version")"
-  tags="$(git ls-remote --tags --refs "$KIT_REPO" 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^v?[0-9]+' || true)"
-  # A final pin follows final releases; an RC pin (someone testing a pre-release) follows the
-  # newest tag of any kind. Ordering is release order (release_key), not sort -V: that put a final's
-  # own older RC above it, and an RC pin newer than the latest final was told to "update" — down.
-  final="$(grep -v -- '-' <<<"$tags" | newest_tag)"
-  newest="$(newest_tag <<<"$tags")"
-  [ -n "$newest" ] || die "no remote tag found (repo unreachable or no tags at all)."
-  latest="${final:-$newest}"
-  case "$cur" in *-*) latest="$newest" ;; esac
+  if ! refs="$(git ls-remote --tags --refs "$KIT_REPO" 2>/dev/null)"; then
+    echo "ERROR: cannot reach $KIT_REPO -> update status unknown"; exit 2
+  fi
+  tags="$(awk -F/ '{print $NF}' <<<"$refs" | grep -E '^v?[0-9]+' || true)"
+  # Channels (F08): stable (default) offers final releases only; rc, chosen explicitly, also offers
+  # release candidates. Ordering is release order (release_key), not sort -V: that put a final's own
+  # older RC above it, and an RC pin newer than the latest final was told to "update" — down.
+  # `|| true`: under pipefail an empty tag list (grep -v matches nothing) silently ended the script.
+  final="$(grep -v -- '-' <<<"$tags" | newest_tag || true)"
+  newest="$(newest_tag <<<"$tags" || true)"
+  [ -n "$newest" ] || { echo "ERROR: no release tags in $KIT_REPO -> update status unknown"; exit 2; }
+  if [ "$CHANNEL" = "rc" ]; then latest="$newest"; else latest="${final:-$newest}"; fi
   echo "vendored version : $cur"
   echo "latest tag       : ${final:-(no final release yet)}"
-  case "$cur" in *-*) [ "$newest" != "$final" ] && echo "newest pre-release: $newest" ;; esac
+  [ "$CHANNEL" = "rc" ] && [ "$newest" != "$final" ] && echo "newest pre-release: $newest (channel: rc)"
+  # On stable, a newer RC is worth knowing about — never offered, just named with the opt-in.
+  if [ "$CHANNEL" = "stable" ] && [ "$newest" != "$final" ] && [ "$newest" != "$cur" ]; then
+    nk="$(release_key "$newest")"; ck0="$(release_key "$cur")"
+    if [ -z "$ck0" ] || [ "$(printf '%s\n%s\n' "$ck0" "$nk" | sort -V | tail -1)" = "$nk" ]; then
+      echo "  (a newer pre-release exists: $newest — offered only with --check --channel=rc)"
+    fi
+  fi
   if [ "$cur" = "$latest" ]; then
-    case "$cur" in *-*) [ -n "$final" ] && [ "$cur" != "$final" ] \
-      && ok "pre-release pin, ahead of the latest release ($final) — nothing newer to move to." ;; esac
     ok "up to date."; exit 0
   fi
   ck="$(release_key "$cur")"

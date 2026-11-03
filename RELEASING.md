@@ -118,6 +118,9 @@ gh release create ${VER} --latest \
 `--latest` blesses it as the stable release consumers pick up.
 
 ### 7. Consumers update on their own schedule
+`bootstrap.sh --check` offers them the newest **stable** release. An RC is offered only to someone
+who opted into the rc channel (`--check --channel=rc` / `KIT_CHANNEL=rc`), so cutting an RC never
+reaches people who did not ask for one.
 Downstream repos bump their `.kit-version` (`ref` + new `SHA`) / re-run `bootstrap.sh ${VER} --expect=<sha>`
 when they choose. Nothing is forced on them.
 
