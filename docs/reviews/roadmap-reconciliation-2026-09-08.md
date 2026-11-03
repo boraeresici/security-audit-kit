@@ -4,6 +4,36 @@ Tarih: 8 Eylül 2026 · Baz: yerel `main / 48fad91`.
 
 Güncel uygulama sırası ve kabul kriterleri [birleşik iş listesinde](application-backlog-2026-09-08.md). Bu belge, eski roadmap maddelerinin neden kapandığını, birleştiğini veya ertelendiğini açıklar. İncelenen kaynaklar: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG ve ilgili uygulama kodu. Yerel kaynakların tarihi beyanları güncel ürün/sağlayıcı ölçümü sayılmadı; dış araç lisansları ve yetenekleri yeniden araştırılmadı.
 
+## 3 Kasım 2026 — v1.20.0 yayında
+
+**v1.20.0** 3 Kasım 2026'da yayımlandı (`f7d8a23`, GitHub "Latest"). İçerdiği işler: F02, F03, F04, F29, F14a, F25 ve F30. Teslim sırasının 3, 3a, 3b ve 3c adımları böylece tamamlandı.
+
+Sürüm RC → dogfood → final akışıyla çıktı. Final'den önce üç RC kesildi; dogfood'da bulunan iki hata RC'ler arasında düzeltildi:
+- **rc.1 dogfood:** RC'ye pin'li bir kullanıcıya `--check`, daha eski olan v1.19.1'e "güncellemeyi", yani sürüm düşürmeyi öneriyordu. Bu hatayı F25'in kendisi getirmişti (#47).
+- **rc.2 dogfood:** v1.0'dan beri örnek config `SAST_PATHS=backend frontend` satırını aktif olarak kopyalıyordu. Bu iki dizini olmayan her repoda sast her taramada çöküyor ve push'u blokluyordu. F02'den önce bu durum "HARD finding" görünüyordu (#48). Düzeltmeden sonra dogfood reposunda, o güne kadar tarayıcı hatasının arkasında kalan gerçek bir bulgu (`subprocess` + `shell=True`) ortaya çıktı.
+
+**rc.3 dogfood:** iki tüketici reposunda ve sıfırdan bir kurulumda denendi; hepsi temiz.
+- **Sıfırdan kurulum:** ilk `all` 7,9 sn sürdü, rc=0.
+- **Ölçümler:** trivy ilk çalıştırmada 46 sn, sonra 2–4 sn. `install.sh` yeniden çalıştırıldığında yeni eklenen 4 ayarı adlarıyla listeledi.
+- **Yayın sonrası kontrol:** v1.19.1'e pin'li bir kullanıcıya `--check` v1.20.0'ı öneriyor ve upgrade notes'u kırıcı değişiklik başta olacak şekilde gösteriyor.
+
+**Takip işi (dogfood bulgusu):** Eski sürümlerde commit edilmiş tarama çıktıları (`docs/security/scan-findings/raw-*.log`) semgrep tarafından da taranıyor; bir zaman aşımı uyarısı görüldü. Tarama çıktıları dizini SAST kapsamı dışında tutulmalı (`.semgrepignore` ya da `--exclude`). Küçük ve bağımsız bir iş; F06'dan önce araya alınabilir.
+
+**Karar — 3 Kasım 2026, plugin'e giden yol:** Plugin (R02) öne alınıyor, ama "farklı projelerde yeni sürüm test etmenin" aracı olarak değil. Gerekçe:
+- Plugin yalnız skill katmanını taşır; tarayıcı çekirdeği her repoya vendor'lanmaya devam eder.
+- v1.20.0'ın iki dogfood hatası kurulum, yükseltme ve config katmanındaydı; plugin bunları yakalamazdı.
+
+Sürümleri farklı projelerde test etmek için dogfood otomatikleştiriliyor. Plugin'in doğrudan bağımlı olduğu işler herkese açılmadan önce bitiriliyor.
+
+Anlaşılan sıra:
+1. Tarama çıktılarını SAST kapsamının dışına almak.
+2. Dogfood otomasyonu: `scripts/dogfood.sh`, ayrıca e2e'ye sıfırdan kurulum ve eski pinden yükseltme senaryoları.
+3. F06 → F08 (+F07) → F10 → F24 ve F11'in plugin için gereken kısmı.
+4. R02, önce yerel/özel marketplace olarak, kullanıcının kendi projelerinde.
+5. R02'nin herkese açılması ve F32.
+
+**Çalışma şekli:** v1.20.0'dan sonra her iş `dev/plugin-readiness` branch'ine yerel bir commit olarak giriyor. PR, RC ya da sürüm yok; plugin'e hazır sürüm tek seferde, RC → dogfood → final akışıyla çıkacak. Gerekçe: sürüm ve PR sıklığı yüksekti.
+
 ## 2 Kasım 2026 — F01/F05 yayında; F29 ve F02 uygulandı
 
 Teslim sırasının 2. maddesi bitti. **F01** (her çalıştırma kendi dizininde, kaydı yalnız kilit sahibi yayımlar) ve **F05** (kilit yaşı yerine sahibin canlılığına bakılır, kilidi yalnız kendi token'ını taşıyan bırakır) **v1.19.0** ile yayımlandı (`ddff75f`). rc.1 dogfood'unda `kit.sarif` rename hatası ve geçici yolların mesajlarda görünmesi bulundu; ikisi rc.2'de düzeltildi. Bu yayının dogfood'u, README'nin "gitignored" dediği `scan-findings/` dizininin gerçekte ignore edilmediğini gösterdi; düzeltme **v1.19.1** ile yayımlandı (`295532f`). İki sürüm de RC → dogfood → final akışıyla, temiz bir klondan kesildi.
