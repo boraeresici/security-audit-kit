@@ -11,6 +11,21 @@ All notable changes to this project are documented here. The format is based on
   artifacts there, findings that pointed into them (old raw logs, SARIF) disappear. They were
   about the scan's own output, not your code. gitleaks still scans full git history.
 
+### Added
+- **`scripts/dogfood.sh <tag> [repo...]`: the RC dogfood as a script** (maintainers). It works on a
+  clone of each consumer repo, so the real repo is untouched, and also tries a fresh install. Per
+  repo it runs:
+  - `--check` before the upgrade, with the vendored bootstrap
+  - the upgrade, with the vendored bootstrap and `--expect` on the tag's commit
+  - `verify`, and reads the install re-run's new settings
+  - `scan.sh all`, read from summary.json
+  - `--check` again after the upgrade
+
+  It prints one table and exits 1 on a bootstrap or verify failure, a missing summary, any `error`
+  dimension, or a downgrade offered after the upgrade. Run against v1.20.0-rc.1 it FAILs (sast
+  error on the consumer and on the fresh install), and against v1.20.0 it passes. RELEASING.md step
+  4 starts with it; CI shellchecks it.
+
 ### Fixed
 - **Scanners read the kit's own record as source** (v1.20.0 dogfood). semgrep scanned tracked
   files under `docs/security/scan-findings/`: a repo that had committed its raw logs got a

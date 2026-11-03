@@ -66,6 +66,21 @@ gh release create ${VER}-rc.1 --prerelease \
 `--prerelease` keeps GitHub's "Latest" pointing at the previous **stable** release.
 
 ### 4. Dogfood the RC in real projects (the actual gate)
+Start with the scripted run. It clones each consumer repo, so the real repos are untouched. It
+also tries a fresh install, and prints one table:
+```sh
+scripts/dogfood.sh ${VER}-rc.1 ~/src/consumer-a ~/src/consumer-b     # exit 1 = do not promote
+```
+It fails when any of these happens:
+- bootstrap or `verify` fails;
+- there is no `summary.json`;
+- any dimension is `error`;
+- `--check` after the upgrade offers an older tag.
+
+Those are the shapes of v1.20.0's two dogfood bugs. Findings and `skipped` dimensions are reported
+in the table, not failed. Then do the manual part below and the checklist; a script cannot judge a
+triage pass.
+
 In **≥1 real consumer project** (ideally 2–3 across stacks), pin to the RC and exercise it:
 ```sh
 # get the COMMIT the RC tag points at — `git rev-parse ${VER}-rc.1` returns the annotated tag

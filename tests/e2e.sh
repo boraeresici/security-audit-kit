@@ -501,6 +501,34 @@ if [ -f "$T2/tools/security-audit-kit/.kit-version" ]; then
     no "bootstrap: legacy two-field RC pin rejected the matching released files"
   fi
 fi
+echo "-- dogfood.sh: an RC tried on a consumer clone + a fresh install, one verdict --"
+if [ -f "$T2/tools/security-audit-kit/.kit-version" ]; then
+  ( cd "$T2" && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1 \
+      && git -c user.email=e2e@test -c user.name=e2e commit -qm consumer >/dev/null 2>&1 )
+  T2HEAD="$(git -C "$T2" rev-parse HEAD)"
+  dfsnap(){ (cd "$T2" && find . -path ./.git -prune -o -type f -print | sort | xargs cksum 2>/dev/null | cksum); }
+  T2SNAP="$(dfsnap)"
+  DFRC=0; DFOUT="$(KIT_REPO="$KITREPO" bash "$KIT_SRC/scripts/dogfood.sh" v99.0.0-rc.99 "$T2" 2>&1)" || DFRC=$?
+  [ "$DFRC" -eq 0 ] && grep -q '(fresh install)' <<<"$DFOUT" && grep -q "$(basename "$T2")" <<<"$DFOUT" \
+    && grep -q 'dogfood\] OK' <<<"$DFOUT" \
+    && ok "dogfood: a clean consumer + a fresh install pass, in one table" || no "dogfood: clean run rc=$DFRC: $(tail -8 <<<"$DFOUT")"
+  [ "$(git -C "$T2" rev-parse HEAD)" = "$T2HEAD" ] && [ "$(dfsnap)" = "$T2SNAP" ] \
+    && ok "dogfood: the consumer repo itself is untouched (it works on a clone)" || no "dogfood: touched the consumer repo"
+  # a consumer whose scan crashes a scanner must FAIL the dogfood (v1.20.0's SAST_PATHS bug shape)
+  if have uvx || have pipx; then
+    # shellcheck disable=SC2016  # a literal config line; scan.sh expands it
+    printf ': "${SEMGREP_CONFIGS:=--config /nonexistent-dogfood-rules.yml}"\n' >> "$T2/.security-audit.conf"
+    ( cd "$T2" && git -c user.email=e2e@test -c user.name=e2e commit -qam broken >/dev/null 2>&1 )
+    DFRC=0; DFOUT="$(KIT_REPO="$KITREPO" bash "$KIT_SRC/scripts/dogfood.sh" v99.0.0-rc.99 "$T2" --no-fresh 2>&1)" || DFRC=$?
+    [ "$DFRC" -eq 1 ] && grep -q 'error:sast' <<<"$DFOUT" && grep -q 'do not promote' <<<"$DFOUT" \
+      && ok "dogfood: a scanner error on a consumer fails the dogfood" || no "dogfood: scanner error not caught (rc=$DFRC): $(tail -6 <<<"$DFOUT")"
+  else skip "dogfood: scanner-error case (no uvx/pipx)"; fi
+  # --check after the upgrade offering an OLDER tag = v1.20.0-rc.1's downgrade bug: dogfood FAILs it.
+  # That bug no longer reproduces against real tags, so the classification rule is tested directly.
+  DFRULE="$(bash -c 'eval "$(sed -n "/^release_key()/,/^}/p; /^older_than()/,/^}/p" "$1")"; older_than v1.0.0 v99.0.0-rc.99 && echo older; older_than v99.0.0 v99.0.0-rc.99 || echo newer-ok' _ "$KIT_SRC/scripts/dogfood.sh")"
+  [ "$DFRULE" = "$(printf 'older\nnewer-ok')" ] \
+    && ok "dogfood: an offer older than the installed tag is classed as a downgrade" || no "dogfood: downgrade rule wrong: $DFRULE"
+else skip "dogfood (no vendored fixture)"; fi
 rm -rf "$KITREPO" "$T1" "$T2"
 
 echo "-- release metadata gate --"
