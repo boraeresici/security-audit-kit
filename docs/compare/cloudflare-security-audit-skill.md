@@ -2,6 +2,8 @@
 
 Tarih: 11 Ekim 2026. Yerel baz: `078cf18` (inceleme başında temiz çalışma ağacı). Dış kaynak: aşağıda bağlantılı `main` belgelerinin bu tarihte web üzerinden görülen içeriği. Uzak commit SHA doğrulanamadı; bu karşılaştırma pinli sürüm veya çalıştırılmış ürün benchmark'ı değildir.
 
+**SHA notu — 3 Kasım 2026:** Uzak `main`, GitHub API ile [`c1c8a8c`](https://github.com/cloudflare/security-audit-skill/tree/c1c8a8c) olarak doğrulandı (14 Eylül 2026, "Clarify guidance and full audit modes"). Bu tarihten sonra commit yok. Dolayısıyla 11 Ekim'de görülen içerik bu commit'e aittir ve aşağıdaki eşleme hâlâ günceldir. [C1]–[C6] bağlantıları `main`'i gösterir; değişirse bu commit'le karşılaştırın. Aynı gün üç ek karşılaştırma yazıldı: [Masriyan](masriyan-cybersecurity-skill.md), [Phoenix](phoenix-security-skills.md), [senior-security](senior-security-skill.md).
+
 ## Sonuç
 
 Kitin deterministik tarama, hook, paket kurulum kontrolü ve raporlama çekirdeği korunmalı. Cloudflare'dan en yararlı aktarım yeni scanner değil, AI incelemesinin doğrulanabilirliği ve kapsam hesabı. Mevcut P0/P1 işleri ertelenmeden F12/F19 genişletilmeli; kapsam defteri ve bağımsız doğrulama için iki sınırlı teslimat eklenmeli. Güncel sıra [birleşik backlog](../reviews/application-backlog-2026-09-08.md) içinde.

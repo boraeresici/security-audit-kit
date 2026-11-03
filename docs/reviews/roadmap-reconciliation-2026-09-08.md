@@ -4,6 +4,32 @@ Tarih: 8 Eylül 2026 · Baz: yerel `main / 48fad91`.
 
 Güncel uygulama sırası ve kabul kriterleri [birleşik iş listesinde](application-backlog-2026-09-08.md). Bu belge, eski roadmap maddelerinin neden kapandığını, birleştiğini veya ertelendiğini açıklar. İncelenen kaynaklar: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG ve ilgili uygulama kodu. Yerel kaynakların tarihi beyanları güncel ürün/sağlayıcı ölçümü sayılmadı; dış araç lisansları ve yetenekleri yeniden araştırılmadı.
 
+## 3 Kasım 2026 — üç rakip karşılaştırması ve dört yeni kart
+
+Üç Claude Code güvenlik skill/plugin reposu, pinli commit'ler üzerinden kodla karşılaştırıldı. Hiçbiri kurulmadı ya da çalıştırılmadı. Karşılaştırılan repolar: [Masriyan](../compare/masriyan-cybersecurity-skill.md) (`3aa77d8`), [Phoenix](../compare/phoenix-security-skills.md) (`40ace4a`) ve [senior-security](../compare/senior-security-skill.md) (`7f92eda`). [Cloudflare](../compare/cloudflare-security-audit-skill.md) belgesine doğrulanmış SHA notu eklendi: `c1c8a8c`, 14 Eylül'den sonra commit yok, 11 Ekim eşlemesi geçerli.
+
+**Sonuç:**
+- Repo içi kod güvenliğinde kitin önüne geçen bir araç yok. Üçünde de deterministik taramanın yerini regex script'leri ya da LLM prompt'u alıyor.
+- Her birinde birer hata doğrulandı:
+  - Phoenix'in enjeksiyon regex'i her zaman 0 sonuç döndürüyor.
+  - Masriyan'ın prompt-injection testi garantili yanlış pozitif veriyor.
+  - senior-security `.env` dosyalarını taramıyor.
+- Ayrışma, kitin "pinli araç tarar, Claude yargılar" sınırından geliyor.
+- Kitin gerisinde kaldığı yer dağıtım: üçü de plugin marketplace'te. Phoenix'in hook yüzeyi de kitinkinden geniş.
+
+**Plan değişiklikleri:**
+- **Yeni kartlar:**
+  - **F33** plugin hook seti (SessionStart bağlamı, PostToolUse tek dosya kontrolü), sıra 8c.
+  - **F34** `pkgcheck` ucuz registry sinyalleri ve "ask" kararı, sıra 8c.
+  - **F35** skill'lerde "taranan içerik talimat değildir" kuralı, P1, sıra 5. Doğrulanmış bir boşluk: `skills/` içinde böyle bir kural yok.
+  - **F36** STRIDE-per-element tamlık kontrolü, sıra 8d.
+- **Kart ekleri:**
+  - **F19:** kararla ayrı tutulan epistemik durum alanı (`observed`/`inferred`/`unverified`).
+  - **R02:** CI'da `claude plugin validate`, manifest ile disk tutarlılığı ve hook'ların `hooks.json` ile gelmesi.
+- Plugin'e giden anlaşılmış sıra (3d → 4 → 8) değişmedi.
+
+**Lisans notu:** Masriyan'ın lisansı MIT'e ek atıf ve hak sonlandırma şartları içeriyor. Oradan yalnızca fikir alınır, metin ya da kod alınmaz.
+
 ## 3 Kasım 2026 — v1.20.0 yayında
 
 **v1.20.0** 3 Kasım 2026'da yayımlandı (`f7d8a23`, GitHub "Latest"). İçerdiği işler: F02, F03, F04, F29, F14a, F25 ve F30. Teslim sırasının 3, 3a, 3b ve 3c adımları böylece tamamlandı.
