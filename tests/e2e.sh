@@ -1679,6 +1679,23 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   f30 env SARIF=1 F30_META="$(f30meta 1)" "$BASH" tools/security-audit-kit/scan.sh container
   grep -q '"updated_at": "2026-11-03T01:30:30.031564361Z"' "$F03D/evidence.json" && ! grep -q 'age_hours' "$F03D/evidence.json" \
     && ok "F30: evidence.json carries the DB identity, not its age" || no "F30: evidence trivy_db wrong"
+  # F11: scanners read the repo READ-ONLY and write only into this run's own output dir
+  f30 env SARIF=1 F30_META="$(f30meta 1)" "$BASH" tools/security-audit-kit/scan.sh container
+  f30fs | grep -q -- ':/repo:ro ' && f30fs | grep -qE -- '-v [^ ]*/sarif:/out ' && f30fs | grep -q -- '--output /out/trivy.sarif' \
+    && ! f30fs | grep -qE -- '-v [^ ]*:/repo ' \
+    && ok "F11: trivy mounts the repo read-only and writes SARIF to a separate /out mount" || no "F11: trivy mounts: $(f30fs)"
+  f30 env SARIF=1 "$BASH" tools/security-audit-kit/scan.sh secret
+  F11G="$(grep 'gitleaks' "$F30LOG")"
+  grep -q -- ':/repo:ro ' <<<"$F11G" && grep -q -- '--report-path /out/gitleaks.sarif' <<<"$F11G" && ! grep -qE -- '-v [^ ]*:/repo ' <<<"$F11G" \
+    && ok "F11: gitleaks mounts the repo read-only and writes SARIF to /out" || no "F11: gitleaks mounts: $F11G"
+  f30 env SARIF=1 F30_RC=0 "$BASH" tools/security-audit-kit/scan.sh osv
+  F11O="$(grep 'osv-scanner' "$F30LOG")"
+  grep -q -- ':/repo:ro ' <<<"$F11O" && grep -q -- '--output /out/osv.sarif' <<<"$F11O" \
+    && ok "F11: osv-scanner mounts the repo read-only and writes SARIF to /out" || no "F11: osv mounts: $F11O"
+  f30 "$BASH" tools/security-audit-kit/scan.sh sbom
+  F11S="$(grep 'syft' "$F30LOG")"
+  grep -q -- ':/repo:ro ' <<<"$F11S" && grep -q -- 'cyclonedx-json=/out/sbom.cyclonedx.json' <<<"$F11S" \
+    && ok "F11: syft mounts the repo read-only and writes the SBOM to /out" || no "F11: syft mounts: $F11S"
   # (h) doctor + warm
   f30 env F30_META="$(f30meta 3)" "$BASH" tools/security-audit-kit/scan.sh doctor
   grep -qE 'trivy DB +: .*updated 2026-11-03T01:30:30.*3h ago' "$F02/out" && ok "F30: doctor shows the cached DB and its age" \

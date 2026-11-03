@@ -245,9 +245,6 @@ docker_ok(){ have docker && docker info >/dev/null 2>&1; }
 # args: <image> <tag> <digest>
 img(){ if [ -n "${3:-}" ]; then printf '%s@%s' "$1" "$3"; else printf '%s:%s' "$1" "$2"; fi; }
 
-# SARIF (opt-in): repo-relative path of a SARIF file under the findings dir.
-sarif_rel(){ printf '%s/%s' "${SARIF_DIR#"$ROOT"/}" "$1"; }
-
 # ---- tracked-file matching: never `git ls-files | grep -q` --------------------------------------
 # That pipeline is a SILENT FALSE NEGATIVE on a large repo, and it silences whole dimensions.
 # `grep -q` exits at the FIRST match; git is still writing, gets SIGPIPE, and `set -o pipefail`
@@ -349,7 +346,7 @@ scan_py_deps_no_env(){
   # shellcheck disable=SC2086
   say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed):$(printf ' %s' $man)"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
     scan source $targets
   local rc=$?
   case "$rc" in
@@ -425,17 +422,25 @@ git_extra_mounts(){
   [ -f "$ROOT/.git" ] || return 0
   local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
   case "$common" in /*) ;; *) common="$ROOT/$common" ;; esac
-  [ -n "$common" ] && [ -d "$common" ] && printf -- '-v %s:%s' "$common" "$common"
+  [ -n "$common" ] && [ -d "$common" ] && printf -- '-v %s:%s:ro' "$common" "$common"
 }
+
+# Docker scanners read the repo READ-ONLY (F11): a scanner is handed attacker-controllable files
+# and has no business writing into the tree it reads. Output goes to a separate writable mount, this
+# run's own dir, mounted at /out. (Docker is isolation from the host's processes, not a sandbox
+# claim: the container still has the network, and runs as root, so files it writes to /out are
+# owned by root on Linux.) out_mount <dir> -> fills OUTM, an argument array for `docker run`.
+out_mount(){ OUTM=(); [ -n "${1:-}" ] || return 0; mkdir -p "$1" && OUTM=(-v "$1:/out"); }
 
 # ---- secret, full history (gitleaks detect) ----
 scan_secret(){
   docker_ok || { dim_skip secret "no docker -> gitleaks skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
-  local rep=""; [ "$SARIF" = "1" ] && rep="--report-format sarif --report-path /repo/$(sarif_rel gitleaks.sarif)"
+  local rep="" OUTM=()
+  if [ "$SARIF" = "1" ]; then rep="--report-format sarif --report-path /out/gitleaks.sarif"; out_mount "$SARIF_DIR"; fi
   say secret "gitleaks detect (full history)"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     detect --source /repo $cfg $rep --redact --exit-code 1 --verbose
 }
 
@@ -445,7 +450,7 @@ scan_secret_staged(){
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
   say secret "gitleaks protect --staged"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     protect --staged --source /repo $cfg --redact --exit-code 1 --verbose
 }
 
@@ -594,10 +599,10 @@ scan_container(){
   local skip; skip="--skip-dirs ${TRIVY_SKIP_DIRS:+$TRIVY_SKIP_DIRS,}$(record_rel)"
   # Soft: findings must not block, but they must be told apart from a clean run — so trivy exits
   # TRIVY_FINDINGS_RC on findings and that code is recorded as findings, then mapped back to 0.
-  local out="--exit-code $TRIVY_FINDINGS_RC"
-  [ "$SARIF" = "1" ] && out="$out --format sarif --output /repo/$(sarif_rel trivy.sarif)"
+  local out="--exit-code $TRIVY_FINDINGS_RC" OUTM=()
+  if [ "$SARIF" = "1" ]; then out="$out --format sarif --output /out/trivy.sarif"; out_mount "$SARIF_DIR"; fi
   # shellcheck disable=SC2086,SC2046
-  docker run --rm -v "$ROOT:/repo" $(trivy_cache_mount) -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
+  docker run --rm -v "$ROOT:/repo:ro" $(trivy_cache_mount) "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
     --no-progress $upd --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
   local rc=$?
   # Which DB this result came from: identity -> provenance, age -> summary.json (see the summary).
@@ -620,9 +625,13 @@ scan_container(){
 scan_sbom(){
   docker_ok || { dim_skip sbom "no docker -> syft skipped"; return 0; }
   say sbom "syft -> sbom.cyclonedx.json + sbom.spdx.json"
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img anchore/syft "$SYFT_VER" "$SYFT_DIGEST")" dir:/repo \
-    -o cyclonedx-json=/repo/sbom.cyclonedx.json -o spdx-json=/repo/sbom.spdx.json
-  local rc=$?
+  # Written to this run's dir, then moved to the repo root where it always landed.
+  local OUTM=() sb="$RUN_DIR/sbom"; out_mount "$sb"
+  docker run --rm -v "$ROOT:/repo:ro" "${OUTM[@]}" -w /repo "$(img anchore/syft "$SYFT_VER" "$SYFT_DIGEST")" dir:/repo \
+    -o cyclonedx-json=/out/sbom.cyclonedx.json -o spdx-json=/out/sbom.spdx.json
+  local rc=$? f
+  for f in sbom.cyclonedx.json sbom.spdx.json; do [ -f "$sb/$f" ] && mv -f "$sb/$f" "$ROOT/$f"; done
+  rmdir "$sb" 2>/dev/null || true
   # syft produces an inventory, not findings: any non-zero is a failure (it blocks, as before).
   [ "$rc" -eq 0 ] || dim_error sbom "syft exit $rc (SBOM not produced)"
   return "$rc"
@@ -658,9 +667,13 @@ scan_osv(){
     esac
   fi
   say osv "osv-scanner scan source (all lockfile ecosystems)${call:+ [reachability: $OSV_CALL_ANALYSIS, gate unchanged]}"
-  local out=""; [ "$SARIF" = "1" ] && out="--format sarif --output /repo/$(sarif_rel osv.sarif)"
+  local out="" OUTM=()
+  if [ "$SARIF" = "1" ]; then out="--format sarif --output /out/osv.sarif"; out_mount "$SARIF_DIR"; fi
+  # Read-only, except when the user accepted rust call analysis: that RUNS the dependency tree's build
+  # scripts, which write into the tree (cargo's target/). That mode already warns it executes code.
+  local ro=":ro"; case "${OSV_CALL_ANALYSIS:-}" in *rust*) ro="" ;; esac
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo$ro" "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
     scan source --recursive $call $out /repo
   local rc=$?
   case "$rc" in
