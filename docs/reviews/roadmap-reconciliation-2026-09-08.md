@@ -110,9 +110,9 @@ Four corrections were applied to the plan after the review:
 
 **Current order:** F03 → F04 → F14a + F25 (3b) → F30 (3c) → release gate F06–F08.
 
-## 2026-11-02 — SOCNova, new-vulnerability tracking and agent access (R15 note)
+## 2026-11-02 — SOC platform comparison, new-vulnerability tracking and agent access (R15 note)
 
-The “SOC NOVA” claims in a Gemini conversation were checked. The product is not SOCRadar; it is the AI-assisted SOC platform of SOCNova Bilişim A.Ş. (socnova.com). Its site only mentions MITRE ATT&CK; the Sigma/YARA/Kestrel etc. libraries Gemini listed are not on the site. Gemini had taken the kit for an endpoint auditing tool; the kit is a repo/supply-chain scanner. No new core feature to adopt into the kit came out of it; the web UI decision (F26 → conditional R13) did not change. New-vulnerability notification between scans, alert/agent integration and the division of labor with Dependabot are kept in the conditional note card **R15**; the delivery order did not change.
+Claims about a commercial AI-assisted SOC platform, made in a conversation with an AI assistant, were checked. The vendor's site only mentions MITRE ATT&CK; the Sigma/YARA/Kestrel etc. libraries the assistant listed are not on it. The assistant had taken the kit for an endpoint auditing tool; the kit is a repo/supply-chain scanner. No new core feature to adopt into the kit came out of it; the web UI decision (F26 → conditional R13) did not change. New-vulnerability notification between scans, alert/agent integration and the division of labor with Dependabot are kept in the conditional note card **R15**; the delivery order did not change.
 
 ## 2026-10-21 — py-deps environment selection (F29)
 

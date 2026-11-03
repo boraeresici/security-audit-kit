@@ -10,8 +10,8 @@ Complementary code-level findings are taken from the SAST notes (Appendix A).
 
 ## 1. Product Identity and Positioning
 
-Security audit kit occupies a different niche from traditional security tools (Snyk, Checkmarx,
-Veracode):
+Security audit kit occupies a different niche from traditional commercial security
+suites:
 
 | Traditional SAST/DAST | Security Audit Kit |
 |---|---|
@@ -141,7 +141,7 @@ Developer Workflow:
 **Weaknesses:**
 
 - **No IDE integration:** The developer cannot see a vulnerability while writing code; they learn of
-  it only at commit/push time. Modern SAST tools (Semgrep, SonarQube) offer IDE plugins.
+  it only at commit/push time. Modern SAST tools (e.g. Semgrep) offer IDE plugins.
 
 - **Bash-only interface:** No CLI UX beyond `scan.sh <command>`. Modern CLI ergonomics such as
   `--help`, `--json`, `--format` are missing. No tab completion, no interactive mode.
@@ -154,7 +154,7 @@ Developer Workflow:
   can be insufficient (F02, F04).
 
 - **Lacking remediation guidance:** AI triage says "this is real, fix it" but leaves only a short
-  note for the "how to fix it" question. There is no mechanism like Snyk's "fix PR" or Dependabot's
+  note for the "how to fix it" question. There is no mechanism like commercial SCA tools' "fix PR" or Dependabot's
   automatic PR.
 
 ### 3.3 Recommended Improvements for Developers
