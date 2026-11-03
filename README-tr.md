@@ -220,16 +220,24 @@ Bootstrap **kopya (vendor)** yapar — projenin `git`'i kit repo'sunu takip etme
 yani "upstream degisti" demez. Iki yolla ogrenirsin:
 
 1. **`--check` (yerlesik, salt-okunur).** Vendor'daki `.kit-version`'i kit
-   repo'sundaki en son semver tag ile `git ls-remote` uzerinden karsilastirir
-   (clone yok):
+   repo'sundaki en son release tag'i ile `git ls-remote` uzerinden karsilastirir (release candidate
+   ancak hic final surum yoksa onerilir). Ardindan aradaki her surumun **upgrade notes**'unu yazar;
+   bunlari o tag'in CHANGELOG'undan tek commit'lik shallow fetch ile okur. Vendor'daki kopyana
+   dokunmaz:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.19.0
+   # vendored version : v1.18.0
    # latest tag       : v1.19.1
    # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.19.1
+   # upgrade notes v1.18.0 -> v1.19.1 (do these when you update):
+   #   [1.19.1]
+   #     - The first scan after upgrading writes docs/security/scan-findings/.gitignore. ...
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
-   `make` hedefine baglanabilir.
+   `make` hedefine baglanabilir. Her surum bir *Upgrade notes* bolumu tasir (release script'i
+   bolum yoksa tag kesmez); "yapacak bir sey yok" boylece ima edilmez, yazilir. Guncellemeden sonra
+   `install.sh`'i tekrar calistirmak `.security-audit.conf`'unu korur ve yeni ornekte olup senin
+   config'inde olmayan ayarlari adlariyla soyler.
 2. **Kit repo'sunun release'lerini izle** (GitHub Watch → Custom → Releases): yeni
    tag cikinca bildirim alirsin.
 

@@ -49,6 +49,14 @@ require_changelog_version(){
     || die "CHANGELOG top version is '${top:-none}', expected '$want' — replace [Unreleased] with [$want] before cutting a tag"
 }
 
+# Every release says what a consumer must do on upgrade, even if that is nothing (F25):
+# bootstrap.sh --check shows these sections to someone about to update. "- None." is a valid body;
+# a missing section is not, because then nobody decided.
+require_upgrade_notes(){
+  release_notes "$1" | grep -q '^### Upgrade notes' \
+    || die "no '### Upgrade notes' in [$1] — add one (write '- None.' if nothing changes for consumers) before cutting a tag"
+}
+
 # CHANGELOG section body for a version (between "## [X.Y.Z]" and the next "## [").
 release_notes(){
   awk -v hdr="## [$1]" '
@@ -109,6 +117,7 @@ cmd_rc(){
   valid_ver "$ver" || die "invalid version '$ver' (want X.Y.Z)"
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "final tag v$ver already exists"
   require_changelog_version "$ver"
+  require_upgrade_notes "$ver"
   preflight
   local n=1 t
   while git rev-parse -q --verify "refs/tags/v${ver}-rc.$n" >/dev/null; do n=$((n+1)); done

@@ -109,6 +109,12 @@ shared `sarif/` directory holds exactly this run's files: an earlier run's SARIF
 leaves `sarif/` and `evidence.json` as they were; their `provenance` says which commit they
 describe.
 
+## Versioning
+
+`schema_version` changes only on a breaking change; new fields are added without a bump, so readers
+must ignore fields they do not know. summary.json is rewritten by every scan and never migrated in
+place. Policy: [RELEASING.md](../../RELEASING.md#upgrade-notes-deprecation-and-schema-versions).
+
 ## Migrating from schema 1
 
 Schema 1 had no `schema_version`, no top-level `gate`, and per dimension only

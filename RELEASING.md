@@ -129,6 +129,28 @@ Tags are not protected by default; only maintainers should push `v*` tags.
 For an urgent fix to the latest stable: branch from the stable tag, fix, PR to `main`, then run this
 same flow as `vX.Y.(Z+1)` (a quick `-rc.1` dogfood is still worth it).
 
+## Upgrade notes, deprecation and schema versions
+Consumers update on their own schedule, often several versions at once, so what changed for *them*
+has to be findable without reading every diff.
+
+- **Every version section has `### Upgrade notes`.** `scripts/release.sh rc` refuses to tag without
+  one. List only what a consumer must know or do: a changed output (`summary.json`, `evidence.json`,
+  `sarif/`), a changed exit code, a new or renamed setting, a new required tool, a changed hook. If
+  nothing changes for them, write `- None.` That way nobody has to guess whether the section was
+  forgotten. `bootstrap.sh --check` prints these sections for every version between a consumer's pin
+  and the latest release.
+- **Removing or renaming a `scan.sh` command or a setting:** keep the old name working for at least
+  one released version. It should print a deprecation warning that names the replacement. When it
+  is finally removed, calling the old name must say what replaced it instead of failing as
+  "unknown". Note both steps in the Upgrade notes of the versions that make them.
+- **Schema versions.** A breaking change to `summary.json` bumps `schema_version`. A breaking change
+  to `evidence.json` bumps the `security-audit-kit/evidence@N` tag. Additive fields do not bump
+  either; readers must ignore unknown fields. Both files are rebuilt on every scan (`evidence.json`
+  on `SARIF=1`), so an old file is never migrated in place: the first scan after an update replaces
+  it. A consumer that keeps old copies reads them by their version field. The report renderer
+  refuses an evidence schema it does not know rather than misreading it. Each schema doc has a
+  *Migrating* section for the step.
+
 ## Notes
 - Keep `CHANGELOG.md` the source of truth for release notes; the promote step extracts that section.
 - Always regenerate `CHECKSUMS` (`scan.sh checksums`) whenever kit files change, before tagging —

@@ -519,6 +519,56 @@ grep -q "CHANGELOG top version is '98.0.0', expected '99.0.0'" <<<"$ROUT" \
   || no "release: accepted an RC without its CHANGELOG version section"
 rm -rf "$RELTEST"
 
+echo "-- F25: upgrade notes reach the consumer (release gate, bootstrap --check, install re-run) --"
+# release: a version section without "### Upgrade notes" is not cut (write "- None." if nothing breaks)
+RELTEST="$(mktemp -d)"; mkdir -p "$RELTEST/scripts"
+cp "$KIT_SRC/scripts/release.sh" "$RELTEST/scripts/release.sh"; cp "$KIT_SRC/scan.sh" "$RELTEST/scan.sh"
+printf '# Changelog\n\n## [99.0.0] - 2026-01-01\n\n### Fixed\n- x\n\n## [98.0.0] - 2025-01-01\n' > "$RELTEST/CHANGELOG.md"
+( cd "$RELTEST" && git init -q )
+ROUT="$(cd "$RELTEST" && bash scripts/release.sh rc 99.0.0 --yes --no-gh 2>&1 || true)"
+grep -q "no '### Upgrade notes' in \[99.0.0\]" <<<"$ROUT" \
+  && ok "F25: release refuses a version with no Upgrade notes section" || no "F25: release cut a version without Upgrade notes"
+rm -rf "$RELTEST"
+# bootstrap --check: the upgrade notes between the pinned version and the latest tag
+F25K="$(mktemp -d)"; F25C="$(mktemp -d)"
+printf '%s\n' '# Changelog' '' '## [Unreleased]' '' '### Upgrade notes' '- unreleased-note' '' \
+  '## [3.0.0] - 2026-03-01' '' '### Upgrade notes' '- breaking-A: summary schema 3' '' '### Fixed' '- fix-3' '' \
+  '## [2.1.0] - 2026-02-01' '' '### Upgrade notes' '- note-B: new PY_VENV' '' \
+  '## [2.0.0] - 2026-01-01' '' '### Upgrade notes' '- old-C' > "$F25K/CHANGELOG.md"
+( cd "$F25K" && git init -q && git add -A && git -c user.email=e2e@test -c user.name=e2e commit -qm k \
+    && git tag v2.0.0 && git tag v2.1.0-rc.1 && git tag v3.0.0-rc.1 && git tag v3.0.0 )
+mkdir -p "$F25C/tools/security-audit-kit"; ( cd "$F25C" && git init -q )
+printf 'v2.0.0 0000000000000000000000000000000000000000\n' > "$F25C/tools/security-audit-kit/.kit-version"
+F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F25K" bash "$KIT_SRC/bootstrap.sh" --check 2>&1)" || F25RC=$?
+[ "$F25RC" -eq 1 ] && grep -q 'breaking-A' <<<"$F25OUT" && grep -q 'note-B' <<<"$F25OUT" \
+  && ! grep -q 'old-C' <<<"$F25OUT" && ! grep -q 'unreleased-note' <<<"$F25OUT" \
+  && ok "F25: --check shows the upgrade notes from the pin (excl.) up to the latest tag (incl.)" \
+  || no "F25: --check upgrade notes wrong (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+# sort -V orders v3.0.0-rc.1 AFTER v3.0.0: --check used to offer the final's own RC as "latest".
+grep -q 'latest tag *: v3.0.0$' <<<"$F25OUT" \
+  && ok "F25: --check offers the final release, not its older RC" || no "F25: --check offered an RC over its final: $(grep 'latest tag' <<<"$F25OUT")"
+grep -q '\[3.0.0\]' <<<"$F25OUT" && grep -q '\[2.1.0\]' <<<"$F25OUT" \
+  && ok "F25: each note is labelled with its version" || no "F25: notes not labelled by version"
+printf 'v2.1.0-rc.1 0000000000000000000000000000000000000000\n' > "$F25C/tools/security-audit-kit/.kit-version"
+F25OUT="$(cd "$F25C" && KIT_REPO="$F25K" bash "$KIT_SRC/bootstrap.sh" --check 2>&1 || true)"
+grep -q 'note-B' <<<"$F25OUT" && grep -q 'breaking-A' <<<"$F25OUT" \
+  && ok "F25: an RC pin also gets its own final version's notes" || no "F25: RC pin skipped its final's notes"
+rm -rf "$F25K" "$F25C"
+# install.sh re-run: an existing config is kept, and settings added since are named
+F25I="$(mktemp -d)"
+# shellcheck disable=SC2016  # the config line is a literal: its ${...} is for scan.sh to expand
+( cd "$F25I" && git init -q && mkdir -p tools/security-audit-kit \
+  && cp -R "$KIT_SRC"/. tools/security-audit-kit/ && rm -rf tools/security-audit-kit/.git \
+  && printf ': "${SAST_PATHS:=src}"\n' > .security-audit.conf ) >/dev/null 2>&1
+F25OUT="$(cd "$F25I" && bash tools/security-audit-kit/install.sh 2>&1 || true)"
+# shellcheck disable=SC2016
+grep -q 'PY_VENV' <<<"$F25OUT" && grep -q 'not in your .security-audit.conf' <<<"$F25OUT" \
+  && [ "$(cat "$F25I/.security-audit.conf")" = ': "${SAST_PATHS:=src}"' ] \
+  && ok "F25: install re-run keeps the config and names settings added since" || no "F25: install re-run did not report new settings"
+grep -q 'new setting.*SAST_PATHS' <<<"$F25OUT" && no "F25: a setting already in the config was reported as new" \
+  || ok "F25: settings already present are not reported"
+rm -rf "$F25I"
+
 echo "-- osv (OSV-Scanner optional dimension) --"
 if docker_ok; then
   # target has no lockfiles -> osv-scanner exits 128 -> scan.sh maps that to a clean pass (0)

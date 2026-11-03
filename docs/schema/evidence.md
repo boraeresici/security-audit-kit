@@ -201,6 +201,14 @@ All tool- and skill-supplied text is HTML-escaped. A scanner message containing 
 markup — a security tool whose own report is injectable would be an embarrassment, so the e2e
 asserts it.
 
+## Versioning
+
+The `schema` tag (`security-audit-kit/evidence@1`) changes only on a breaking change. New fields are
+added without a bump (`scan.provenance`, `scan.artifacts` were), so readers must ignore fields they
+do not know. evidence.json is rebuilt on every `SARIF=1` scan and never migrated in place. After an
+update that bumps the tag, the next scan writes the new version, and `report_html.py` refuses a tag
+it does not know instead of misreading it. Policy: [RELEASING.md](../../RELEASING.md#upgrade-notes-deprecation-and-schema-versions).
+
 ## Compatibility
 
 `schema` is versioned (`…/evidence@1`). Additive fields do not bump it; a renamed or removed field

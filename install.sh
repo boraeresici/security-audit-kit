@@ -52,6 +52,13 @@ fi
 echo "== project config =="
 if [ -f "$ROOT/.security-audit.conf" ]; then
   ok ".security-audit.conf already exists (preserved)"
+  # A re-run after an update: never rewrite the team's config, but say which settings the new
+  # example has that it does not (F25) — a new knob nobody hears about is a knob nobody sets.
+  conf_keys(){ grep -oE '\$\{[A-Z][A-Z0-9_]*:=|^#? *[A-Z][A-Z0-9_]*=' "$1" | grep -oE '[A-Z][A-Z0-9_]*' | sort -u; }
+  new_keys="$(comm -23 <(conf_keys "$KIT/security-audit.conf.example") \
+                       <(grep -oE '[A-Z][A-Z0-9_]+' "$ROOT/.security-audit.conf" | sort -u) | tr '\n' ' ')"
+  [ -n "${new_keys// /}" ] \
+    && miss "settings in security-audit.conf.example that are not in your .security-audit.conf: ${new_keys% } (all optional; see the example)"
 else
   cp "$KIT/security-audit.conf.example" "$ROOT/.security-audit.conf"
   ok ".security-audit.conf created (from example) -> edit SAST_PATHS etc. + commit it"

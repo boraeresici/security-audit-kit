@@ -43,7 +43,19 @@ All notable changes to this project are documented here. The format is based on
   prints the commands, gate tags, prerequisites, what `all` leaves out and the first-run path.
   `summary.json` times every dimension and the run.
 
+- **Upgrade notes reach the consumer (F25).** `bootstrap.sh --check` now prints the
+  `### Upgrade notes` of every version between your pin and the latest release, labelled by
+  version, read from that tag's CHANGELOG with a one-commit shallow fetch. An RC pin also gets its
+  final's notes. Re-running `install.sh` keeps `.security-audit.conf` and names the settings the new
+  example has that it does not. `scripts/release.sh` refuses to tag a version without an Upgrade
+  notes section (write `- None.` when nothing changes). RELEASING.md now covers the deprecation
+  policy for commands and settings and the schema versioning rules.
+
 ### Fixed
+- **`bootstrap.sh --check` offered a release candidate older than the final.** `sort -V` puts
+  `v1.19.1-rc.1` after `v1.19.1`, so once 1.19.1 was released, `--check` reported `latest tag:
+  v1.19.1-rc.1` and told consumers to update to it. It now offers the newest final release, and an
+  RC only when no final exists.
 - **py-deps audited whatever environment the shell had active (F29).** With no repo `.venv`, any
   `VIRTUAL_ENV` was taken as this project's, without checking that it was a venv or belonged to
   this repo. Measured: `VIRTUAL_ENV` pointing at a pyenv global interpreter made a
