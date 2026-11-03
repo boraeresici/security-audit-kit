@@ -1253,6 +1253,33 @@ offenders="$(grep -hvE '^[[:space:]]*#' \
 [ -z "$offenders" ] && ok "no file listing is piped into 'grep -q'" \
   || no "a file listing is piped into 'grep -q' again: $offenders"
 
+echo "-- dimension registry: the adapter contract is consistent (docs/adapters.md) --"
+# Read the two tables as text: sourcing scan.sh would run it. A unit naming a function that does not
+# exist, or a command naming a unit that is not registered, only fails when that command is run.
+regtab(){ awk -v t="$1=" 'index($0,t)==1{on=1; next} on && /^'"'"'/{exit} on' "$KIT_SRC/scan.sh"; }
+REGU="$(regtab DIM_UNITS)"; REGC="$(regtab SCAN_COMMANDS)"
+regbad=""
+while read -r u rec entry gate needs; do
+  [ -n "$u" ] || continue
+  grep -q "^$entry(){" "$KIT_SRC/scan.sh" || regbad="$regbad $u:no-function-$entry"
+  case "$gate" in hard|soft|artifact) ;; *) regbad="$regbad $u:gate=$gate" ;; esac
+  case "$needs" in docker|pyrun|-) ;; *) regbad="$regbad $u:needs=$needs" ;; esac
+  [ -n "$rec" ] || regbad="$regbad $u:no-record"
+done <<<"$REGU"
+dups="$(awk 'NF{print $1}' <<<"$REGU" | sort | uniq -d)"
+[ -n "$dups" ] && regbad="$regbad duplicate-unit:$dups"
+# shellcheck disable=SC2013  # words are the point: one unit per word
+for u in $(awk -F'|' 'NF>1{print $2}' <<<"$REGC"); do
+  awk -v u="$u" '$1==u{f=1} END{exit !f}' <<<"$REGU" || regbad="$regbad unregistered-unit:$u"
+done
+[ -n "$REGU" ] && [ -n "$REGC" ] && [ -z "$regbad" ] \
+  && ok "registry: every unit names a real adapter with a valid gate/needs; every command's units exist" \
+  || no "registry inconsistent:${regbad:- tables not found}"
+# Dispatch goes through the registry only: a second _dim call site is a case statement coming back.
+ndim="$(grep -vE '^[[:space:]]*#' "$KIT_SRC/scan.sh" | grep -cE '(^|[^a-z_])_dim "' || true)"
+[ "$ndim" = 1 ] && ok "registry: run_scans is the only place a dimension is dispatched" \
+  || no "registry: _dim is called from $ndim places (expected 1, in run_scans)"
+
 # The hook's manifest regex must be anchored per alternative: unanchored it fires on a template
 # (requirements.txt.tpl) or a backup (package.json.bak) and runs a dependency scan nothing asked for.
 mre="$(grep -m1 '^manifests=' "$KIT_SRC/hooks/pre-commit" | cut -d= -f2- | tr -d "'")"

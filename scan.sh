@@ -1467,11 +1467,61 @@ scan_lock_release(){
 
 REPORT="${REPORT:-}"
 
+# ---- dimension registry: the adapter contract (docs/adapters.md) ----
+# What runs is data, not a case statement: dispatch, the help text and the closing summary all read
+# these two tables, so adding a dimension is one adapter function + one line in each — not five
+# edits that drift apart. bash 3.2 (macOS) has no associative arrays, hence plain text tables.
+#
+# DIM_UNITS — one adapter per line:
+#   unit     the registry key (unique)
+#   record   the name summary.json gives it; two units may share one (`changed` is sast on a diff)
+#   entry    the adapter function: scan_<x>, no arguments, return 0/1/RC_INDETERMINATE/other
+#   gate     hard (findings block) · soft (findings reported, never block) · artifact (writes a file)
+#   needs    docker · pyrun (uvx or pipx) · - (finds its own toolchain)
+DIM_UNITS='
+secret        secret     scan_secret          hard      docker
+staged        staged     scan_secret_staged   hard      docker
+sast          sast       scan_sast            hard      pyrun
+sast-changed  sast       scan_sast_changed    hard      pyrun
+py-deps       py-deps    scan_py_deps         hard      pyrun
+js-deps       js-deps    scan_js_deps         hard      -
+iac           iac        scan_iac             soft      pyrun
+container     container  scan_container       soft      docker
+sbom          sbom       scan_sbom            artifact  docker
+osv           osv        scan_osv             hard      docker
+guarddog      guarddog   scan_guarddog        hard      pyrun
+zizmor        zizmor     scan_zizmor          hard      pyrun
+'
+# SCAN_COMMANDS — command | the units it runs, in order | what it leaves out (closing summary).
+SCAN_COMMANDS='
+deps      | py-deps js-deps |
+secret    | secret |
+staged    | staged |
+sast      | sast |
+changed   | sast-changed |
+iac       | iac |
+container | container |
+sbom      | sbom |
+osv       | osv |
+guarddog  | guarddog |
+zizmor    | zizmor |
+fast      | staged py-deps js-deps | secret (full history) sast container iac osv guarddog zizmor sbom
+all       | secret sast py-deps js-deps container iac | osv guarddog zizmor sbom
+'
+# <command> <field 2|3> -> that field, trimmed; exit 1 for a command the table does not know.
+scan_command_field(){
+  awk -F'|' -v c="$1" -v f="$2" '{k=$1; gsub(/[[:space:]]/,"",k)} k==c && k!="" {
+    v=$f; gsub(/^[[:space:]]+|[[:space:]]+$/,"",v); print v; found=1; exit } END{exit !found}' <<<"$SCAN_COMMANDS"
+}
+scan_commands(){ awk -F'|' '{k=$1; gsub(/[[:space:]]/,"",k)} k!=""{print k}' <<<"$SCAN_COMMANDS"; }
+# <unit> -> "record entry gate needs"; exit 1 for an unknown unit.
+dim_unit(){ awk -v u="$1" '$1==u{print $2, $3, $4, $5; found=1; exit} END{exit !found}' <<<"$DIM_UNITS"; }
+
 # help: the usage block at the top of this file, plus what `all` leaves out and what the tags mean.
 scan_help(){
   awk '/^# Usage:/{on=1} on && /^#$/{exit} on{sub(/^# ?/,""); print}' "$KIT_DIR/scan.sh"
   printf '\n  [HARD] blocks commit/push on a finding · [soft] reported, never blocks · [artifact] writes a file\n'
-  printf "  not in 'all': osv guarddog zizmor sbom — run them by name (or /sec-audit)\n"
+  printf "  not in 'all': %s — run them by name (or /sec-audit)\n" "$(scan_command_field all 3)"
   printf '  Needs docker: secret staged container sbom osv · needs uvx or pipx: sast changed iac deps(pip-audit) guarddog zizmor\n'
   printf '  Missing docker or uvx/pipx -> that dimension is "skipped" (not a pass); the run says which.\n'
   printf '  Start here: scan.sh doctor -> scan.sh all -> read the closing summary -> /sec-triage\n'
@@ -1529,24 +1579,18 @@ _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
   # RC_INDETERMINATE is recorded but never blocks: it says "no opinion", not "finding".
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && return 1; return 0; }
 
+# Every unit of the command runs, in table order, even after one blocks: the gate is the OR of them.
 run_scans(){
-  local rc=0
-  case "${1:-all}" in
-    deps)      _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
-    secret)    _dim secret scan_secret || rc=1 ;;
-    staged)    _dim staged scan_secret_staged || rc=1 ;;
-    sast)      _dim sast scan_sast || rc=1 ;;
-    changed)   _dim sast scan_sast_changed || rc=1 ;;
-    iac)       _dim iac scan_iac || rc=1 ;;
-    container) _dim container scan_container || rc=1 ;;
-    sbom)      _dim sbom scan_sbom || rc=1 ;;
-    osv)       _dim osv scan_osv || rc=1 ;;
-    guarddog)  _dim guarddog scan_guarddog || rc=1 ;;
-    zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
-    fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
-    all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report|warm|help)"; return 2 ;;
-  esac
+  local rc=0 units u row rec entry
+  if ! units="$(scan_command_field "${1:-all}" 2)"; then
+    echo "unknown command: $1 ($(scan_commands | paste -sd'|' -)|doctor|verify|checksums|rules-test|allowlist|evidence|report|warm|help)"
+    return 2
+  fi
+  for u in $units; do
+    row="$(dim_unit "$u")" || { echo "registry: unit '$u' of '$1' is not in DIM_UNITS"; return 2; }
+    read -r rec entry _ <<<"$row"
+    _dim "$rec" "$entry" || rc=1
+  done
   return $rc
 }
 
@@ -1801,11 +1845,7 @@ fi
 printf '\n\033[36m── run: %s · scan %s · %ss\033[0m\n' "$RUN_ID" "$CMD" "$RUN_SECONDS"
 awk -F'\t' '{ why=$6; if (length(why) > 72) why=substr(why,1,69) "..."
   printf "   %-10s %-14s %5.1fs  %s\n", $1, $3, $5/1000, why }' "$RESULTS_FILE"
-not_covered=""
-case "$CMD" in
-  all)  not_covered="osv guarddog zizmor sbom" ;;
-  fast) not_covered="secret (full history) sast container iac osv guarddog zizmor sbom" ;;
-esac
+not_covered="$(scan_command_field "$CMD" 3 2>/dev/null)"
 [ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
 # The usual reason for a hole in coverage is the toolchain, not the repo: name the cause once.
 no_docker="$(awk -F'\t' '$3=="skipped" && $6 ~ /no docker/{printf " %s",$1}' "$RESULTS_FILE")"
