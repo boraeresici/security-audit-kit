@@ -1,370 +1,375 @@
-# Security Audit Kit — Metodoloji ve Kullanılabilirlik Değerlendirmesi
+# Security Audit Kit — Methodology and Usability Evaluation
 
-Tarih: 10 Eylül 2026 · Baz: `main / 48fad91` (v1.17.0 + unreleased run lock)
+Date: 2026-09-10 · Base: `main / 48fad91` (v1.17.0 + unreleased run lock)
 
-Bu değerlendirme projenin kodunu taramak değil; **ürün olarak** güvenlik denetimi metodolojisi
-çerçevesinde güvenlik ve development ekiplerince kullanılabilirliğini analiz etmektir.
-Kod düzeyindeki tamamlayıcı bulgular SAST notlarından (Ek A) alınmıştır.
+This evaluation is not a scan of the project's code; it analyzes the kit **as a product**, within a
+security-audit methodology framework, for its usability by security and development teams.
+Complementary code-level findings are taken from the SAST notes (Appendix A).
 
 ---
 
-## 1. Ürün Kimliği ve Konumlandırma
+## 1. Product Identity and Positioning
 
-Security audit kit, geleneksel güvenlik araçlarından (Snyk, Checkmarx, Veracode) farklı bir nişe
-oturuyor:
+Security audit kit occupies a different niche from traditional security tools (Snyk, Checkmarx,
+Veracode):
 
-| Geleneksel SAST/DAST | Security Audit Kit |
+| Traditional SAST/DAST | Security Audit Kit |
 |---|---|
-| SaaS veya sunucu gerektirir | Yerel, CI'dan bağımsız |
-| Merkezi dashboard | Repo-içi, dağıtık |
-| Aylık lisans maliyeti | MIT, ücretsiz |
-| Uzman ekip yönetir | Developer self-service |
-| Ayrı araç olarak çalışır | Git hook + AI ile entegre |
+| Requires SaaS or a server | Local, CI-independent |
+| Central dashboard | In-repo, distributed |
+| Monthly license cost | MIT, free |
+| Managed by an expert team | Developer self-service |
+| Runs as a separate tool | Integrated with git hooks + AI |
 
-**Değerlendirme:** Konumlandırma net — "developer-first, offline, vendored security gate." SaaS
-ürünleriyle rekabet etmiyor; onların yerine değil, **öncesinde** ve **yanında** çalışıyor. Bu,
-küçük-orta ekipler ve bütçe kısıtlı organizasyonlar için güçlü bir değer önerisi. Ancak enterprise
-güvenlik ekipleri için merkezi görünürlük eksikliği kabul engeli olabilir.
+**Assessment:** The positioning is clear — "developer-first, offline, vendored security gate." It
+does not compete with SaaS products; it runs **before** and **alongside** them, not instead of them.
+This is a strong value proposition for small-to-mid teams and budget-constrained organizations.
+However, for enterprise security teams the lack of central visibility may be an adoption blocker.
 
 ---
 
-## 2. Metodoloji Kapsamı — Güvenlik Ekibi Perspektifi
+## 2. Methodology Coverage — Security Team Perspective
 
-### 2.1 Standart Güvenlik Denetim Çerçeveleriyle Eşleme
+### 2.1 Mapping to Standard Security Audit Frameworks
 
-| Denetim Aşaması | Kit'in Karşılığı | Durum |
+| Audit Phase | Kit's Counterpart | Status |
 |---|---|---|
-| **Varlık tespiti** (kod, bağımlılık, altyapı) | `doctor`, `sbom`, stack auto-detect | ✅ Yeterli |
-| **Zafiyet taraması** (SAST, secret, deps, IaC, container) | `sast`, `secret`, `deps`, `iac`, `container`, `osv` | ✅ Kapsamlı |
-| **Tedarik zinciri** | `guarddog`, `pkgcheck`, pin/digest mekanizması | ✅ Güçlü |
-| **AI/LLM güvenliği** | `sec-ai-review` (OWASP LLM Top 10) | ✅ Öncü |
-| **Tehdit modelleme** | `sec-threat-model` (STRIDE) | ✅ Var |
-| **Derin analiz** (authz, iş mantığı) | `sec-sast-deep` | ✅ Özgün |
-| **DAST / Runtime test** | Yok | ⛔ Bilinçli kapsam dışı |
-| **API güvenliği testi** | Yok | ⛔ Eksik |
-| **Uyumluluk eşleme** (PCI-DSS, SOC2, HIPAA) | Yok | ⛔ Eksik |
-| **Risk önceliklendirme** (business context) | Severity normalization + AI triage | ⚠️ Kısmi |
-| **SLA / remediation tracking** | Allowlist decay detection | ⚠️ Kısmi |
-| **Merkezi raporlama** (çok repo) | Yok — tek repo HTML | ⛔ Eksik |
-| **Penetrasyon testi** | Yok | ⛔ Bilinçli kapsam dışı |
+| **Asset discovery** (code, dependencies, infrastructure) | `doctor`, `sbom`, stack auto-detect | ✅ Sufficient |
+| **Vulnerability scanning** (SAST, secret, deps, IaC, container) | `sast`, `secret`, `deps`, `iac`, `container`, `osv` | ✅ Comprehensive |
+| **Supply chain** | `guarddog`, `pkgcheck`, pin/digest mechanism | ✅ Strong |
+| **AI/LLM security** | `sec-ai-review` (OWASP LLM Top 10) | ✅ Pioneering |
+| **Threat modeling** | `sec-threat-model` (STRIDE) | ✅ Present |
+| **Deep analysis** (authz, business logic) | `sec-sast-deep` | ✅ Original |
+| **DAST / Runtime testing** | None | ⛔ Deliberately out of scope |
+| **API security testing** | None | ⛔ Missing |
+| **Compliance mapping** (PCI-DSS, SOC2, HIPAA) | None | ⛔ Missing |
+| **Risk prioritization** (business context) | Severity normalization + AI triage | ⚠️ Partial |
+| **SLA / remediation tracking** | Allowlist decay detection | ⚠️ Partial |
+| **Central reporting** (multi-repo) | None — single-repo HTML | ⛔ Missing |
+| **Penetration testing** | None | ⛔ Deliberately out of scope |
 
-**Sonuç:** Kit, **Identification + Detection** aşamalarında güçlü; **Governance, Compliance,
-Response** aşamalarında bilinçli olarak eksik. Güvenlik ekibi bunu tek araç olarak değil, **ilk
-savunma hattı** olarak konumlandırmalı.
+**Conclusion:** The kit is strong in the **Identification + Detection** phases; it is deliberately
+lacking in the **Governance, Compliance, Response** phases. The security team should position it not
+as a single tool but as the **first line of defense**.
 
-### 2.2 Güvenlik Ekibinin İş Akışına Uygunluk
+### 2.2 Fit with the Security Team's Workflow
 
-**Güçlü yönler:**
+**Strengths:**
 
-- **Triage yükünü azaltır:** AI katmanı (`sec-triage`) ham bulguları sınıflandırıyor; güvenlik
-  ekibine yalnız `REAL` ve `UNCERTAIN` bulgular ulaşır. Büyük ekiplerde günde yüzlerce false
-  positive ile uğraşan güvenlik mühendisleri için doğrudan değer üretir.
+- **Reduces triage load:** The AI layer (`sec-triage`) classifies raw findings; only `REAL` and
+  `UNCERTAIN` findings reach the security team. Delivers direct value for security engineers in
+  large teams who deal with hundreds of false positives a day.
 
-- **Kanıt kalitesi:** `evidence.json` → SARIF → HTML zinciri, bulgunun nerede, ne zaman, hangi
-  araçla, hangi kararla tespit edildiğini gösterir. Güvenlik ekibi bu kanıtı auditör önünde
-  kullanabilir.
+- **Evidence quality:** The `evidence.json` → SARIF → HTML chain shows where, when, with which tool
+  and with which verdict a finding was detected. The security team can use this evidence in front of
+  an auditor.
 
-- **Allowlist yönetimi:** `scan.sh allowlist` ile kabul edilmiş risklerin zamanla çürümesini
-  tespit eder — governance açısından değerli.
+- **Allowlist management:** `scan.sh allowlist` detects the decay of accepted risks over time —
+  valuable from a governance standpoint.
 
-- **Repo-içi kontrol:** Güvenlik ekibi kuralları (`semgrep-rules/`), allowlist'i ve exclusion'ı
-  repo'da tutarak versiyonlar. "Gölgede güvenlik" yerine "şeffaf güvenlik" sağlar.
+- **In-repo control:** The security team versions rules (`semgrep-rules/`), the allowlist and
+  exclusions by keeping them in the repo. Provides "transparent security" instead of "shadow
+  security."
 
-**Zayıf yönler:**
+**Weaknesses:**
 
-- **Merkezi görünürlük yok:** 10 repo'da kit kullanan bir organizasyon, hangi repo'da kaç açık
-  bulgu olduğunu tek bakışla göremez. Güvenlik ekibi SARIF dosyalarını tek tek açmak veya Code
-  Scanning panellerini repo bazında kontrol etmek zorunda.
+- **No central visibility:** An organization using the kit in 10 repos cannot see at a glance how
+  many open findings each repo has. The security team must open SARIF files one by one or check Code
+  Scanning panels repo by repo.
 
-- **Uyumluluk raporu yok:** PCI-DSS Requirement 6.5, SOC2 CC8.1 gibi kontrollere bulgu eşleme
-  yapılamaz. Güvenlik ekibi denetim döneminde manuel eşleme tablosu hazırlamak zorunda.
+- **No compliance report:** Findings cannot be mapped to controls such as PCI-DSS Requirement 6.5 or
+  SOC2 CC8.1. The security team must prepare a manual mapping table during the audit period.
 
-- **Vulnerability aging:** Allowlist decay var ama "bu bulgu 90 gündür açık, SLA ihlali" uyarısı
-  yok. Güvenlik ekibinin en çok ihtiyaç duyduğu metriklerden biri.
+- **Vulnerability aging:** Allowlist decay exists, but there is no "this finding has been open for 90
+  days, SLA breach" warning. One of the metrics the security team needs most.
 
-- **Risk context:** CVSS skoru var ama "bu CVE bu organizasyonda hangi varlığı etkiliyor" sorusu
-  cevaplanamıyor. Security team risk kabul kararı verirken iş bağlamı ister.
+- **Risk context:** There is a CVSS score, but the question "which asset in this organization does
+  this CVE affect?" cannot be answered. The security team needs business context when making risk
+  acceptance decisions.
 
-### 2.3 Güvenlik Ekibi İçin Önerilen Geliştirmeler
+### 2.3 Recommended Improvements for the Security Team
 
-| # | Geliştirme | Mevcut kart | Öncelik |
+| # | Improvement | Existing card | Priority |
 |---|---|---|---|
-| 1 | Çok repo bulgu aggregation (SARIF merge + özet) | Backlog'da yok — **F26 önerilir** | P1 |
-| 2 | Uyumluluk eşleme tablosu (CWE → PCI/SOC2/HIPAA) | Backlog'da yok — **R12 önerilir** | P2 |
-| 3 | Bulgu yaşlandırma ve SLA uyarısı | F19'a eklenebilir | P2 |
-| 4 | Executive summary çıktısı (tek sayfa, teknik olmayan özet) | F04'e eklenebilir | P2 |
+| 1 | Multi-repo finding aggregation (SARIF merge + summary) | Not in backlog — **F26 proposed** | P1 |
+| 2 | Compliance mapping table (CWE → PCI/SOC2/HIPAA) | Not in backlog — **R12 proposed** | P2 |
+| 3 | Finding aging and SLA warning | Could be added to F19 | P2 |
+| 4 | Executive summary output (single page, non-technical summary) | Could be added to F04 | P2 |
 
 ---
 
-## 3. Metodoloji Kapsamı — Development Ekibi Perspektifi
+## 3. Methodology Coverage — Development Team Perspective
 
-### 3.1 Developer Workflow Entegrasyonu
+### 3.1 Developer Workflow Integration
 
 ```
-Developer İş Akışı:
-  kod yaz → git add → [pre-commit: staged + deps] → git commit
+Developer Workflow:
+  write code → git add → [pre-commit: staged + deps] → git commit
      → [pre-push: verify + all] → git push → CI → PR → merge
 ```
 
-| Aşama | Kit'in Sağladığı | Developer Deneyimi |
+| Stage | What the Kit Provides | Developer Experience |
 |---|---|---|
-| **Kod yazma** | Yok (IDE entegrasyonu yok) | ⛔ Bulgu anında geri bildirim yok |
-| **Staging** | `pre-commit` → staged secret + deps | ✅ Hızlı (sub-second secret scan) |
-| **Commit** | Gate: secret varsa durdurur | ✅ Net ve hızlı |
-| **Push** | `pre-push` → verify + all | ⚠️ İlk çalışmada Docker pull süresi |
-| **PR** | CI: shellcheck + checksums + self-audit | ✅ Otomatik |
-| **Triage** | AI skill'ler ile otomatik sınıflandırma | ✅ Developer'ı triajdan kurtarır |
-| **Remediation** | AI önerileri (findings.md) | ⚠️ Öneri var, otomatik fix yok |
+| **Writing code** | None (no IDE integration) | ⛔ No instant feedback on findings |
+| **Staging** | `pre-commit` → staged secret + deps | ✅ Fast (sub-second secret scan) |
+| **Commit** | Gate: stops if a secret is present | ✅ Clear and fast |
+| **Push** | `pre-push` → verify + all | ⚠️ Docker pull time on first run |
+| **PR** | CI: shellcheck + checksums + self-audit | ✅ Automatic |
+| **Triage** | Automatic classification via AI skills | ✅ Frees the developer from triage |
+| **Remediation** | AI suggestions (findings.md) | ⚠️ Suggestions exist, no automatic fix |
 
-### 3.2 Developer Deneyimi Değerlendirmesi
+### 3.2 Developer Experience Assessment
 
-**Güçlü yönler:**
+**Strengths:**
 
-- **Sıfır konfigürasyon başlangıç:** `bootstrap.sh` + `install.sh` ile 2 komutta kurulum.
-  Developer'ın Docker, Python, veya npm bilmesi gerekmiyor — araçlar `uvx`/Docker ile otomatik
-  çekiliyor.
+- **Zero-configuration start:** Install in 2 commands with `bootstrap.sh` + `install.sh`. The
+  developer does not need to know Docker, Python, or npm — tools are fetched automatically via
+  `uvx`/Docker.
 
-- **CI bağımsızlığı:** Developer lokalde tam tarama yapabilir; CI faturası beklemez. Özellikle
-  küçük startup'lar ve açık kaynak projeler için değerli.
+- **CI independence:** The developer can run a full scan locally; no waiting on the CI bill.
+  Especially valuable for small startups and open-source projects.
 
-- **Fail-fast kültürü:** `pre-commit` saniyeler içinde, `pre-push` dakikalar içinde sonuç verir.
-  "CI'da 30 dakika sonra öğren" yerine "push anında öğren" deneyimi.
+- **Fail-fast culture:** `pre-commit` returns results within seconds, `pre-push` within minutes.
+  A "learn at push time" experience instead of "learn in CI 30 minutes later."
 
-- **AI triage:** "Bu bulgu gerçek mi?" sorusunu AI cevaplar. Developer güvenlik uzmanı olmak
-  zorunda kalmaz.
+- **AI triage:** AI answers the question "is this finding real?" The developer does not have to be a
+  security expert.
 
-- **`doctor` komutu:** Araç zincirini, pin'leri ve algılanan stack'leri gösterir. "Neden
-  çalışmıyor?" sorusunun cevabı tek komutta.
+- **`doctor` command:** Shows the tool chain, pins and detected stacks. The answer to "why isn't it
+  working?" in a single command.
 
-**Zayıf yönler:**
+**Weaknesses:**
 
-- **IDE entegrasyonu yok:** Developer kod yazarken zafiyeti göremez; yalnız commit/push anında
-  öğrenir. Modern SAST araçları (Semgrep, SonarQube) IDE plugin'leri sunar.
+- **No IDE integration:** The developer cannot see a vulnerability while writing code; they learn of
+  it only at commit/push time. Modern SAST tools (Semgrep, SonarQube) offer IDE plugins.
 
-- **Bash-only arayüz:** `scan.sh <command>` dışında CLI UX yok. `--help`, `--json`, `--format`
-  gibi modern CLI ergonomisi eksik. Tab completion, interactive mode yok.
+- **Bash-only interface:** No CLI UX beyond `scan.sh <command>`. Modern CLI ergonomics such as
+  `--help`, `--json`, `--format` are missing. No tab completion, no interactive mode.
 
-- **İlk çalışma sürtünmesi:** İlk `scan.sh all` çalışmasında Docker imajları indirilir — dakika
-  sürebilir. Developer "kurulum tamamlandı" sanıp ilk taramada beklerse hayal kırıklığı yaşar.
+- **First-run friction:** On the first `scan.sh all` run, Docker images are downloaded — this can
+  take minutes. A developer who thinks "installation is done" and then waits on the first scan will
+  be disappointed.
 
-- **Hata mesajları:** Bazı hata durumları `raw-*.log`'a düşüyor; developer'ın doğrudan gördüğü
-  çıktı yetersiz kalabiliyor (F02, F04).
+- **Error messages:** Some error cases end up in `raw-*.log`; the output the developer sees directly
+  can be insufficient (F02, F04).
 
-- **Remediation rehberliği eksik:** AI triage "bu gerçek, düzelt" diyor ama "nasıl düzeltilir"
-  sorusu için kısa nota bırakıyor. Snyk'ın "fix PR" veya Dependabot'ın otomatik PR'ı gibi bir
-  mekanizma yok.
+- **Lacking remediation guidance:** AI triage says "this is real, fix it" but leaves only a short
+  note for the "how to fix it" question. There is no mechanism like Snyk's "fix PR" or Dependabot's
+  automatic PR.
 
-### 3.3 Developer İçin Önerilen Geliştirmeler
+### 3.3 Recommended Improvements for Developers
 
-| # | Geliştirme | Mevcut kart | Öncelik |
+| # | Improvement | Existing card | Priority |
 |---|---|---|---|
-| 1 | `scan.sh help` — interaktif yardım | F14 | P1 |
-| 2 | İlk çalışma öncesi araç indirme uyarısı | Backlog'da yok | P1 |
-| 3 | Remediation önerisi zenginleştirme | R01 | P2 |
-| 4 | VS Code / JetBrains extension | Backlog'da yok | P2 |
-| 5 | `scan.sh --format json` — makine-okunabilir çıktı | F02 ile ilgili | P1 |
+| 1 | `scan.sh help` — interactive help | F14 | P1 |
+| 2 | Tool-download warning before first run | Not in backlog | P1 |
+| 3 | Enrich remediation suggestions | R01 | P2 |
+| 4 | VS Code / JetBrains extension | Not in backlog | P2 |
+| 5 | `scan.sh --format json` — machine-readable output | Related to F02 | P1 |
 
 ---
 
-## 4. Metodolojik Güç ve Zayıflıklar
+## 4. Methodological Strengths and Weaknesses
 
-### 4.1 Güçlü Metodolojik Kararlar
+### 4.1 Strong Methodological Decisions
 
-**a) Deterministik Gate + Yargı Ayrımı**
+**a) Deterministic Gate + Judgment Separation**
 
-Kit'in en özgün kararı. Geleneksel araçlar "bulgu var → durdur" veya "bulgu var → bildir"
-mantığıyla çalışır. Kit, **deterministik tarama** (değişmeyen kurallar, sabit çıktı) ile **AI
-yargısı** (bağlam gerektiren triyaj) katmanlarını ayırıyor.
+The kit's most original decision. Traditional tools work on "finding exists → stop" or "finding
+exists → report" logic. The kit separates the **deterministic scan** (unchanging rules, fixed output)
+layer from the **AI judgment** (triage that requires context) layer.
 
-- False positive oranını düşürür (AI, "bu test kodunda" diyebilir)
-- Güvenlik ekibinin triyaj yükünü azaltır
-- Developer'ı gereksiz durdurma ile yormaz
+- Lowers the false-positive rate (AI can say "this is in test code")
+- Reduces the security team's triage load
+- Does not wear the developer out with needless stops
 
-**b) Indeterminate Karar Modeli**
+**b) Indeterminate Verdict Model**
 
-`exit code 3` — "taradım ama bakacak bir şey yoktu." Sessiz `pass`'ten çok daha dürüst. v1.17.0'daki
-`py-deps` hatası (boş venv = yanlış temiz) bu yaklaşımın neden gerekli olduğunu kanıtlıyor.
+`exit code 3` — "I scanned but there was nothing to look at." Far more honest than a silent `pass`.
+The `py-deps` bug in v1.17.0 (empty venv = false clean) proves why this approach is necessary.
 
-**c) Tedarik Zinciri Bilinci**
+**c) Supply Chain Awareness**
 
-Tool pinleme (digest), CHECKSUMS, `scan.sh verify`, pre-push integrity, tag-repair guard. Bir
-güvenlik aracının kendi bütünlüğünü korumaması ironik ve tehlikeli olurdu; kit bunu ciddiye alıyor.
+Tool pinning (digest), CHECKSUMS, `scan.sh verify`, pre-push integrity, tag-repair guard. It would be
+ironic and dangerous for a security tool not to protect its own integrity; the kit takes this
+seriously.
 
-**d) Fail-Open Tasarımı (Bilinçli)**
+**d) Fail-Open Design (Deliberate)**
 
-Eksik araç → boyut atlanır, tarama durmaz. Kit'in felsefesi açık: "insanların routing around
-yaptığı bir gate, korumayan bir gate'dir."
+Missing tool → dimension is skipped, scan does not stop. The kit's philosophy is explicit: "a gate
+people route around is a gate that doesn't protect."
 
-### 4.2 Metodolojik Riskler ve Boşluklar
+### 4.2 Methodological Risks and Gaps
 
-**a) AI Yargısına Bağımlılık**
+**a) Dependence on AI Judgment**
 
-`sec-triage`'ın varsayılan kararı FP (false positive) olması durumunda — `sec-triage.skill.md:69`'da
-bu eğilim belirtilmiş — gerçek bir bulgu FP olarak işaretlenip allowlist'e girebilir.
+If `sec-triage`'s default verdict is FP (false positive) — this tendency is noted in
+`sec-triage.skill.md:69` — a real finding may be marked FP and end up in the allowlist.
 
-- **Risk:** Developer `sec-triage` çalıştırdı → AI "FP" dedi → allowlist'e eklendi → güvenlik
-  ekibi hiç görmedi.
-- **Mitigasyon:** `UNCERTAIN` kategorisi ve allowlist decay detection (`scan.sh allowlist`) kısmen
-  koruyor. F12 kalibrasyon çalışması tamamlanana kadar bu risk açık.
+- **Risk:** Developer ran `sec-triage` → AI said "FP" → added to allowlist → security team never saw
+  it.
+- **Mitigation:** The `UNCERTAIN` category and allowlist decay detection (`scan.sh allowlist`)
+  partially protect against this. This risk remains open until the F12 calibration work is done.
 
-**b) Kapsam Yanılsaması**
+**b) Coverage Illusion**
 
-`scan.sh all` komutu OSV, GuardDog, zizmor ve SBOM'u **içermiyor**. Developer "tam tarama yaptım"
-sanabilir ama aslında:
+The `scan.sh all` command does **not include** OSV, GuardDog, zizmor and SBOM. The developer may
+think "I ran a full scan" but in fact:
 - Multi-ecosystem dep CVE (osv) → opt-in
 - Malicious deps (guarddog) → opt-in
-- GitHub Actions güvenliği (zizmor) → opt-in
+- GitHub Actions security (zizmor) → opt-in
 
-F14'teki "kapsam özeti" önerisi bunu çözecek.
+The "coverage summary" proposal in F14 will solve this.
 
-**c) Tek Repo Sınırı**
+**c) Single-Repo Limit**
 
-Kit tek repo'nun güvenliğini tarar. Organizasyon düzeyinde güvenlik posture göstermez. Enterprise
-güvenlik ekibi "50 repo var, hangisi en riskli?" sorusunu kit ile cevaplayamaz.
+The kit scans a single repo's security. It does not show organization-level security posture. An
+enterprise security team cannot answer "we have 50 repos, which is the riskiest?" with the kit.
 
-**d) DAST Yokluğu**
+**d) Absence of DAST**
 
-Bilinçli bir karar. OWASP Testing Guide'ın büyük bölümü runtime test gerektirir. Kit, penetration
-test'in yerine değil, **öncesindeki filtre** olarak konumlandırılmalı.
+A deliberate decision. Most of the OWASP Testing Guide requires runtime testing. The kit should be
+positioned not as a replacement for penetration testing but as the **filter that precedes it**.
 
-**e) Python Araçlarının Bütünlük Açığı**
+**e) Integrity Gap in Python Tools**
 
-Docker araçları digest ile korunurken, Python araçları (semgrep, checkov, pip-audit, guarddog,
-zizmor) PyPI'dan versiyon numarasıyla çekiliyor — hash doğrulaması yok. PyPI compromise senaryosunda
-Docker araçları bağışık, Python araçları değil. R06 ve R11 kartları bu açığı ele alıyor.
+While Docker tools are protected by digest, Python tools (semgrep, checkov, pip-audit, guarddog,
+zizmor) are fetched from PyPI by version number — no hash verification. In a PyPI-compromise
+scenario, Docker tools are immune, Python tools are not. Cards R06 and R11 address this gap.
 
-**f) Config Dosyasının Çalıştırılabilir Doğası**
+**f) Executable Nature of the Config File**
 
-`.security-audit.conf` shell `source` ile yükleniyor — düz veri dosyası değil, çalıştırılabilir
-kod. Repo'ya yazma erişimi olan biri config'e keyfi komut ekleyebilir. F11 tehdit modeli ve F24
-config doğrulama kartları bu riski ele alıyor.
+`.security-audit.conf` is loaded with shell `source` — it is not a plain data file but executable
+code. Anyone with write access to the repo can add arbitrary commands to the config. The F11 threat
+model and F24 config validation cards address this risk.
 
 ---
 
-## 5. Hedef Kitle Uygunluk Matrisi
+## 5. Target Audience Fit Matrix
 
-| Kullanıcı Profili | Uygunluk | Neden |
+| User Profile | Fit | Why |
 |---|---|---|
-| **Solo developer / indie hacker** | ⭐⭐⭐⭐⭐ | Tam uygun — düşük maliyet, sıfır altyapı, self-service |
-| **Küçük startup (2-10 dev)** | ⭐⭐⭐⭐ | Çok uygun — CI maliyeti yok, hızlı kurulum |
-| **Orta ölçekli ekip (10-50 dev)** | ⭐⭐⭐ | Uygun ama merkezi rapor ve uyumluluk eksikliği hissedilir |
-| **Enterprise güvenlik ekibi** | ⭐⭐ | İlk savunma hattı olarak değerli; governance katmanı eksik |
-| **Açık kaynak projesi** | ⭐⭐⭐⭐⭐ | Tam uygun — ücretsiz, yerel, Code Scanning entegrasyonu |
-| **Regulated industry** (fintech, health) | ⭐⭐ | Uygun ama PCI-DSS/HIPAA mapping olmadan yeterli değil |
-| **Security consultant / pentester** | ⭐⭐⭐ | Hızlı ilk değerlendirme; derin analiz için DAST gerekli |
+| **Solo developer / indie hacker** | ⭐⭐⭐⭐⭐ | Perfect fit — low cost, zero infrastructure, self-service |
+| **Small startup (2-10 dev)** | ⭐⭐⭐⭐ | Very good fit — no CI cost, fast setup |
+| **Mid-size team (10-50 dev)** | ⭐⭐⭐ | Fits, but the lack of central reporting and compliance is felt |
+| **Enterprise security team** | ⭐⭐ | Valuable as first line of defense; governance layer missing |
+| **Open-source project** | ⭐⭐⭐⭐⭐ | Perfect fit — free, local, Code Scanning integration |
+| **Regulated industry** (fintech, health) | ⭐⭐ | Fits, but not sufficient without PCI-DSS/HIPAA mapping |
+| **Security consultant / pentester** | ⭐⭐⭐ | Fast initial assessment; DAST needed for deep analysis |
 
 ---
 
-## 6. Sonuç ve Öneriler
+## 6. Conclusion and Recommendations
 
-### Ürün Olarak Güçlü Yönler
+### Strengths as a Product
 
-1. **Net konumlandırma** — SaaS rakipleriyle değil, onların önünde çalışıyor
-2. **Deterministik + AI ayrımı** — Sektörde özgün metodolojik yaklaşım
-3. **Tedarik zinciri bilinci** — Kendi bütünlüğünü koruyan güvenlik aracı
-4. **Developer-first tasarım** — Git hook, sıfır config, hızlı feedback
-5. **Indeterminate model** — Sessiz pass yerine dürüst "bakamadım"
+1. **Clear positioning** — runs in front of SaaS competitors, not against them
+2. **Deterministic + AI separation** — an original methodological approach in the industry
+3. **Supply chain awareness** — a security tool that protects its own integrity
+4. **Developer-first design** — git hooks, zero config, fast feedback
+5. **Indeterminate model** — an honest "couldn't look" instead of a silent pass
 
-### Ürün Olarak Geliştirilmesi Gerekenler
+### What Needs Improvement as a Product
 
-1. **Merkezi görünürlük** (P1) — Çok repo aggregation olmadan enterprise satışı zor
-2. **IDE entegrasyonu** (P2) — Commit öncesi feedback loop modern beklenti
-3. **Uyumluluk eşleme** (P2) — Regulated industry için olmazsa olmaz
-4. **Kapsam iletişimi** (P1, F14) — "all" komutunun neyi kapsamadığı net söylenmeli
-5. **AI kalibrasyon** (P1, F12) — FP default riski ölçülmeden ürün kararlı sayılmaz
+1. **Central visibility** (P1) — enterprise sales are hard without multi-repo aggregation
+2. **IDE integration** (P2) — a pre-commit feedback loop is a modern expectation
+3. **Compliance mapping** (P2) — a must-have for regulated industries
+4. **Coverage communication** (P1, F14) — what the "all" command does not cover must be stated clearly
+5. **AI calibration** (P1, F12) — the product cannot be considered stable until the FP-default risk is measured
 
-### Metodoloji Kapsamında Eklenmesi Önerilen Kartlar
+### Cards Proposed Within the Methodology Scope
 
-Mevcut F23–F25 + R11'e ek olarak, metodoloji değerlendirmesinden iki yeni kart önerilir:
+In addition to the existing F23–F25 + R11, the methodology evaluation proposes two new cards:
 
-| ID | İş | Tür | Öncelik | Neden |
+| ID | Work | Type | Priority | Why |
 |---|---|---|---|---|
-| **F26** | Multi-repo finding aggregation | Geliştirme | P1 | Güvenlik ekibinin temel görünürlük ihtiyacı; tek repo sınırı enterprise adoption engeli |
-| **R12** | Uyumluluk çerçeve eşleme (CWE → PCI/SOC2/HIPAA) | Koşullu | P2 | Regulated industry adoption için gerekli; somut tüketici talebi olmadan açılmaz |
+| **F26** | Multi-repo finding aggregation | Improvement | P1 | The security team's basic visibility need; the single-repo limit is an enterprise adoption blocker |
+| **R12** | Compliance framework mapping (CWE → PCI/SOC2/HIPAA) | Conditional | P2 | Needed for regulated-industry adoption; not opened without concrete consumer demand |
 
 ---
 
-## Ek A — SAST Bulguları (Kod Düzeyi Tamamlayıcı)
+## Appendix A — SAST Findings (Code-Level Complement)
 
-Bu bulgular 10 Eylül 2026'da gerçekleştirilen statik kod analizinden alınmıştır. Metodoloji
-değerlendirmesindeki riskleri doğrulayan bulgular öncelenmiştir.
+These findings are taken from the static code analysis performed on 2026-09-10. Findings that confirm
+the risks in the methodology evaluation have been prioritized.
 
-### A1 — Config dosyasının çalıştırılabilir doğası (HIGH)
+### A1 — Executable nature of the config file (HIGH)
 
-**Dosya:** `scan.sh:52` — `. "$CONF"`
+**File:** `scan.sh:52` — `. "$CONF"`
 
-`.security-audit.conf` doğrudan shell'e source ediliyor. Dosya keyfi komut içerebilir
-(`curl | bash`, `eval` vb.). Repo'ya yazma erişimi olan saldırgan her developer ve CI
-runner'da kod çalıştırabilir.
+`.security-audit.conf` is sourced directly into the shell. The file can contain arbitrary commands
+(`curl | bash`, `eval`, etc.). An attacker with write access to the repo can execute code on every
+developer machine and CI runner.
 
-**İlgili kart:** F11 (tehdit modeli) + F24 (config doğrulama). Bu bulgu her iki kartın da
-önceliğini doğruluyor.
+**Related card:** F11 (threat model) + F24 (config validation). This finding confirms the priority of
+both cards.
 
-### A2 — Docker container'ların read-write repo mount'u (MEDIUM)
+### A2 — Read-write repo mount of Docker containers (MEDIUM)
 
-**Dosya:** `scan.sh:304, 381, 391, 451, 459, 495` — `-v "$ROOT:/repo"`
+**File:** `scan.sh:304, 381, 391, 451, 459, 495` — `-v "$ROOT:/repo"`
 
-Altı Docker container çağrısının tümü repo'yu okuma-yazma olarak mount ediyor. Üçüncü parti
-container imajı (compromise durumunda) repo dosyalarını değiştirebilir. `:ro` mount yeterli
-olacak çoğu boyut için uygulanmadığı görülüyor.
+All six Docker container invocations mount the repo read-write. A third-party container image (if
+compromised) could modify repo files. A `:ro` mount, which would suffice for most dimensions, appears
+not to be applied.
 
-**İlgili kart:** F11 (tehdit modeli).
+**Related card:** F11 (threat model).
 
-### A3 — Python araçlarında hash doğrulaması yokluğu (MEDIUM)
+### A3 — Absence of hash verification in Python tools (MEDIUM)
 
-**Dosya:** `scan.sh:204-211` — `pyrun` fonksiyonu
+**File:** `scan.sh:204-211` — `pyrun` function
 
-Python araçları versiyon numarasıyla PyPI'dan çekiliyor; Docker araçları immutable digest ile
-korunurken Python araçları değil. PyPI compromise senaryosunda `semgrep==1.166.0` zararlı paketle
-değiştirilebilir.
+Python tools are fetched from PyPI by version number; while Docker tools are protected by an
+immutable digest, Python tools are not. In a PyPI-compromise scenario, `semgrep==1.166.0` could be
+replaced with a malicious package.
 
-**İlgili kart:** R06 (Python hash-pin kararı) + R11 (pin güncelleme otomasyonu).
+**Related card:** R06 (Python hash-pin decision) + R11 (pin update automation).
 
-### A4 — Lock reclaim TOCTOU penceresi (MEDIUM)
+### A4 — Lock reclaim TOCTOU window (MEDIUM)
 
-**Dosya:** `scan.sh:1098-1108`
+**File:** `scan.sh:1098-1108`
 
-Stale lock reclaim'de PID ölümü kontrolü ile `rm -rf` arasında TOCTOU penceresi var. PID geri
-dönüşümü senaryosunda iki süreç aynı kilidi sahiplenebilir.
+In stale lock reclaim there is a TOCTOU window between the PID-death check and `rm -rf`. In a PID
+recycling scenario, two processes could take ownership of the same lock.
 
-**İlgili kart:** F05 (kilit yaşam döngüsü). Bu bulgu, 8 Eylül değerlendirmesindeki F05 tespitini
-bağımsız olarak doğruluyor.
+**Related card:** F05 (lock lifecycle). This finding independently confirms the F05 finding from the
+2026-09-08 review.
 
-### A5 — Guarddog argüman enjeksiyonu (MEDIUM)
+### A5 — Guarddog argument injection (MEDIUM)
 
-**Dosya:** `scan.sh:567-569` — `$gargs` word-split
+**File:** `scan.sh:567-569` — `$gargs` word-split
 
-Paket adı ve sürümü `$gargs` içine gömülüp word-split ile guarddog'a geçiriliyor. Boşluklu veya
-meta karakterli paket adı ek argüman üretebilir.
+The package name and version are embedded in `$gargs` and passed to guarddog via word-splitting. A
+package name with spaces or metacharacters could produce extra arguments.
 
-**İlgili kart:** F18 (platform/yol matrisi). Boşluklu yol/argüman güvenliği kapsamında ele alınmalı.
+**Related card:** F18 (platform/path matrix). Should be handled within the scope of path/argument
+safety with spaces.
 
 ### A6 — `bootstrap.sh --expect` prefix match (LOW)
 
-**Dosya:** `bootstrap.sh:97-99` — `case "$SHA" in "$EXPECT_SHA"*)`
+**File:** `bootstrap.sh:97-99` — `case "$SHA" in "$EXPECT_SHA"*)`
 
-SHA karşılaştırması prefix match kullanıyor. Kısa prefix ile collision mümkün. Tam 40 karakter SHA
-kullanıldığında risk yok; ancak kullanım kolaylığı için kısa prefix kabul ediliyorsa güvenlik
-zayıflar.
+The SHA comparison uses a prefix match. Collision is possible with a short prefix. There is no risk
+when the full 40-character SHA is used; however, if short prefixes are accepted for convenience,
+security is weakened.
 
 ---
 
-## Ek B — Backlog Eşleme Tablosu
+## Appendix B — Backlog Mapping Table
 
-Bu değerlendirmeden çıkan bulguların mevcut backlog kartlarıyla eşlemesi:
+Mapping of the findings from this evaluation to existing backlog cards:
 
-| Metodoloji Bulgusu | Backlog Kartı | Durum |
+| Methodology Finding | Backlog Card | Status |
 |---|---|---|
-| Kapsam yanılsaması | **F14** — Kapsam özeti | Backlog'da var, öncelik doğru |
-| AI yargı bağımlılığı | **F12** — Kalibrasyon | Backlog'da var, öncelik doğru |
-| Config çalıştırılabilir | **F11 + F24** | F11 var, F24 bu değerlendirme ile eklendi |
-| Merkezi görünürlük eksik | **F26 önerilir** | Backlog'da yok — yeni kart önerisi |
-| Uyumluluk eşleme eksik | **R12 önerilir** | Backlog'da yok — koşullu kart önerisi |
-| IDE entegrasyonu eksik | — | Backlog'da yok — P2 gelecek planı |
-| Python bütünlük açığı | **R06 + R11** | Backlog'da var, SAST ile doğrulandı |
-| Docker read-write mount | **F11** | Backlog'da var, SAST ile doğrulandı |
-| Lock TOCTOU | **F05** | Backlog'da var, SAST ile doğrulandı |
-| Remediation rehberliği | **R01** | Backlog'da var, kapsam kararı bekliyor |
-| İlk çalışma sürtünmesi | — | Backlog'da yok — UX iyileştirmesi |
-| Bulgu yaşlandırma / SLA | **F19**'a eklenebilir | Backlog'da kısmi var |
-| Executive summary | **F04**'e eklenebilir | Backlog'da kısmi var |
+| Coverage illusion | **F14** — Coverage summary | In backlog, priority correct |
+| AI judgment dependence | **F12** — Calibration | In backlog, priority correct |
+| Config executable | **F11 + F24** | F11 exists, F24 added with this evaluation |
+| Central visibility missing | **F26 proposed** | Not in backlog — new card proposal |
+| Compliance mapping missing | **R12 proposed** | Not in backlog — conditional card proposal |
+| IDE integration missing | — | Not in backlog — P2 future plan |
+| Python integrity gap | **R06 + R11** | In backlog, confirmed by SAST |
+| Docker read-write mount | **F11** | In backlog, confirmed by SAST |
+| Lock TOCTOU | **F05** | In backlog, confirmed by SAST |
+| Remediation guidance | **R01** | In backlog, awaiting scope decision |
+| First-run friction | — | Not in backlog — UX improvement |
+| Finding aging / SLA | Could be added to **F19** | Partially in backlog |
+| Executive summary | Could be added to **F04** | Partially in backlog |
