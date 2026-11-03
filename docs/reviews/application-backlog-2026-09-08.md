@@ -300,6 +300,16 @@ Tüketiciler `bootstrap.sh` ile sürüm güncelliyor ancak sürümler arası bre
 - `install.sh` tekrar çalıştırıldığında config dosyasının üzerine yazmadan önceki ve sonraki sürüm farkını göstermeli (F10 ile örtüşür).
 - F08 ile aynı teslimat diliminde (sıra 4) veya hemen ardından teslim edilmeli; ilk stabil yayın öncesi hazır olmalı.
 
+**Durum — 2 Kasım 2026:** `feat/f25-upgrade-notes` branch'inde uygulandı. 3b'ye alındığı için F08'den önce teslim edildi.
+- **Upgrade notes zorunlu:** CHANGELOG'daki `### Upgrade notes` bölümü artık zorunlu; bölümü olmayan bir sürüm için `release.sh rc` tag kesmiyor. Değişiklik yoksa `- None.` yazılıyor.
+- **`bootstrap.sh --check`:** pin ile son final sürüm arasındaki notları sürüm etiketiyle gösteriyor. Notları hedef tag'in CHANGELOG'undan, tek commit'lik shallow fetch ile okuyor. RC pin'i kendi final sürümünün notlarını da alıyor.
+- **`install.sh` tekrar çalıştırıldığında:** config'e dokunmuyor, yeni ayarları adlarıyla listeliyor.
+- **Politikalar:** komut ve ayarların deprecation politikası ve şema sürümleme kuralları RELEASING.md'ye yazıldı. Evidence ve summary şema dokümanlarına "Versioning" bölümü eklendi.
+- **Eski evidence.json:** yerinde migrate edilmiyor, bir sonraki taramada yeniden üretiliyor. Bu yüzden bir migrasyon script'i gerekmedi.
+- **Ayrıca düzeltildi:** `--check`, final yayımlandıktan sonra o sürümün daha eski RC'sini "latest" olarak öneriyordu (`sort -V` sıralaması yüzünden).
+
+**Yapılmayan:** bugün kaldırılmış ya da yeniden adlandırılmış bir komut veya ayar yok. Bu yüzden deprecation için bir mekanizma kurulmadı; ilk ihtiyaçta politikaya göre eklenecek.
+
 ### F26 — Sunucusuz HTML rapor kullanılabilirliği
 
 Mevcut `lib/report_html.py` ve `evidence.json` üzerine kurulur. Amaç ilk görsel kullanım ihtiyacını küçük bir teslimatla karşılamak; tarayıcıları veya AI runner'ı yeniden yazmak değil. P2 olarak güvenilirlik teslimatlarından sonra, F14 ilk kullanım akışının devamında ele alınır. F04 doğru rapor sözleşmesi önkoşuldur; F16'nın kapsam/eksiklik gösterimi kullanılır. F19 karar yazma modeli ve F21 cache bu salt okunur görünüm için önkoşul değildir.

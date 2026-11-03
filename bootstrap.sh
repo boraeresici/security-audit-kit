@@ -53,17 +53,65 @@ have rsync || true   # if rsync is absent we fall back to cp
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not a git repo. Run inside the target project (run 'git init' first)."
 cd "$ROOT"
 
-# --- --check: read-only update check (NO CLONE; just git ls-remote) ---
+# --- upgrade notes (F25): what changes for a consumer between the pinned version and a target ---
+semver_base(){ printf '%s' "${1#v}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || true; }
+ver_lt(){ [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
+# <changelog> <pinned ref> <target tag> -> the "### Upgrade notes" of every version after the pin, up
+# to and including the target, newest first. An RC pin (v1.2.0-rc.1) also gets 1.2.0's notes: the
+# final may say more than the RC did.
+upgrade_notes(){
+  local cl="$1" from to pre="" v line last=""
+  from="$(semver_base "$2")"; to="$(semver_base "$3")"
+  case "$2" in *-*) pre=1 ;; esac
+  awk '/^## \[[0-9]+\.[0-9]+\.[0-9]+\]/{v=$2; gsub(/[][]/,"",v); n=0; next}
+       /^## /{v=""; next}
+       /^### /{n=($0=="### Upgrade notes"); next}
+       v!="" && n && NF {print v "\t" $0}' "$cl" |
+  while IFS="$(printf '\t')" read -r v line; do
+    ver_lt "$to" "$v" && continue
+    if [ "$v" = "$from" ]; then [ -n "$pre" ] || continue
+    elif ver_lt "$v" "$from"; then continue; fi
+    [ "$v" = "$last" ] || { printf '  [%s]\n' "$v"; last="$v"; }
+    printf '    %s\n' "$line"
+  done
+}
+
+# --- --check: read-only update check (no clone of the kit; ls-remote + the target's CHANGELOG) ---
 # The vendored copy is a static copy git cannot see; this mode tells you "did an
-# update land": compares the local .kit-version against the newest remote semver tag.
+# update land": compares the local .kit-version against the newest remote semver tag, and prints
+# what the versions in between ask a consumer to do.
 if [ "$DO_CHECK" = "1" ]; then
   cur="(no vendor)"; [ -f "$ROOT/$DEST_REL/.kit-version" ] && cur="$(awk '{print $1}' "$ROOT/$DEST_REL/.kit-version")"
-  latest="$(git ls-remote --tags --refs "$KIT_REPO" 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^v?[0-9]+' | sort -V | tail -1)"
+  tags="$(git ls-remote --tags --refs "$KIT_REPO" 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^v?[0-9]+' || true)"
+  # Final releases first: sort -V puts v1.2.0-rc.1 AFTER v1.2.0, so a plain sort offered a final's
+  # own (older) RC as "latest". An RC is offered only when no final release exists at all.
+  latest="$(grep -v -- '-' <<<"$tags" | sort -V | tail -1)"
+  [ -n "$latest" ] || latest="$(sort -V <<<"$tags" | tail -1)"
   [ -z "$latest" ] && die "no remote tag found (repo unreachable or no tags at all)."
   echo "vendored version : $cur"
   echo "latest tag       : $latest"
   if [ "$cur" = "$latest" ]; then ok "up to date."; exit 0; fi
   warn "UPDATE AVAILABLE -> bash $DEST_REL/bootstrap.sh $latest"
+  # One commit of the target tag, into a throwaway bare repo — enough to read its CHANGELOG.
+  if [ -z "$(semver_base "$cur")" ]; then
+    warn "the current pin is not a release version -> read CHANGELOG.md up to $latest before updating"
+  else
+    nt="$(mktemp -d)"
+    if git -C "$nt" init -q --bare 2>/dev/null \
+       && git -C "$nt" fetch -q --depth 1 "$KIT_REPO" "refs/tags/$latest:refs/tags/$latest" 2>/dev/null \
+       && git -C "$nt" show "$latest:CHANGELOG.md" > "$nt/CHANGELOG.md" 2>/dev/null; then
+      notes="$(upgrade_notes "$nt/CHANGELOG.md" "$cur" "$latest")"
+      if [ -n "$notes" ]; then
+        echo "upgrade notes $cur -> $latest (do these when you update):"
+        printf '%s\n' "$notes"
+      else
+        ok "no upgrade notes between $cur and $latest"
+      fi
+    else
+      warn "could not read $latest's CHANGELOG -> read its Upgrade notes before updating"
+    fi
+    rm -rf "$nt"
+  fi
   exit 1   # usable in automation: 0=up to date, 1=update available
 fi
 

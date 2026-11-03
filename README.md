@@ -220,15 +220,26 @@ The bootstrap **vendors a copy**, so your project's `git` does not track the kit
 repo — it won't tell you upstream changed. Two ways to find out:
 
 1. **`--check` (built in, read-only).** Compares the vendored `.kit-version`
-   against the newest semver tag in the kit repo via `git ls-remote` (no clone):
+   against the newest release tag in the kit repo via `git ls-remote` (a release candidate is
+   offered only if no final release exists). It then prints the **upgrade notes** of every version
+   in between, read from that tag's CHANGELOG with a one-commit shallow fetch. Your vendored copy
+   is not touched:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.19.0
+   # vendored version : v1.18.0
    # latest tag       : v1.19.1
    # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.19.1
+   # upgrade notes v1.18.0 -> v1.19.1 (do these when you update):
+   #   [1.19.1]
+   #     - The first scan after upgrading writes docs/security/scan-findings/.gitignore. Commit it. ...
+   #   [1.19.0]
+   #     - summary.json gains a run_id field (additive; existing fields unchanged). ...
    ```
    Exit code: `0` = up to date, `1` = update available — so you can wire it into a
-   periodic check or a `make` target.
+   periodic check or a `make` target. Every release carries an *Upgrade notes* section (the release
+   script refuses to tag without one), so "nothing to do" is stated rather than implied. Re-running
+   `install.sh` after an update keeps your `.security-audit.conf` and names any setting the new
+   example has that your config does not.
 2. **Watch the kit repo's releases** on GitHub (Watch → Custom → Releases) for a push
    notification when a new tag ships.
 
