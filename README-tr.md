@@ -98,17 +98,17 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.19.1
-bash bootstrap.sh v1.19.1 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.19.1 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.20.0
+bash bootstrap.sh v1.20.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.20.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 # <sha>, tag'in isaret ettigi COMMIT'tir. Surum tag'leri annotated oldugu icin `git rev-parse <tag>`
 # sana tag NESNESINI verir ve --expect bunu reddeder. Commit'i acikca iste:
-#   git rev-parse v1.19.1^{commit}          # bu repo'nun bir klonunda
-#   gh api repos/<owner>/<repo>/git/refs/tags/v1.19.1 --jq .object.sha   # type=tag ise cozmen gerekir
+#   git rev-parse v1.20.0^{commit}          # bu repo'nun bir klonunda
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.20.0 --jq .object.sha   # type=tag ise cozmen gerekir
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.19.1`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.20.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
@@ -179,7 +179,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.19.1          # bir tag'e pinle
+  rev: v1.20.0          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -226,12 +226,13 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    dokunmaz:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
-   # vendored version : v1.18.0
-   # latest tag       : v1.19.1
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.19.1
-   # upgrade notes v1.18.0 -> v1.19.1 (do these when you update):
-   #   [1.19.1]
-   #     - The first scan after upgrading writes docs/security/scan-findings/.gitignore. ...
+   # vendored version : v1.19.1
+   # latest tag       : v1.20.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.20.0
+   # upgrade notes v1.19.1 -> v1.20.0 (do these when you update):
+   #   [1.20.0]
+   #     Read the first three before updating: they change what scripts that read the kit's output see.
+   #     - **`summary.json` schema 2 (breaking for parsers of `status`).** The value "fail" is gone: ...
    ```
    Cikis kodu: `0` = guncel, `1` = guncelleme var — periyodik kontrol veya bir
    `make` hedefine baglanabilir. Her surum bir *Upgrade notes* bolumu tasir (release script'i
@@ -244,9 +245,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.19.1   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.20.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.19.1'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.20.0'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
