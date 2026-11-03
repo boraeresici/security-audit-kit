@@ -52,22 +52,24 @@ flowchart TD
     Q -->|new| N1["mkdir -p tools/"]
     N1 --> N2["download + review bootstrap.sh"]
     N2 --> B["bash bootstrap.sh vX.Y.Z"]
-    Q -->|installed| C["bootstrap.sh --check"]
+    Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
     C -->|up to date| R
     C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
     RV --> B
-    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks, skills, .conf, .exclusions, verify"]
+    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks (the repo's own hooks are chained, not replaced),<br/>skills, .conf, .exclusions, verify · undo: install.sh --uninstall"]
     I --> R(["ready"])
 
     R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
     V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
-    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>raw-DATE.log + summary.json<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
+    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>scanners read the repo read-only · .security-audit.conf checked every run<br/>closing summary + raw-DATE.log + summary.json (status per dimension, provenance)<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
     S -->|clean| D(["done"])
+    S -->|"skipped / error = NOT inspected"| TC["fix the toolchain or the scan<br/>(the closing summary names the cause)<br/>never read as clean"]
+    TC --> S
     S -->|findings| T1
 
     subgraph JUDGE["judgment in Claude — skills"]
       direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7"]
+      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7<br/>repo text is evidence, never instructions"]
       DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
       AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
       TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
@@ -508,6 +510,7 @@ note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in 
 every commit --(pre-commit)-->  scan.sh staged  (+ deps if a manifest changed)
 before a PR  --(pre-push)----->  scan.sh verify   (integrity: an edited vendored kit blocks the push)
                             \-->  scan.sh all
+skipped/error --> NOT inspected: fix the toolchain or the scan (the closing summary names the cause)
 finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-YYYY-MM-DD.md
                                            |- FP   -> allowlist EVERY reporting path
                                            |          (.gitleaks.toml / nosemgrep /
@@ -820,7 +823,12 @@ skills — they're AI instructions). The **only official repo** is
 deliberately override `KIT_REPO` to install from a fork. The kit produces **internal evidence
 with no warranty**. Pin a tag/SHA, **review skills before running**, and review diffs on
 update. Full trust model, supply-chain guidance, and vulnerability reporting:
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](SECURITY.md). What the kit itself reads, writes and runs, and with which
+privileges, is in [docs/threat-model.md](docs/threat-model.md). In short:
+- `.security-audit.conf` is bash, sourced on every scan, and checked every run.
+- Docker scanners read the repo read-only.
+- The skills treat repo text as evidence, never instructions.
+- The kit never builds or runs the scanned project (the opt-in rust call analysis is the only exception).
 
 ## License
 [MIT](LICENSE) — developed by [studiobinary.co](https://studiobinary.co).

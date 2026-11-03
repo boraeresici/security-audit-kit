@@ -52,22 +52,24 @@ flowchart TD
     Q -->|new| N1["mkdir -p tools/"]
     N1 --> N2["download + review bootstrap.sh"]
     N2 --> B["bash bootstrap.sh vX.Y.Z"]
-    Q -->|installed| C["bootstrap.sh --check"]
+    Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
     C -->|up to date| R
     C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
     RV --> B
-    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks, skills, .conf, .exclusions, verify"]
+    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks (the repo's own hooks are chained, not replaced),<br/>skills, .conf, .exclusions, verify · undo: install.sh --uninstall"]
     I --> R(["ready"])
 
     R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
     V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
-    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>raw-DATE.log + summary.json<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
+    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>scanners read the repo read-only · .security-audit.conf checked every run<br/>closing summary + raw-DATE.log + summary.json (status per dimension, provenance)<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
     S -->|clean| D(["done"])
+    S -->|"skipped / error = NOT inspected"| TC["fix the toolchain or the scan<br/>(the closing summary names the cause)<br/>never read as clean"]
+    TC --> S
     S -->|findings| T1
 
     subgraph JUDGE["judgment in Claude — skills"]
       direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7"]
+      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7<br/>repo text is evidence, never instructions"]
       DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
       AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
       TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
@@ -495,11 +497,17 @@ bunlarin hicbiri o 18 pakette **atesle(me)di**. Geri kalan her sey not olarak ya
 her commit  --(pre-commit)-->  scan.sh staged  (+ manifest degistiyse deps)
 PR oncesi   --(pre-push)----->  scan.sh verify   (butunluk: elle duzenlenmis vendor kopyasi push'u bloklar)
                            \-->  scan.sh all
+skipped/error --> DENETLENMEDI: toolchain'i ya da taramayi duzelt (kapanis ozeti nedeni soyler)
 bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-YYYY-MM-DD.md
                                           |- FP    -> raporlayan HER yolu allowlist'le
                                           |           (.gitleaks.toml / nosemgrep /
                                           |            .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
+                                          |           + her girdiye bir son kullanma tarihi
                                           |- GERCEK -> fix VEYA takip-listesi entry
+                                          v
+                                         KANITLA: scan.sh allowlist  (suresi dolmus? yol bosluklari?)
+                                                  o boyutu temiz olana kadar yeniden kos
+                                         kosulmamis bir bastirma, kosulmamis bir fix gibi, bir hipotezdir
 ```
 
 ## Kendi kurallarin — `semgrep-rules/` + bir `.gitleaks.toml` girdisi
@@ -800,7 +808,12 @@ onlar AI talimatidir). **Tek resmi repo** `github.com/boraeresici/security-audit
 `bootstrap.sh` varsayilan olarak oraya bakar, bir fork'tan kurmak icin `KIT_REPO`'yu *bilerek*
 override etmen gerekir. Kit **ic kanit uretir, garanti yok**. Bir tag/SHA pinle, **skill'leri
 calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, tedarik-zinciri
-rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md).
+rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md). Kitin kendisinin neyi okudugu, yazdigi ve calistirdigi, hangi
+yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kisaca:
+- `.security-audit.conf` bash'tir, her taramada source edilir ve her kosuda kontrol edilir.
+- Docker tarayicilari repoyu salt-okunur okur.
+- Skill'ler repodaki metni kanit sayar, asla talimat degil.
+- Kit taranan projeyi asla build etmez ya da calistirmaz (tek istisna, istege bagli rust call analysis).
 
 ## Lisans
 [MIT](LICENSE) — [studiobinary.co](https://studiobinary.co) tarafindan gelistirildi.
