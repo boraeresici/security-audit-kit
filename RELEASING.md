@@ -54,6 +54,21 @@ Wait for the PR checks, merge, then `git checkout main && git pull --ff-only`. T
 `docs/compare/*` + re-run `landing/build.py`, the lifecycle diagrams, and any doc the release
 invalidates — then regenerate `CHECKSUMS`, because docs are inside the manifest.
 
+### The CI gate
+`scripts/release.sh final` (and `preflight --stable`) stops unless the newest run of every required
+check (`shellcheck pytest e2e checksums self-audit`) is completed and green on the exact commit,
+and `origin/main` is that commit. It stops when any of these happens:
+- `gh` is missing;
+- the API call fails;
+- there are no check-runs;
+- a required check is pending or missing;
+- `origin` cannot be fetched.
+
+A check that was re-run counts by its newest run. An RC only warns on these: its gate is the
+dogfood. If CI really cannot be verified (an API outage, say) and you have checked by hand,
+`--ci-unverified="<reason>"` lets a final through. The reason is required and is written into the
+tag message.
+
 ### 3. Cut the RC and mark it pre-release
 ```sh
 VER=v1.11.0

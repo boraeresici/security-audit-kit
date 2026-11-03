@@ -547,6 +547,55 @@ grep -q "CHANGELOG top version is '98.0.0', expected '99.0.0'" <<<"$ROUT" \
   || no "release: accepted an RC without its CHANGELOG version section"
 rm -rf "$RELTEST"
 
+echo "-- F07: a stable release stops when CI cannot be verified (gh / API / runs / remote HEAD) --"
+# A release repo built from this kit: main + a bare origin, in sync. gh is a shim answering with
+# check-runs as TSV (name, status, conclusion, id). Nothing is tagged: only `preflight` runs.
+F07="$(mktemp -d)"; F07S="$F07/shims"; mkdir -p "$F07S" "$F07/kit"
+if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$F07/kit"/; else cp -R "$KIT_SRC"/. "$F07/kit"/; fi
+( cd "$F07/kit" && git init -q -b main 2>/dev/null || { git init -q && git checkout -q -b main; }
+  git add -A && bash scan.sh checksums >/dev/null 2>&1 && git add -A \
+  && git -c user.email=e2e@test -c user.name=e2e commit -qm kit \
+  && git init -q --bare "$F07/origin.git" && git remote add origin "$F07/origin.git" && git push -q origin main ) >/dev/null 2>&1
+# shellcheck disable=SC2016
+printf '#!/bin/sh\n[ -n "$GH_OUT" ] && printf "%%b" "$GH_OUT"\nexit "${GH_RC:-0}"\n' > "$F07S/gh"; chmod +x "$F07S/gh"
+f07ok(){ printf 'shellcheck\tcompleted\tsuccess\t11\npytest\tcompleted\tsuccess\t12\ne2e\tcompleted\tsuccess\t13\nchecksums\tcompleted\tsuccess\t14\nself-audit\tcompleted\tsuccess\t15\n'; }
+# f07 <with-gh:1|0> [VAR=val ...] -- [release.sh args]: runs preflight, F07RC + "$F07/out"
+f07(){ local g="$1"; shift; local envs=(); while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do envs+=("$1"); shift; done; shift
+  local path="$F02SYS"; [ "$g" = 1 ] && path="$F07S:$F02SYS"
+  (cd "$F07/kit" && env PATH="$path" "${envs[@]+"${envs[@]}"}" "$BASH" scripts/release.sh preflight --skip-e2e "$@" >"$F07/out" 2>&1); F07RC=$?; }
+F02SYS="${F02SYS:-/usr/bin:/bin:/usr/sbin:/sbin}"
+f07 1 GH_OUT="$(f07ok)" -- --stable
+[ "$F07RC" -eq 0 ] && ok "F07: all required checks green -> stable preflight passes" || no "F07: green CI refused (rc=$F07RC): $(tail -3 "$F07/out")"
+f07 0 -- --stable
+[ "$F07RC" -ne 0 ] && grep -q 'gh' "$F07/out" && ok "F07: no gh -> a stable release stops" || no "F07: stable passed without gh"
+f07 0 --
+[ "$F07RC" -eq 0 ] && ok "F07: no gh on an RC preflight -> warning only (RC dogfood is the gate there)" || no "F07: RC refused without gh (rc=$F07RC)"
+f07 1 GH_RC=1 -- --stable
+[ "$F07RC" -ne 0 ] && grep -qi 'api' "$F07/out" && ok "F07: a failed GitHub API call stops a stable release" || no "F07: API failure passed"
+f07 1 GH_OUT="" -- --stable
+[ "$F07RC" -ne 0 ] && ok "F07: no check-runs at all stops a stable release" || no "F07: empty check-runs passed"
+f07 1 GH_OUT="$(f07ok | sed 's/^e2e\tcompleted\tsuccess/e2e\tin_progress\t/')" -- --stable
+[ "$F07RC" -ne 0 ] && grep -q 'pending\|in_progress' "$F07/out" && ok "F07: a pending required check stops a stable release" || no "F07: pending check passed"
+f07 1 GH_OUT="$(f07ok | grep -v '^pytest')" -- --stable
+[ "$F07RC" -ne 0 ] && grep -q "pytest" "$F07/out" && ok "F07: a missing required check stops a stable release" || no "F07: missing check passed"
+# reruns: the NEWEST run (highest id) of a check decides, whatever order the API lists them in
+f07 1 GH_OUT="$(f07ok)e2e\tcompleted\tfailure\t3\n" -- --stable
+[ "$F07RC" -eq 0 ] && ok "F07: an old failed run, rerun green, does not block (newest run wins)" || no "F07: stale failure blocked (rc=$F07RC)"
+f07 1 GH_OUT="e2e\tcompleted\tfailure\t99\n$(f07ok)" -- --stable
+[ "$F07RC" -ne 0 ] && ok "F07: a newer failed rerun blocks, even listed first" || no "F07: newest failure ignored"
+# the remote HEAD must be verifiable for a stable release
+git -C "$F07/kit" remote remove origin >/dev/null 2>&1
+f07 1 GH_OUT="$(f07ok)" -- --stable
+[ "$F07RC" -ne 0 ] && grep -qi 'origin' "$F07/out" && ok "F07: an unverifiable remote HEAD stops a stable release" || no "F07: no origin passed (rc=$F07RC)"
+git -C "$F07/kit" remote add origin "$F07/origin.git" >/dev/null 2>&1; git -C "$F07/kit" fetch -q origin >/dev/null 2>&1
+# the exception: only with a reason, and the reason is said
+f07 0 -- --stable --ci-unverified="GitHub API outage; CI green in the UI at 12:00"
+[ "$F07RC" -eq 0 ] && grep -q 'GitHub API outage' "$F07/out" && ok "F07: --ci-unverified=<reason> lets it through and repeats the reason" \
+  || no "F07: exception path (rc=$F07RC): $(tail -3 "$F07/out")"
+f07 0 -- --stable --ci-unverified=
+[ "$F07RC" -ne 0 ] && ok "F07: --ci-unverified with no reason is refused" || no "F07: empty reason accepted"
+rm -rf "$F07"
+
 echo "-- F25: upgrade notes reach the consumer (release gate, bootstrap --check, install re-run) --"
 # release: a version section without "### Upgrade notes" is not cut (write "- None." if nothing breaks)
 RELTEST="$(mktemp -d)"; mkdir -p "$RELTEST/scripts"

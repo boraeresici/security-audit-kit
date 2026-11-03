@@ -13,6 +13,14 @@
 #   --yes         don't prompt before pushing tags
 #   --skip-e2e    skip tests/e2e.sh in preflight (still runs scan.sh verify)
 #   --no-gh       create git tags only; skip GitHub release creation
+#   --stable      (preflight) apply the stable-release gate; `final` always does
+#   --ci-unverified="<reason>"   promote even though CI could not be verified; the reason is
+#                 required and goes into the tag message
+#
+# The CI gate (F07): for a STABLE release, anything short of "every required check's newest run is
+# completed + success on this exact commit, and origin/main is that commit" stops the release —
+# no gh, a failed API call, no check-runs, a pending/missing check, an unverifiable remote HEAD.
+# An RC only warns on those: its gate is the dogfood that follows.
 set -euo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
@@ -27,18 +35,21 @@ warn(){ printf '\033[33m[release] WARN\033[0m %s\n' "$*" >&2; }
 die(){  printf '\033[31m[release] FAIL\033[0m %s\n' "$*" >&2; exit 1; }
 have(){ command -v "$1" >/dev/null 2>&1; }
 
-YES=0; SKIP_E2E=0; NO_GH=0; ARGS=()
+YES=0; SKIP_E2E=0; NO_GH=0; STABLE=0; CI_UNVERIFIED=""; CI_UNVERIFIED_SET=0; ARGS=()
 for a in "$@"; do
   case "$a" in
     --yes)      YES=1 ;;
     --skip-e2e) SKIP_E2E=1 ;;
     --no-gh)    NO_GH=1 ;;
+    --stable)   STABLE=1 ;;
+    --ci-unverified=*) CI_UNVERIFIED="${a#--ci-unverified=}"; CI_UNVERIFIED_SET=1 ;;
     -h|--help)  sed -n '2,18p' "$0"; exit 0 ;;
     -*)         die "unknown option: $a" ;;
     *)          ARGS+=("$a") ;;
   esac
 done
 CMD="${ARGS[0]:-}"
+[ "$CI_UNVERIFIED_SET" = 1 ] && [ -z "$CI_UNVERIFIED" ] && die "--ci-unverified needs a reason: --ci-unverified=\"<why CI could not be verified>\""
 
 valid_ver(){ printf '%s' "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; }
 changelog_top_version(){ grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+'; }
@@ -73,19 +84,38 @@ confirm(){
   case "$ans" in y|Y|yes|YES) return 0 ;; *) die "aborted" ;; esac
 }
 
+# Something the gate could not verify: stops a stable release (unless --ci-unverified gave a
+# reason), warns on an RC.
+unverified(){
+  if [ "$STABLE" = 1 ]; then
+    [ -n "$CI_UNVERIFIED" ] || die "$1 — a stable release needs verified CI (or --ci-unverified=\"<reason>\")"
+    warn "$1 — proceeding: --ci-unverified \"$CI_UNVERIFIED\""
+  else
+    warn "$1 — verify before promoting"
+  fi
+}
+
 check_ci(){
-  local sha="$1" runs req concl missing=0
-  if ! have gh; then warn "gh not installed — cannot verify CI for ${sha:0:12}; ensure it is green"; return 0; fi
+  local sha="$1" runs req row status concl
+  if ! have gh; then unverified "gh not installed — cannot verify CI for ${sha:0:12}"; return 0; fi
   say "checking CI status for ${sha:0:12} …"
-  runs="$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs" --paginate \
-           --jq '.check_runs[] | [.name,.conclusion] | @tsv' 2>/dev/null || echo '')"
-  [ -n "$runs" ] || { warn "no check-runs found for ${sha:0:12} (CI not finished?) — verify manually"; return 0; }
+  # One row per run: name, status, conclusion, id. A check re-run after a failure has several rows;
+  # the NEWEST (highest id) decides, whatever order the API lists them in.
+  if ! runs="$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs" --paginate \
+                 --jq '.check_runs[] | [.name, .status, (.conclusion // ""), (.id|tostring)] | @tsv' 2>/dev/null)"; then
+    unverified "GitHub API call for check-runs failed"; return 0
+  fi
+  [ -n "$runs" ] || { unverified "no check-runs found for ${sha:0:12} (CI not run or not finished)"; return 0; }
+  local bad=0
   for req in $REQUIRED_CHECKS; do
-    concl="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$req" '$1==n{c=$2} END{print c}')"
-    if [ -z "$concl" ]; then warn "required check '$req' not found on ${sha:0:12}"; missing=1
-    elif [ "$concl" != success ]; then die "required check '$req' = '$concl' (not success) — fix CI before releasing"; fi
+    row="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$req" '$1==n && $4+0>=m {m=$4+0; r=$0} END{print r}')"
+    if [ -z "$row" ]; then unverified "required check '$req' not found on ${sha:0:12}"; bad=1; continue; fi
+    status="$(cut -f2 <<<"$row")"; concl="$(cut -f3 <<<"$row")"
+    if [ "$status" != completed ]; then unverified "required check '$req' is pending ($status)"; bad=1; continue; fi
+    [ "$concl" = success ] || die "required check '$req' = '$concl' (not success) — fix CI before releasing"
   done
-  [ "$missing" = 0 ] && ok "required CI checks green ($REQUIRED_CHECKS)" || warn "some required checks missing — verify before promoting"
+  [ "$bad" = 0 ] && ok "required CI checks green ($REQUIRED_CHECKS)"
+  return 0
 }
 
 preflight(){
@@ -95,8 +125,12 @@ preflight(){
   [ "$br" = "$MAIN_BRANCH" ] || die "on branch '$br'; releases are cut from '$MAIN_BRANCH'"
   git diff --quiet && git diff --cached --quiet || die "working tree not clean — commit or stash first"
   say "fetching origin/$MAIN_BRANCH …"
-  git fetch -q origin "$MAIN_BRANCH" || warn "git fetch failed (offline?) — in-sync check may be stale"
+  local fetched=1
+  git fetch -q origin "$MAIN_BRANCH" 2>/dev/null || fetched=0
   local head remote; head="$(git rev-parse HEAD)"; remote="$(git rev-parse "origin/$MAIN_BRANCH" 2>/dev/null || echo '')"
+  if [ "$fetched" = 0 ] || [ -z "$remote" ]; then
+    unverified "cannot verify origin/$MAIN_BRANCH (no origin, or fetch failed)"
+  fi
   [ -z "$remote" ] || [ "$head" = "$remote" ] || die "HEAD (${head:0:12}) != origin/$MAIN_BRANCH (${remote:0:12}) — push/pull first"
   ok "on $MAIN_BRANCH, clean, in sync"
   say "verifying integrity (scan.sh verify) …"
@@ -139,6 +173,7 @@ cmd_rc(){
 cmd_final(){
   local ver="${ARGS[1]:-}"
   [ -n "$ver" ] || die "usage: scripts/release.sh final X.Y.Z"
+  STABLE=1
   valid_ver "$ver" || die "invalid version '$ver' (want X.Y.Z)"
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "tag v$ver already exists"
   require_changelog_version "$ver"
@@ -150,7 +185,11 @@ cmd_final(){
   say "will tag v$ver (final) at ${head:0:12} == $last_rc and push to origin"
   [ "$NO_GH" = 1 ] || say "and create the GitHub 'latest' release from the CHANGELOG"
   confirm "Promote v$ver (from tested $last_rc)?"
-  git tag -a "v$ver" -m "v$ver"
+  if [ -n "$CI_UNVERIFIED" ]; then
+    git tag -a "v$ver" -m "v$ver" -m "CI unverified at release: $CI_UNVERIFIED"
+  else
+    git tag -a "v$ver" -m "v$ver"
+  fi
   git push origin "v$ver"
   ok "pushed tag v$ver"
   if [ "$NO_GH" = 0 ] && have gh; then
