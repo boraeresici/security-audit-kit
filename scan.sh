@@ -513,7 +513,7 @@ scan_iac(){
     *) dim_error iac "checkov exit $rc (scan error, not a finding)"; return 0 ;;
   esac
   failed="$(awk -F'Failed checks: ' 'NF>1{split($2,a,","); n+=a[1]} END{print n+0}' <<<"$out")"
-  [ "$failed" -gt 0 ] && dim_mark findings "$failed failed check(s) (soft: reported, does not block)"
+  [ "$failed" -gt 0 ] && dim_mark findings "$failed failed check(s) (soft, not blocking)"
   return 0
 }
 
@@ -589,7 +589,7 @@ scan_container(){
   fi
   case "$rc" in
     0) [ -n "$dbnote" ] && dim_mark "" "$dbnote"; return 0 ;;
-    "$TRIVY_FINDINGS_RC") dim_mark findings "CRITICAL/HIGH findings (soft: reported, does not block)${dbnote:+ · $dbnote}"; return 0 ;;
+    "$TRIVY_FINDINGS_RC") dim_mark findings "CRITICAL/HIGH findings (soft, not blocking)${dbnote:+ · $dbnote}"; return 0 ;;
     *) dim_error container "trivy exit $rc (scan error, not a finding)"; return "$rc" ;;
   esac
 }

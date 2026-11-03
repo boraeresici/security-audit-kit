@@ -34,7 +34,7 @@ lives in [`evidence.json`](evidence.md).
     {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "seconds": 3.1, "reason": null},
     {"name": "py-deps", "exit_code": 3, "status": "indeterminate",  "gate": "allow", "reason": "INDETERMINATE — no project venv, ..."},
     {"name": "js-deps", "exit_code": 0, "status": "not_applicable", "gate": "allow", "reason": "no JS project"},
-    {"name": "iac",     "exit_code": 0, "status": "findings",       "gate": "allow", "reason": "2 failed check(s) (soft: reported, does not block)"}
+    {"name": "iac",     "exit_code": 0, "status": "findings",       "gate": "allow", "reason": "2 failed check(s) (soft, not blocking)"}
   ]
 }
 ```
