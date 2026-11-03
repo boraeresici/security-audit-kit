@@ -1001,10 +1001,10 @@ scan_doctor(){
   printf '      guards the AGENT tool call only; a human typing npm i is not covered\n'
   local pcd
   if pcd="$(pkgcheck_cache_dir)"; then
-    printf '  ok  verdict cache: %s (unversioned entries expire after %s min)\n' \
+    printf '  ok  findings cache (re-judged by the current policy): %s (unversioned entries expire after %s min)\n' \
       "${pcd#"$ROOT"/}" "$PKGCHECK_CACHE_TTL_MIN"
   else
-    printf '  --  verdict cache off (PKGCHECK_CACHE=off or not a git repo) — every check re-scans\n'
+    printf '  --  findings cache off (PKGCHECK_CACHE=off or not a git repo) — every check re-scans\n'
   fi
   printf '      blocks on %s malice-specific guarddog rules; everything else prints as a note\n' \
     "$(PYTHONDONTWRITEBYTECODE=1 python3 -B -c 'import sys;sys.path.insert(0,"'"$KIT_DIR"'/lib");import pkgcheck;print(len(pkgcheck.BLOCK_RULES))' 2>/dev/null || echo '?')"
@@ -1517,6 +1517,58 @@ scan_commands(){ awk -F'|' '{k=$1; gsub(/[[:space:]]/,"",k)} k!=""{print k}' <<<
 # <unit> -> "record entry gate needs"; exit 1 for an unknown unit.
 dim_unit(){ awk -v u="$1" '$1==u{print $2, $3, $4, $5; found=1; exit} END{exit !found}' <<<"$DIM_UNITS"; }
 
+# ---- config check (F24) ----------------------------------------------------------------------
+# .security-audit.conf is SOURCED: it is bash, and runs with your privileges on every scan and hook.
+# Nothing here refuses to load it (fail-open, as the gate is). It says out loud what the file does
+# beyond setting values: a syntax error, a setting scan.sh does not read (a typo is otherwise silently
+# ignored), a line that runs a command, a command substitution in a value, a value of the wrong type.
+# One line per warning, on stdout. Known names come from security-audit.conf.example, plus the
+# per-run env knobs that also work from the config.
+CONFIG_ENV_KNOBS="SARIF REPORT BASE_REF SKIP_SECURITY"
+config_check(){
+  [ -f "$CONF" ] || return 0
+  local known err v val
+  known=" $(grep -oE '\$\{[A-Z][A-Z0-9_]*:=|^#? *[A-Z][A-Z0-9_]*=' "$KIT_DIR/security-audit.conf.example" 2>/dev/null \
+            | grep -oE '[A-Z][A-Z0-9_]*' | sort -u | tr '\n' ' ')$CONFIG_ENV_KNOBS "
+  err="$(bash -n "$CONF" 2>&1 | head -1)"
+  [ -n "$err" ] && printf 'syntax error: %s\n' "${err#"$CONF": }"
+  awk -v known="$known" '
+    { line = $0; sub(/^[ \t]+/, "", line) }
+    line == "" || line ~ /^#/ { next }
+    {
+      name = ""
+      if (match(line, /^:[ \t]+"?\$\{[A-Za-z_][A-Za-z0-9_]*:?[=-]/)) {
+        name = substr(line, RSTART, RLENGTH); sub(/^:[ \t]+"?\$\{/, "", name); sub(/:?[=-]$/, "", name)
+      } else if (match(line, /^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*=/)) {
+        name = substr(line, RSTART, RLENGTH); sub(/^export[ \t]+/, "", name); sub(/=$/, "", name)
+      } else {
+        split(line, w, /[ \t;|&<>]+/)
+        printf "line %d runs a command (%s), not a setting: %s\n", NR, w[1], substr(line, 1, 60); next
+      }
+      if (index(known, " " name " ") == 0) printf "line %d: unknown setting %s (a typo? scan.sh does not read it)\n", NR, name
+      if (line ~ /\$\(|`/) printf "line %d: command substitution in %s runs code when the config is loaded\n", NR, name
+      else if (line ~ /;[ \t]*[A-Za-z]/) printf "line %d: more than one statement on the line (;)\n", NR
+    }' "$CONF"
+  # Types, on the values in force (env > config > default).
+  for v in SCAN_LOCK_WAIT SCAN_LOCK_STALE_MIN SCAN_LOCK_HEARTBEAT_SEC SCAN_RUNS_KEEP_DAYS PKGCHECK_CACHE_TTL_MIN TRIVY_DB_MAX_AGE_H; do
+    val="${!v:-}"; [ -z "$val" ] && continue
+    case "$val" in *[!0-9]*) printf '%s=%s: must be a whole number (integer)\n' "$v" "$val" ;; esac
+  done
+  case "${SCAN_OFFLINE:-0}" in 0|1) ;; *) printf 'SCAN_OFFLINE=%s: must be 0 or 1\n' "$SCAN_OFFLINE" ;; esac
+  case "${SARIF:-0}" in 0|1) ;; *) printf 'SARIF=%s: must be 0 or 1\n' "$SARIF" ;; esac
+  case "${PKGCHECK_CACHE:-on}" in on|off|refresh) ;; *) printf 'PKGCHECK_CACHE=%s: must be on, off or refresh\n' "$PKGCHECK_CACHE" ;; esac
+  case "${REPORT:-}" in ""|html) ;; *) printf 'REPORT=%s: must be empty or html\n' "$REPORT" ;; esac
+  return 0
+}
+CONFIG_WARNINGS="$(config_check)"
+config_report(){   # the full list, for doctor / verify
+  [ -f "$CONF" ] || return 0
+  local n=0; [ -n "$CONFIG_WARNINGS" ] && n="$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')"
+  if [ "$n" = 0 ]; then printf '  ok  config %s: settings only, all known\n' "${CONF#"$ROOT"/}"; return 0; fi
+  printf '  !!  config %s: %s warning(s) — it is bash, sourced on every scan and hook:\n' "${CONF#"$ROOT"/}" "$n"
+  printf '%s\n' "$CONFIG_WARNINGS" | sed 's/^/        /'
+}
+
 # help: the usage block at the top of this file, plus what `all` leaves out and what the tags mean.
 scan_help(){
   awk '/^# Usage:/{on=1} on && /^#$/{exit} on{sub(/^# ?/,""); print}' "$KIT_DIR/scan.sh"
@@ -1542,8 +1594,8 @@ scan_warm(){
 }
 case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "warm" ]      && { scan_warm; exit $?; }
-[ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
-[ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
+[ "${1:-}" = "doctor" ]    && { scan_doctor; config_report; exit 0; }
+[ "${1:-}" = "verify" ]    && { scan_verify; vrc=$?; config_report; exit "$vrc"; }
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
 [ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
 [ "${1:-}" = "allowlist" ] && { scan_allowlist; exit $?; }
@@ -1771,6 +1823,18 @@ fi
   printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
   printf '  "provenance": %s,\n' "$PROVENANCE"
   printf '  "trivy_db": %s,\n' "$TRIVY_DB_JSON"
+  if [ -f "$CONF" ]; then
+    printf '  "config": {"path": %s, "warnings": [' "$(json_str "${CONF#"$ROOT"/}")"
+    cfirst=1
+    while IFS= read -r cw; do
+      [ -n "$cw" ] || continue
+      [ "$cfirst" = 1 ] || printf ', '; cfirst=0
+      printf '%s' "$(json_str "$cw")"
+    done <<<"$CONFIG_WARNINGS"
+    printf ']},\n'
+  else
+    printf '  "config": null,\n'
+  fi
   printf '  "artifacts": %s,\n' "$(artifacts_json)"
   printf '  "dimensions": [\n'
   first=1
@@ -1847,6 +1911,10 @@ awk -F'\t' '{ why=$6; if (length(why) > 72) why=substr(why,1,69) "..."
   printf "   %-10s %-14s %5.1fs  %s\n", $1, $3, $5/1000, why }' "$RESULTS_FILE"
 not_covered="$(scan_command_field "$CMD" 3 2>/dev/null)"
 [ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
+if [ -n "$CONFIG_WARNINGS" ]; then
+  printf '\033[33m── config: %s warning(s) in %s (it is bash, run on every scan) — scan.sh doctor lists them\033[0m\n' \
+    "$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')" "${CONF#"$ROOT"/}"
+fi
 # The usual reason for a hole in coverage is the toolchain, not the repo: name the cause once.
 no_docker="$(awk -F'\t' '$3=="skipped" && $6 ~ /no docker/{printf " %s",$1}' "$RESULTS_FILE")"
 [ -n "$no_docker" ] && printf '\033[33m── Docker is not running:%s NOT inspected — start Docker and re-run "scan.sh %s"\033[0m\n' "$no_docker" "$CMD"

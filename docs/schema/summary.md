@@ -101,6 +101,13 @@ is why `evidence.json` can carry it verbatim and stay diffable.
 
 Digests are `null` when the machine has no sha256 tool.
 
+## `config` — what the config file did beyond setting values (F24)
+
+`{"path": ".security-audit.conf", "warnings": [...]}`, or `null` when there is no config. Each
+warning is one line of prose: a syntax error, an unknown setting, a line that runs a command, a
+command substitution in a value, a value of the wrong type. Warnings never change the gate. The
+config is bash, sourced on every scan, and this is how a team sees what it does.
+
 When the `container` dimension ran, `provenance.trivy_db.updated_at` names the vulnerability DB it
 used (F30). That is the DB's identity: the same DB always gives the same value, so it can be part of
 `evidence.json`. Its **age** is run metadata and goes only into the top-level `trivy_db` object

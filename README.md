@@ -777,6 +777,18 @@ there is neither an environment nor a readable manifest — a bare `pyproject.to
 dimension reports **`indeterminate`** (exit code 3): it does not block, it does not count as a pass,
 and the run says so out loud. `summary.json` records it as `"status": "indeterminate"`.
 
+**The config is code.** `.security-audit.conf` is sourced by bash, so it runs with your privileges
+on every scan and every hook. Review a change to it like a change to a script. The kit checks it
+on every run and says what it does beyond setting values:
+- a syntax error;
+- a setting `scan.sh` does not read (a typo would otherwise be ignored silently);
+- a line that runs a command;
+- a command substitution in a value;
+- a value of the wrong type (a non-integer wait, `SCAN_OFFLINE=yes`).
+
+These are warnings, never a block. They appear in the closing summary as `── config: N warning(s)`,
+in `summary.json` under `config.warnings`, and in full in `scan.sh doctor` / `scan.sh verify`.
+
 **Precedence:** `env > .security-audit.conf > default`. Thanks to the `:=` form,
 use env for a one-off override: `SAST_PATHS="lib" bash scan.sh sast`.
 

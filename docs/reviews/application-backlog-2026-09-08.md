@@ -337,6 +337,19 @@ The `.security-audit.conf` file is loaded with `source` in `scan.sh` (`scan.sh:4
 - The `security-audit.conf.example` file must be updated with every new config variable; CI must check the consistency of the example and actual config schema (an assertion to be added to the F09 test gate).
 - Must be delivered together with or right after F11; when the F11 threat model documents the executable nature of the config, F24 provides the concrete check that references that document.
 
+**Status — 2026-11-03:** implemented on `dev/plugin-readiness`.
+- **The check:** `config_check` runs on every scan and reports, as warnings:
+  - a syntax error (`bash -n`);
+  - an unknown setting, against the names in `security-audit.conf.example` plus the env knobs SARIF/REPORT/BASE_REF/SKIP_SECURITY;
+  - a line that runs a command;
+  - a command substitution in a value;
+  - more than one statement on a line;
+  - wrong types on the values in force: integer waits/TTLs, and the sets for `SCAN_OFFLINE`, `SARIF`, `PKGCHECK_CACHE`, `REPORT`.
+- **Where warnings appear:** fail-open. They show in the closing summary and `summary.json` `config.warnings`, and in full in `doctor` and `verify`; `verify`'s exit code is unchanged.
+- **CI consistency:** an e2e assertion that every `VAR="${VAR:-…}"` setting in `scan.sh` appears in the example. Env-only and internal names are listed in the test.
+- **"Required field" deviation:** not applicable. No setting is required; every one has a default.
+- **Tests:** 9 e2e checks. Two real consumer configs raise no warning.
+
 ### F25 — Version upgrade guide and breaking change notice
 
 Consumers update versions with `bootstrap.sh`, but breaking changes between versions (evidence schema change, removed command, changed config variable, new required tool) are written only in the CHANGELOG. `bootstrap.sh --check` reports that there is a new version but does not say what changed or what the consumer must do. Once the F08 channel split is done, the RC/stable distinction will be clear; but a guide is missing for upgrades between stable versions too.

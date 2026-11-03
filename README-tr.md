@@ -757,6 +757,19 @@ de okunabilir manifest varsa — ornegin yalin bir `pyproject.toml` — boyut **
 kodu 3) doner: bloklamaz, pass sayilmaz ve kosu bunu yuksek sesle soyler. `summary.json` bunu
 `"status": "indeterminate"` olarak kaydeder.
 
+**Config bir koddur.** `.security-audit.conf` bash tarafindan source edilir; yani her taramada ve
+her hook'ta senin yetkilerinle calisir. Bu dosyadaki bir degisikligi bir script degisikligi gibi
+incele. Kit onu her kosuda kontrol eder ve deger atamanin otesinde ne yaptigini soyler:
+- sozdizimi hatasi;
+- `scan.sh`'in okumadigi bir ayar (yazim hatasi aksi halde sessizce yok sayilirdi);
+- komut calistiran bir satir;
+- bir degerin icinde komut ikamesi;
+- yanlis tipte bir deger (tam sayi olmayan bir bekleme suresi, `SCAN_OFFLINE=yes`).
+
+Bunlar uyaridir, asla blok degil. Kapanis ozetinde `── config: N warning(s)` satiri olarak,
+`summary.json`'da `config.warnings` altinda, tam listeyle de `scan.sh doctor` / `scan.sh verify`'da
+gorunur.
+
 **Onculuk:** `env > .security-audit.conf > default`. `:=` formu sayesinde
 tek-seferlik override icin env kullan: `SAST_PATHS="lib" bash scan.sh sast`.
 

@@ -20,6 +20,14 @@ All notable changes to this project are documented here. The format is based on
   about the scan's own output, not your code. gitleaks still scans full git history.
 
 ### Added
+- **The config file is checked on every run (F24).** `.security-audit.conf` is bash, sourced with
+  your privileges. Each run now reports what it does beyond setting values: a syntax error, a
+  setting `scan.sh` does not read (a typo was silently ignored), a line that runs a command, a
+  command substitution in a value, and a wrong type (non-integer waits; `SCAN_OFFLINE`, `SARIF`,
+  `PKGCHECK_CACHE` and `REPORT` outside their sets). These are warnings, not blocks: the closing
+  summary says `── config: N warning(s)`, `summary.json` gains `config.warnings`, and
+  `doctor`/`verify` list them. e2e also checks that every setting `scan.sh` reads is documented in
+  `security-audit.conf.example`.
 - **`scripts/dogfood.sh <tag> [repo...]`: the RC dogfood as a script** (maintainers). It works on a
   clone of each consumer repo, so the real repo is untouched, and also tries a fresh install. Per
   repo it runs:
