@@ -715,34 +715,52 @@ pkgcheck_cache_dir(){
   printf '%s/security-audit-cache/pkgcheck' "$common"
 }
 
-# One target -> a verdict line on stdout ("BLOCK\t<rules>"), exit 1 when it blocks.
+# guarddog's JSON -> a verdict line under the CURRENT policy (BLOCK_EXTRA / REPORT_EXTRA).
+pkgcheck_classify(){
+  python3 "$KIT_DIR/lib/pkgcheck.py" --classify \
+    --block-extra "${PKGCHECK_BLOCK_EXTRA:-}" --report-extra "${PKGCHECK_REPORT_EXTRA:-}"
+}
+
+# One target -> a verdict line on stdout ("BLOCK\t<rules>"), exit 1 when it blocks. stdout is the
+# verdict and nothing else: the caller reads it whole (a progress line here once made every
+# first-time check print "clean", BLOCK included).
+#
+# The cache (F06) keeps what guarddog FOUND, not what the policy said about it: the network scan is
+# the slow part (15-20 s), judging it is not. A stored verdict outlived the policy that made it — a
+# package allowed once stayed allowed after PKGCHECK_BLOCK_EXTRA named its rule. Now every read is
+# re-judged by today's policy, and an entry that is not a whole guarddog document is a miss.
 pkgcheck_one(){
-  local eco="$1" name="$2" ver="$3" out verdict rc dir key f
-  # The key carries the pinned tool version: bumping guarddog must not read old verdicts.
+  local eco="$1" name="$2" ver="$3" out verdict dir key f="" raw
   if dir="$(pkgcheck_cache_dir)"; then
-    key="$(printf '%s__%s__%s__%s' "$eco" "$name" "${ver:-latest}" "$GUARDDOG_VER" | tr -c 'A-Za-z0-9_.@-' '_')"
+    # findings-v2: the key also carries the pinned guarddog version (its rules decide the findings).
+    key="$(printf 'findings-v2__%s__%s__%s__%s' "$eco" "$name" "${ver:-latest}" "$GUARDDOG_VER" | tr -c 'A-Za-z0-9_.@-' '_')"
     f="$dir/$key"
     # An unversioned request means "whatever the registry serves now", which changes under us —
     # those entries expire; an exact version is immutable on both registries, so it does not.
-    if [ -f "$f" ] && { [ -n "$ver" ] || [ -z "$(find "$f" -mmin "+$PKGCHECK_CACHE_TTL_MIN" 2>/dev/null)" ]; }; then
-      out="$(cat "$f")"
-      printf '%s (cached)\n' "$out"
-      case "$out" in BLOCK*) return 1 ;; *) return 0 ;; esac
+    if [ "${PKGCHECK_CACHE:-on}" != "refresh" ] && [ -f "$f" ] \
+       && { [ -n "$ver" ] || [ -z "$(find "$f" -mmin "+$PKGCHECK_CACHE_TTL_MIN" 2>/dev/null)" ]; }; then
+      out="$(pkgcheck_classify < "$f")"
+      verdict="${out%%	*}"
+      if [ -n "$out" ] && [ "$verdict" != "INDETERMINATE" ]; then
+        printf '%s (cached findings)\n' "$out"
+        [ "$verdict" = "BLOCK" ] && return 1
+        return 0
+      fi
+      rm -f "$f"   # half-written or unreadable: not an answer, ask again
     fi
   fi
-  say pkgcheck "guarddog ==$GUARDDOG_VER scan (needs network)"
+  say pkgcheck "guarddog ==$GUARDDOG_VER scan (needs network)" >&2
   local gargs="scan $name"
   [ -n "$ver" ] && gargs="$gargs -v $ver"
   # shellcheck disable=SC2086
-  out="$(pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" $gargs --output-format json 2>/dev/null \
-        | python3 "$KIT_DIR/lib/pkgcheck.py" --classify \
-            --block-extra "${PKGCHECK_BLOCK_EXTRA:-}" --report-extra "${PKGCHECK_REPORT_EXTRA:-}")"
-  rc=$?
-  [ -z "$out" ] && { out="INDETERMINATE	guarddog produced no output"; rc=2; }
+  raw="$(pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" $gargs --output-format json 2>/dev/null)"
+  out="$(printf '%s' "$raw" | pkgcheck_classify)"
+  [ -z "$out" ] && out="INDETERMINATE	guarddog produced no output"
   verdict="${out%%	*}"
-  # Only a real verdict is worth remembering; INDETERMINATE is a failure to look, not an answer.
-  if [ -n "${f:-}" ] && [ "$verdict" != "INDETERMINATE" ]; then
-    mkdir -p "$dir" 2>/dev/null && printf '%s' "$out" > "$f" 2>/dev/null || true
+  # Only a real answer is worth remembering; INDETERMINATE is a failure to look. Written to a temp
+  # file and renamed: a reader never sees half a document, and two writers each leave a whole one.
+  if [ -n "$f" ] && [ "$verdict" != "INDETERMINATE" ] && mkdir -p "$dir" 2>/dev/null; then
+    printf '%s\n' "$raw" > "$f.tmp.$$" 2>/dev/null && mv -f "$f.tmp.$$" "$f" 2>/dev/null || rm -f "$f.tmp.$$"
   fi
   printf '%s\n' "$out"
   [ "$verdict" = "BLOCK" ] && return 1

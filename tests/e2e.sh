@@ -1506,6 +1506,65 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   F14EX="$(grep -n 'SAST_PATHS:=' "$F02/repo/tools/security-audit-kit/security-audit.conf.example" | grep -v '^[0-9]*:#' || true)"
   [ -z "$F14EX" ] && ok "SAST_PATHS: the example config no longer sets it (default: whole repo)" \
     || no "SAST_PATHS: the example still sets it: $F14EX"
+  echo "-- F06: the pkgcheck cache keeps guarddog's findings, and the CURRENT policy judges them --"
+  PKS="$F02/pkshims"; mkdir -p "$PKS"; PKLOG="$F02/pk.log"
+  # guarddog shim: counts calls, answers with $PK_OUT (a real guarddog 3.0.2 JSON shape).
+  # shellcheck disable=SC2016
+  printf '#!/bin/sh\necho call >> "$PK_LOG"\n[ -n "$PK_SLEEP" ] && sleep "$PK_SLEEP"\nprintf "%%s\\n" "$PK_OUT"\n' > "$PKS/uvx"; chmod +x "$PKS/uvx"
+  PKCACHE="$(git -C "$F02/repo" rev-parse --git-common-dir)"; case "$PKCACHE" in /*) ;; *) PKCACHE="$F02/repo/$PKCACHE" ;; esac
+  PKCACHE="$PKCACHE/security-audit-cache/pkgcheck"
+  PKEVAL='{"package":"foo","issues":1,"errors":{},"results":{"threat-runtime-obfuscation-dynamic-eval":[{"l":1}]}}'
+  fpk(){ (cd "$F02/repo" && env PATH="$PKS:$F02SYS" PK_LOG="$PKLOG" "$@" "$BASH" tools/security-audit-kit/scan.sh pkgcheck pypi foo==1.0.0 >"$F02/out" 2>&1); F06RC=$?; F06CALLS="$(wc -l < "$PKLOG" 2>/dev/null | tr -d ' ')"; }
+  rm -rf "$PKCACHE"; : > "$PKLOG"
+  fpk PK_OUT="$PKEVAL"
+  [ "$F06RC" -eq 0 ] && grep -q 'note  pypi/foo' "$F02/out" && ok "F06: a threat-* rule reports (default policy) and is cached" \
+    || no "F06: first check rc=$F06RC: $(cat "$F02/out")"
+  # the measured bug: same package, policy now blocks that rule -> must BLOCK, from the cache
+  fpk PK_OUT="$PKEVAL" PKGCHECK_BLOCK_EXTRA=threat-runtime-obfuscation-dynamic-eval
+  [ "$F06RC" -eq 1 ] && grep -q 'BLOCK' "$F02/out" && [ "$F06CALLS" = 1 ] \
+    && ok "F06: BLOCK_EXTRA added later blocks a cached package, without re-downloading it" \
+    || no "F06: cached ALLOW survived a stricter policy (rc=$F06RC, guarddog calls=$F06CALLS): $(cat "$F02/out")"
+  # and the other way: a rule moved to report-only stops blocking a cached BLOCK
+  PKTYPO='{"package":"foo","issues":1,"errors":{},"results":{"typosquatting":["fooo"]}}'
+  rm -rf "$PKCACHE"; : > "$PKLOG"
+  fpk PK_OUT="$PKTYPO"; F06A="$F06RC"
+  grep -qE 'BLOCK.* pypi/foo@1.0.0 -> typosquatting' "$F02/out" && ! grep -q 'clean' "$F02/out" \
+    && ok "F06: a first-time BLOCK is shown as BLOCK (it printed 'ok ... clean' while blocking)" \
+    || no "F06: first-time BLOCK mislabelled: $(cat "$F02/out")"
+  fpk PK_OUT="$PKTYPO" PKGCHECK_REPORT_EXTRA=typosquatting
+  [ "$F06A" -eq 1 ] && [ "$F06RC" -eq 0 ] && [ "$F06CALLS" = 1 ] \
+    && ok "F06: REPORT_EXTRA added later un-blocks a cached BLOCK, from the cache" || no "F06: report-only not applied to cache (rc $F06A/$F06RC calls $F06CALLS)"
+  # a truncated cache entry is a miss (re-scan), never a verdict
+  for f in "$PKCACHE"/*; do printf '{"package":"foo","res' > "$f"; done
+  fpk PK_OUT="$PKTYPO"
+  [ "$F06CALLS" = 2 ] && [ "$F06RC" -eq 1 ] && ok "F06: a half-written cache entry is re-scanned, not trusted" \
+    || no "F06: corrupt cache used (calls=$F06CALLS rc=$F06RC)"
+  # INDETERMINATE is never remembered
+  rm -rf "$PKCACHE"; : > "$PKLOG"
+  fpk PK_OUT='{"package":"foo","issues":0,"errors":{"download-package":"404"}}'
+  fpk PK_OUT='{"package":"foo","issues":0,"errors":{"download-package":"404"}}'
+  [ "$F06CALLS" = 2 ] && ok "F06: INDETERMINATE is not cached (asked again next time)" || no "F06: INDETERMINATE cached (calls=$F06CALLS)"
+  # refresh: re-scan on request and replace the entry
+  rm -rf "$PKCACHE"; : > "$PKLOG"
+  fpk PK_OUT="$PKEVAL"; fpk PK_OUT="$PKTYPO" PKGCHECK_CACHE=refresh
+  [ "$F06CALLS" = 2 ] && [ "$F06RC" -eq 1 ] && ok "F06: PKGCHECK_CACHE=refresh re-scans and replaces the entry" \
+    || no "F06: refresh did not re-scan (calls=$F06CALLS rc=$F06RC)"
+  fpk PK_OUT="$PKEVAL"
+  [ "$F06CALLS" = 2 ] && [ "$F06RC" -eq 1 ] && ok "F06: the refreshed entry is what later checks read" || no "F06: refreshed entry not used"
+  # an entry written by an older kit (a stored verdict, not findings) is never read as one
+  rm -rf "$PKCACHE"; mkdir -p "$PKCACHE"; : > "$PKLOG"
+  # shellcheck disable=SC2016  # the sed pattern matches a literal ${GUARDDOG_VER:-...} in scan.sh
+  printf 'CLEAN\tcached by an older kit' > "$PKCACHE/pypi__foo__1.0.0__$(sed -n 's/^GUARDDOG_VER="${GUARDDOG_VER:-\([^}]*\)}"/\1/p' "$KIT_SRC/scan.sh")"
+  fpk PK_OUT="$PKTYPO"
+  [ "$F06CALLS" = 1 ] && [ "$F06RC" -eq 1 ] && ok "F06: an old-format cached verdict is ignored, the package re-scanned" \
+    || no "F06: old cached verdict trusted (calls=$F06CALLS rc=$F06RC)"
+  # two checks of one package at once: both answer, the entry is whole, no temp file left
+  rm -rf "$PKCACHE"; : > "$PKLOG"
+  (fpk PK_OUT="$PKTYPO" PK_SLEEP=1) & (fpk PK_OUT="$PKTYPO" PK_SLEEP=1) & wait
+  F06N="$(find "$PKCACHE" -type f | wc -l | tr -d ' ')"; F06TMP="$(find "$PKCACHE" -name '*.tmp*' | wc -l | tr -d ' ')"
+  /usr/bin/python3 -I -c 'import json,sys,glob; [json.load(open(f)) for f in glob.glob(sys.argv[1]+"/*")]' "$PKCACHE" 2>/dev/null \
+    && [ "$F06N" = 1 ] && [ "$F06TMP" = 0 ] && ok "F06: concurrent writes leave one whole entry, no temp files" \
+    || no "F06: concurrent cache writes: $F06N file(s), $F06TMP tmp"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 

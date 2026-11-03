@@ -472,9 +472,13 @@ note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in 
   failed, so the kit treats a failed download as `INDETERMINATE` — never as clean.
 - It is not a CVE check. `pkgcheck` asks "is this package malicious?"; `deps`/`osv` ask "does it have
   known vulnerabilities?" Both, or neither.
-- First check of a package costs ~15-20s (guarddog downloads and analyses it). Verdicts are cached in
-  `.git/security-audit-cache/` keyed by package, version **and the pinned guarddog version**; an exact
-  `pkg@version` verdict never expires, an unversioned one expires after a day. `scan.sh doctor` prints
+- First check of a package costs ~15-20s (guarddog downloads and analyses it). What guarddog *found*
+  is cached in `.git/security-audit-cache/`, keyed by package, version **and the pinned guarddog
+  version**. Every later check re-judges those findings with the policy in force, so adding a rule
+  to `PKGCHECK_BLOCK_EXTRA` blocks a package that was allowed yesterday, with no re-download. An
+  exact `pkg@version` entry never expires; an unversioned one expires after a day.
+  `PKGCHECK_CACHE=refresh` re-scans and replaces the entry, and `PKGCHECK_CACHE=off` skips the cache.
+  A half-written entry is a miss, and an INDETERMINATE result is never stored. `scan.sh doctor` prints
   whether the hook is wired, where the cache is, and how many rules block.
 
 ## Finding loop (end to end)

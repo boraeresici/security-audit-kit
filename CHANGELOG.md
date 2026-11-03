@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Upgrade notes
+- The pkgcheck cache format changed (findings, not verdicts). Entries written by older kits are
+  ignored, so each package is scanned once more on its next check (~15-20 s), and then cached again.
 - semgrep and trivy no longer scan `docs/security/scan-findings/`. If your repo committed scan
   artifacts there, findings that pointed into them (old raw logs, SARIF) disappear. They were
   about the scan's own output, not your code. gitleaks still scans full git history.
@@ -27,6 +29,17 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **A stricter pkgcheck policy did not apply to packages already checked (F06).** The cache stored
+  the verdict, so a package allowed once stayed allowed after `PKGCHECK_BLOCK_EXTRA` named one of
+  its rules, and a rule moved to `PKGCHECK_REPORT_EXTRA` kept blocking. The cache now keeps
+  guarddog's findings (the slow, network part), and every check re-judges them with the current
+  policy, with no re-download. Entries are written to a temp file and renamed: concurrent checks
+  leave one whole entry, and a half-written one is a miss, re-scanned instead of trusted.
+  INDETERMINATE is still never stored. `PKGCHECK_CACHE=refresh` re-scans on request.
+- **A first-time pkgcheck printed "ok … clean" for every package, a BLOCK included.** A progress
+  line was captured into the verdict, so the summary line fell through to "clean". The exit code
+  was right, so the install was still refused, but the message said the opposite. Only cached
+  results were shown correctly.
 - **Scanners read the kit's own record as source** (v1.20.0 dogfood). semgrep scanned tracked
   files under `docs/security/scan-findings/`: a repo that had committed its raw logs got a
   timeout, and findings "in" a log. trivy fs read the folder untracked, so secret-like lines in old

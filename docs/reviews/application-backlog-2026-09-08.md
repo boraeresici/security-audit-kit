@@ -142,6 +142,15 @@ Canlı ve uzun süren taramanın kilidi yalnız yaşı nedeniyle alınmamalı. R
 
 Aynı paket/sürüm için önce izin veren, sonra `BLOCK_EXTRA` ile engelleyen politika doğru uygulanmalı. Cache anahtarı veya yeniden sınıflandırma policy/rule sürümünü kapsamalı. Eksik/yarım cache ve eşzamanlı yazma atomik olarak yönetilmeli. Tam sürüm ve sürümsüz istekler için yenileme kuralı ve `refresh` yolu belgelenmeli; INDETERMINATE kalıcı temiz karara dönüşmemeli.
 
+**Karar ve durum — 3 Kasım 2026:** `dev/plugin-readiness` branch'inde uygulandı.
+- **Ne cache'leniyor:** kararın kendisi değil, guarddog'un ham bulguları. Ağ üzerinden yapılan tarama yavaş kısım; bulguları yargılamak hızlı.
+- **Politika değişikliği:** her okumada mevcut politika (`BLOCK_EXTRA` / `REPORT_EXTRA`) yeniden uygulanıyor. Böylece politika değişikliği yeniden indirme gerekmeden hemen geçerli oluyor ve anahtara politika sürümü koymaya gerek kalmıyor.
+- **Anahtar:** `findings-v2` ön ekiyle yeni bir şema; eski biçimdeki kayıtlar okunmuyor (CHANGELOG'da yükseltme notu var).
+- **Yazma:** geçici dosyaya yazılıp rename ediliyor. Yarım kalmış bir kayıt cache'te yok sayılıp paket yeniden taranıyor. INDETERMINATE hiç yazılmıyor.
+- **Yenileme:** `PKGCHECK_CACHE=refresh` cache'i okumadan yeniden tarıyor ve kaydı değiştiriyor.
+- **Ayrıca düzeltildi:** ilk kez kontrol edilen her paket, `BLOCK` dahil, "ok … clean" olarak gösteriliyordu. Bir ilerleme satırı karar satırının içine karışıyordu. Çıkış kodu doğruydu, yalnızca mesaj tersini söylüyordu.
+- **Testler:** 10 e2e kontrolü eklendi. Sahte bir guarddog shim'iyle şunlar test ediliyor: politika sıkılaşınca ve gevşeyince sonuç, yarım kayıt, INDETERMINATE, refresh, eski biçim, eşzamanlı yazma ve ilk kontroldeki `BLOCK` mesajı.
+
 ### F07 — Release kapısı
 
 Eksik gh, başarısız API, boş/eksik/pending check-run ve doğrulanamayan remote HEAD stabil release'i durdurmalı. Aynı SHA için eski başarısız/yeni başarılı rerun seçimi deterministik olmalı. Ağ ve gh fixture'larıyla test edilmeli; testler etiket veya release yayımlamamalı. İstisna yolu kabul edilirse gerekçe kaydı zorunluluğu tasarımda açık olmalı.

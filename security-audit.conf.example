@@ -94,9 +94,10 @@
 # Add a rule name here to make it blocking, or move a noisy one to report-only. Comma separated.
 # PKGCHECK_BLOCK_EXTRA="threat-runtime-obfuscation-dynamic-eval"
 # PKGCHECK_REPORT_EXTRA="typosquatting"
-# Verdict cache lives in .git/security-audit-cache/pkgcheck (never in the repo tree). An exact
-# pkg@version verdict is immutable; an unversioned one expires after this many minutes.
-# PKGCHECK_CACHE=off
+# The cache (.git/security-audit-cache/pkgcheck, never in the repo tree) keeps guarddog's FINDINGS;
+# every check re-judges them with the two settings above, so a policy change applies at once. An
+# exact pkg@version entry is immutable; an unversioned one expires after this many minutes.
+# PKGCHECK_CACHE=off        # or: refresh (re-scan now and replace the entry)
 # PKGCHECK_CACHE_TTL_MIN=1440
 
 # --- run lock: one writer at a time for raw-<date>.log + the shared record ---------------------

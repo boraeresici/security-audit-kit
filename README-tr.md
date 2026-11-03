@@ -459,9 +459,13 @@ bunlarin hicbiri o 18 pakette **atesle(me)di**. Geri kalan her sey not olarak ya
   found"* yazar; kit bu yuzden basarisiz indirmeyi `INDETERMINATE` sayar — asla "temiz" degil.
 - Bu bir CVE kontrolu degildir. `pkgcheck` "bu paket kotu niyetli mi?" diye sorar; `deps`/`osv` ise
   "bilinen zafiyeti var mi?" diye. Ikisi birlikte, ya da hicbiri.
-- Bir paketin ilk kontrolu ~15-20 sn (guarddog indirip analiz eder). Kararlar
-  `.git/security-audit-cache/` altinda paket, surum **ve pinlenmis guarddog surumu** ile anahtarlanip
-  saklanir; tam `pkg@version` karari hic eskimez, surumsuz olan bir gun sonra eskir. `scan.sh doctor`
+- Bir paketin ilk kontrolu ~15-20 sn (guarddog indirip analiz eder). Guarddog'un *buldugu*
+  `.git/security-audit-cache/` altinda saklanir; anahtar paket, surum **ve pinlenmis guarddog
+  surumu**dur. Sonraki her kontrol bu bulgulari o anki politikayla yeniden yargilar: `PKGCHECK_BLOCK_EXTRA`'ya
+  bir kural eklemek, dun izin verilmis bir paketi yeniden indirmeden bloklar. Tam `pkg@version` kaydi
+  hic eskimez, surumsuz olan bir gun sonra eskir. `PKGCHECK_CACHE=refresh` yeniden tarar ve kaydi
+  degistirir, `PKGCHECK_CACHE=off` cache'i atlar. Yarim yazilmis bir kayit cache'te yok sayilir;
+  INDETERMINATE sonuc hic saklanmaz. `scan.sh doctor`
   hook'un bagli olup olmadigini, cache'in yerini ve kac kuralin blokladigini yazar.
 
 ## Bulgu dongusu (uctan uca)
