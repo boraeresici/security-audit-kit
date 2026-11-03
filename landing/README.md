@@ -17,7 +17,7 @@ picks it up from the output directory automatically.
 ## Comparison table is generated
 
 `build.py` regenerates the block between the `<!-- compare:start/end -->` markers in
-`index.html` from [docs/compare/aikido-semgrep.md](../docs/compare/aikido-semgrep.md)
+`index.html` from [docs/compare/feature-comparison.md](../docs/compare/feature-comparison.md)
 (the source of truth), and refreshes the kit version + "Last updated" strings from that
 doc's header. It runs on every CF Pages deploy, so the published table can never drift
 from the doc. If the doc's format changes in a way the parser can't read, the script

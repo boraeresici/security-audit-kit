@@ -33,6 +33,14 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **A stable release could go out with CI unverified (F07).** `scripts/release.sh final` only
+  *warned* when `gh` was missing, the API failed, no check-runs existed, or a required check was
+  missing. It treated a pending run as "not found", and took whichever run of a re-run check the
+  API listed last. Now any of those stops a final, and so does an `origin/main` it cannot fetch.
+  The newest run (highest id) of each required check decides. RCs still only warn, since their
+  gate is the dogfood. `--ci-unverified="<reason>"` is the explicit exception: the reason is
+  required and is written into the tag message. `preflight --stable` runs the same gate without
+  tagging.
 - **Update channels (F08).** `bootstrap.sh --check` follows the stable channel by default, so an
   RC is never offered to someone who did not opt in. `--channel=rc` / `KIT_CHANNEL=rc` adds release
   candidates. On stable, a newer RC is named with the opt-in, never offered. "Cannot tell" (an
@@ -785,7 +793,7 @@ Read the first three before updating: they change what scripts that read the kit
   dev split held at 31/31 (no recall regression). Three fixed cases were seen during earlier
   debugging (confirmatory), so **six fresh held-out twins in classes the prompt never names (LDAP /
   CRLF / XPath) were added after freezing the prompt** as a blind generalization check — GLM scored
-  6/6. Full held-out now 36 cases at precision/recall 100%. Documented in `docs/compare/aikido-semgrep.md`.
+  6/6. Full held-out now 36 cases at precision/recall 100%. Documented in `docs/compare/feature-comparison.md`.
 
 ### Changed (eval harness — corpus expansion + measurement hardening; still dev-only, not in the scan path)
 - **Corpus grown 10 → 61 cases, split dev / held-out.** `cases.yaml` is now a **31-case dev (tuning)
@@ -813,7 +821,7 @@ Read the first three before updating: they change what scripts that read the kit
 - **First held-out measurement** (GLM-5.2 via NIM, 2026-07-10): dev split 31/31; **held-out split
   precision 83.3%, recall 100%, F1 90.9%, accuracy 90%** (TP=15, FP=3, FN=0, TN=12). All three misses
   are `difficulty: hard` FP twins the model over-flagged — the harness can now *see* a precision failure,
-  the precondition for measuring Phase-A prompt changes. Documented in `docs/compare/aikido-semgrep.md`
+  the precondition for measuring Phase-A prompt changes. Documented in `docs/compare/feature-comparison.md`
   ("Measured triage quality"). The default backend (Claude) stays unmeasured pending API credit.
 
 ### Added (integrity — the tamper gate is now automatic)
@@ -848,7 +856,7 @@ Read the first three before updating: they change what scripts that read the kit
   long-stale v1.0.0–v1.6.0; the `uvx or pipx` requirement line finally lists **guarddog + zizmor**
   (shipped in v1.11.0); the lifecycle diagram's triage node shows the evidence bar; the `sec-triage`
   summary states the bar and the FP default.
-- `docs/compare/aikido-semgrep.md`: the false-positive-triage row flips **🔜 → shipped** (the
+- `docs/compare/feature-comparison.md`: the false-positive-triage row flips **🔜 → shipped** (the
   evidence bar is in), the tool's own supply-chain row records the pin-to-content binding, header
   re-dated. `landing/index.html` regenerated from it via `landing/build.py`.
 

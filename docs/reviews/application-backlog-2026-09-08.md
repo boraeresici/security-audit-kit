@@ -155,6 +155,13 @@ A policy that first allows and then blocks the same package/version with `BLOCK_
 
 Missing gh, a failed API, empty/missing/pending check-runs and an unverifiable remote HEAD must stop a stable release. Selection between an old failed / new successful rerun for the same SHA must be deterministic. It must be tested with network and gh fixtures; the tests must not publish tags or releases. If an exception path is accepted, the requirement to record a rationale must be explicit in the design.
 
+**Status — 2026-11-03:** implemented on `dev/plugin-readiness`.
+- **Final is strict:** `release.sh final` and `preflight --stable` stop on any of these: no gh, a failed API call, no check-runs, a pending or missing required check, an unverifiable `origin/main`.
+- **Reruns:** the newest run (highest check-run id) of each required check decides.
+- **RCs:** they only warn.
+- **Exception:** `--ci-unverified="<reason>"`; the reason is required and goes into the tag message.
+- **Tests:** 12 offline e2e checks with a gh shim against a release repo with a bare origin; nothing is tagged.
+
 ### F08 — Update channel
 
 In a local tag fixture containing `v1.17.0`, `v1.18.0-rc.1`, `v1.18.0`, the default suggestion must be the latest stable. An RC must be suggested only with explicit channel selection. Access error, update available and up-to-date results must be distinguished. Offline fixture tests are sufficient; no release should be opened for the test.
@@ -535,15 +542,15 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 
 ### F32 — First impression and trust signals for external readers
 
-**Finding — 2026-11-02 (P):** The repo was opened on 2026-06-16; as of 2026-11-02, 0 stars, 0 forks. The README is 733 lines with a mermaid diagram on the first screen; there is no short demo showing the "install → scan → see the result" flow. `docs/compare/aikido-semgrep.md:100` says "credit balance is too low" for the default Claude backend; that is, the project's strongest differentiator (evidence bar + eval) is published unmeasured. `docs/compare/cloudflare-security-audit-skill.md` is closed to external readers because it is in Turkish. There is no independent trust signal (OpenSSF Scorecard, signed release, usage story).
+**Finding — 2026-11-02 (P):** The repo was opened on 2026-06-16; as of 2026-11-02, 0 stars, 0 forks. The README is 733 lines with a mermaid diagram on the first screen; there is no short demo showing the "install → scan → see the result" flow. `docs/compare/feature-comparison.md:100` says "credit balance is too low" for the default Claude backend; that is, the project's strongest differentiator (evidence bar + eval) is published unmeasured. `docs/compare/cloudflare-security-audit-skill.md` is closed to external readers because it is in Turkish. There is no independent trust signal (OpenSSF Scorecard, signed release, usage story).
 
 **Acceptance criteria:**
 
 - The README's first screen: what it does, a single install command and a 60 s terminal recording (asciinema/GIF). Deep content must be moved to `docs/`; README-tr must follow the same structure.
 - The unmeasured row in the comparison table must be filled with the F12b measurement or removed until measured.
-- Public `docs/compare` documents must be in English or moved to internal planning. **Done — 2026-11-03:** `aikido-semgrep.md` stays public; the four competitor comparisons (Cloudflare, Masriyan, Phoenix, senior-security) were moved to local `*.local.md` notes; `docs/reviews` was translated to English.
+- Public `docs/compare` documents must be in English or moved to internal planning. **Done — 2026-11-03:** the public comparison stays (renamed `feature-comparison.md`, vendor anonymized on 2026-11-03); the four competitor comparisons (Cloudflare, Masriyan, Phoenix, senior-security) were moved to local `*.local.md` notes; `docs/reviews` was translated to English.
 - OpenSSF Scorecard must be added; a signed release remains tied to the R07 decision.
-- The Aikido/Semgrep comparison must be removed from the landing's main section; tools in the agent channel (Semgrep plugin, Trail of Bits `static-analysis`) must be taken as the competitors.
+- The SaaS/Semgrep comparison must be removed from the landing's main section; tools in the agent channel (Semgrep plugin, Trail of Bits `static-analysis`) must be taken as the competitors.
 
 ### F33 — Plugin hook set
 

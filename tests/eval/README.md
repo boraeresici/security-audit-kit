@@ -87,7 +87,7 @@ corpus resolving power — without them, every FP is obvious and the score satur
 > FP 3→0 with recall held. Three of the fixed cases were seen during debugging (confirmatory), so six
 > fresh twins in classes the prompt never names (LDAP / CRLF / XPath) were added **after freezing the
 > prompt** as a blind check — GLM got all six right. Corpus is now saturated for GLM again (next
-> iteration needs harder cases). See `docs/compare/aikido-semgrep.md`.
+> iteration needs harder cases). See `docs/compare/feature-comparison.md`.
 >
 > **The Claude default backend is still unmeasured.** The key authenticates, but every inference
 > call returns `credit balance is too low` (400).

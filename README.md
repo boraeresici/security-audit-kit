@@ -771,9 +771,9 @@ pass** and report only findings ≥ 0.7 (the rest go to a "Suppressed" section, 
 and commit it per project; it kills recurring false-positive noise deterministically.
 
 ## How it compares
-A maintained three-way feature comparison against **Aikido** and **Semgrep** — including what the
+A maintained three-way feature comparison against a commercial **all-in-one SaaS** platform and **Semgrep** — including what the
 kit deliberately leaves out and what's planned (🔜) — lives in
-[docs/compare/aikido-semgrep.md](docs/compare/aikido-semgrep.md). It is updated as features ship.
+[docs/compare/feature-comparison.md](docs/compare/feature-comparison.md). It is updated as features ship.
 
 ## HARD boundary
 These tools produce **internal evidence**. They **do not replace** PCI DSS Req

@@ -1,17 +1,16 @@
-# How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
+# How security-audit-kit compares — all-in-one SaaS vs Semgrep vs security-audit-kit
 
 > **Last updated:** 2026-11-03 · kit **v1.20.0**
 >
-> Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
-> (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
-> trademarks of their respective owners. This table is maintained as features ship — rows marked
+> SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep
+> (retrieved 2026-07) plus public product docs. Semgrep is a trademark of its owner. This table is maintained as features ship — rows marked
 > **🔜 Planned** describe intended work, not commitments, and may change.
 
 ## Positioning
 
 These are three different product shapes, so some "missing" cells are deliberate scope decisions:
 
-- **Aikido** — an all-in-one **SaaS platform**: your code and findings live in their cloud, and the
+- **All-in-one SaaS** — a commercial all-in-one **SaaS platform**: your code and findings live in their cloud, and the
   platform layer (dashboards, PR bots, runtime protection) is the product.
 - **Semgrep** — a **SAST-first platform** (engine + registry + cloud), strongest at static code
   analysis, thinner elsewhere.
@@ -31,7 +30,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 
 ## Feature comparison
 
-| Capability | Aikido | Semgrep | security-audit-kit |
+| Capability | All-in-one SaaS | Semgrep | security-audit-kit |
 |---|---|---|---|
 | SAST | ✓ (Opengrep engine) | ✓ | ✓ semgrep (pinned), stack-aware ruleset auto-selection |
 | Deep semantic SAST (authz/IDOR, business logic) | Partial (taint) | Partial (taint, Pro) | ✓ `sec-sast-deep` skill — flaw classes rule engines can't express |
@@ -46,16 +45,16 @@ These are three different product shapes, so some "missing" cells are deliberate
 | IaC misconfiguration | ✓ | ✗ | ✓ checkov (Terraform) |
 | Container / filesystem scanning | ✓ | ✗ | ✓ trivy (vuln, secret, misconfig, license) |
 | CI/CD pipeline security (GitHub Actions) | Partial | ✗ | ✓ zizmor — template injection, poisoned pipelines, token over-permission |
-| False-positive triage | ✓ AutoTriage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check; suppressions are audited for decay (`scan.sh allowlist`: expired deferrals, entries with no expiry, an advisory suppressed on one dependency path but not the others) |
+| False-positive triage | ✓ auto-triage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check; suppressions are audited for decay (`scan.sh allowlist`: expired deferrals, entries with no expiry, an advisory suppressed on one dependency path but not the others) |
 | Measured triage quality (precision/recall evals) | ✗ (marketing claims only) | ✗ | ✓ promptfoo eval harness with recall regression gates (`tests/eval/`) |
 | Structured evidence per finding | ✓ (dashboard) | Partial | ✓ `evidence.json` — every finding in one shape, severity normalized across tools (source value kept verbatim), CVSS only where a tool supplied one; deterministic and diffable |
-| AutoFix | ✓ AI AutoFix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan) with a per-ecosystem command table (direct vs transitive-forcing) and the direct/transitive + parent-range questions asked before any bump; 🔜 computing the parent-range answer automatically |
+| AutoFix | ✓ AI auto-fix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan) with a per-ecosystem command table (direct vs transitive-forcing) and the direct/transitive + parent-range questions asked before any bump; 🔜 computing the parent-range answer automatically |
 | PoC / exploit validation | ✓ agentic pentesting (executes) | ✗ | 🔜 planned: **generate-only** PoC mode — the kit never executes exploits |
 | AI/LLM app security review (OWASP LLM Top 10) | ✗ | Partial | ✓ `sec-ai-review` skill |
 | Threat modeling | ✗ | ✗ | ✓ `sec-threat-model` (STRIDE + data flows) |
 | DAST | ✓ | ✗ | — rejected by design (no autonomous exploit execution) |
 | Cloud security posture (CSPM) | ✓ | ✗ | — out of scope (repo-local kit; no cloud credentials) |
-| Runtime protection (in-app firewall) | ✓ "Zen" | ✗ | — out of scope (scan kit, not a runtime agent) |
+| Runtime protection (in-app firewall) | ✓ in-app firewall | ✗ | — out of scope (scan kit, not a runtime agent) |
 | Compliance dashboards (SOC 2 / ISO) | ✓ | ✗ | — out of scope as a SaaS surface; the kit emits SARIF + `evidence.json` + a printable single-file HTML report you can attach to an audit |
 | IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers, including the judgment findings (`kit.sarif`) |
 | Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ fully local; network only in opt-in dimensions (e.g. GuardDog) |
@@ -80,7 +79,7 @@ The kit's hard boundary is **scan + judge, never exploit or run in production**:
 The kit publishes a **measured** triage quality number, and the harness that produced it, in-repo.
 The eval harness (`tests/eval/`) grades the `sec-triage` REAL/FP judgment against a 61-case labeled
 corpus via promptfoo, then reports a confusion matrix + precision / recall / F1 / accuracy for the
-REAL class. Aikido's AutoTriage and Semgrep's registry noise claims are marketing-only — no
+REAL class. The SaaS platform's auto-triage and Semgrep's registry noise claims are marketing-only — no
 published precision/recall numbers.
 
 The corpus is split so the headline number is not self-graded. A **dev split** (`cases.yaml`) is

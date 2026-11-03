@@ -751,9 +751,9 @@ bulgulari raporlar (gerisi kayit altinda "Suppressed" bolumune gider). Projene g
 commit et; tekrar eden false-positive gurultusunu deterministik olarak yok eder.
 
 ## Karsilastirma
-**Aikido** ve **Semgrep** ile uc-yonlu, guncel tutulan ozellik karsilastirmasi — kitin bilerek
+Ticari bir **hepsi-bir-arada SaaS** platformu ve **Semgrep** ile uc-yonlu, guncel tutulan ozellik karsilastirmasi — kitin bilerek
 kapsam disi biraktiklari ve planlananlar (🔜) dahil —
-[docs/compare/aikido-semgrep.md](docs/compare/aikido-semgrep.md) dosyasinda (Ingilizce). Yeni
+[docs/compare/feature-comparison.md](docs/compare/feature-comparison.md) dosyasinda (Ingilizce). Yeni
 ozellikler ciktikca guncellenir.
 
 ## HARD sinir
