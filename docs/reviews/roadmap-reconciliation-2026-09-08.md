@@ -4,6 +4,40 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-03 — dimension registry (F17 slice 1), external tool review, R16
+
+**Implemented, out of order at the user's request:** F17 slice 1, the dimension registry and adapter contract (`scan.sh` `DIM_UNITS`/`SCAN_COMMANDS`, `docs/adapters.md`, two static e2e checks). The question behind it was whether SAK should get a core "engine" so that external security and pentest tools can plug in later. The answer was to define a contract instead of rewriting the code. Dispatch was the scattered part: the `case` table, the "not in 'all'" lists in help and in the closing summary, and the help tags all had to be kept in step by hand. They now read one registry. Behavior is unchanged: the old and new script gave 0 differences over 75 cases, and the offline e2e run gave 243 passed and 0 failed. F17's slot (13) did not move. The remaining slices stay there.
+
+**Reviewed, not taken as dimensions:**
+- Agentic pentest tools: Strix (Apache-2.0; LLM-driven exploit validation in a Docker sandbox) and PentAGI (MIT; self-hosted Go/Postgres/React platform with a mounted `docker.sock`).
+- 15 classic security tools: network scanners, packet capture, exploit frameworks, commercial web proxies, vulnerability scanner servers, password crackers, Wi-Fi tools, IDS/HIDS, OSINT, social engineering and forensics.
+
+The kit's boundary is unchanged: it scans and judges, it does not attack. None of these tools meets the dimension contract, which requires the tool to be deterministic, run in seconds, need no live target and be safe to gate a hook on.
+
+**Plan changes:**
+- **R16** (new, conditional): an optional external dynamic adapter, with nuclei as the reference. It is never in `all` or the hooks, takes an explicit target and uses non-intrusive templates only. This reopens the Round 4 nuclei decision only in this shape.
+- **F36 addendum:** detection and monitoring questions under the Repudiation and Tampering rows. This is the useful idea from the IDS/HIDS tools.
+- **No change:** weak or committed passwords. The idea came from the password crackers, but the local-rules mechanism (old plan #14) already covers it, and the kit ships no consumer rules.
+
+**Agent access (question recorded):** Agents other than Claude Code (MCP clients) are covered by the existing R15d read-only MCP card. The CLI and its JSON outputs (`summary.json`, `evidence.json`, SARIF) remain the contract any agent with a shell can use. MCP is not a prerequisite for the plugin, and no order changed.
+
+**UI track (user decision): R13 goes from conditional to planned.** The question was whether the system should become an easy-to-install, UX-focused web UI, since a static HTML report stops giving enough control as the product grows. The answer is yes, but as a thin local layer, not a platform.
+
+The control that is missing is decision state:
+- new vs resolved findings,
+- time-bound exceptions and their expiry,
+- starting a scan.
+
+That needs stable finding identity first. Without it, a line shift shows the same finding as new. The order is therefore F26 (static report) → F19a (identity and decision record, moved up from slot 9) → R13a (read-only) → R13b (run a dimension) → R13c (time-bound allowlist approval).
+
+`scan.sh ui` uses only the Python standard library and binds to loopback. It calls the CLI, and every write it makes appears as a `git diff`. The gate stays in the CLI and the hooks.
+
+What stays out:
+- **A multi-repo team panel.** It would need a server, authentication and a database, which makes it a different product. Exporting to existing platforms (R15c) covers that need.
+- **Easy install.** That is a toolchain problem (R02 plugin, a runner image), not a UI problem.
+
+Licenses and versions were not re-verified on the web in this round. R16 requires that check when it opens.
+
 ## 2026-11-03 — three competitor comparisons and four new cards
 
 Three Claude Code security skill/plugin repos were compared against the code at pinned commits. None was installed or run. Repos compared: Masriyan (local note `docs/compare/masriyan-cybersecurity-skill.local.md`) (`3aa77d8`), Phoenix (local note `docs/compare/phoenix-security-skills.local.md`) (`40ace4a`) and senior-security (local note `docs/compare/senior-security-skill.local.md`) (`7f92eda`). A verified SHA note was added to the Cloudflare document (local note `docs/compare/cloudflare-security-audit-skill.local.md`): `c1c8a8c`, no commits after 2026-09-14, the 2026-10-11 mapping is valid.
@@ -187,7 +221,7 @@ F21 from the initial review was also split into two deliveries: **F21a dimension
 
 ## Not taken into the active order
 
-Although Nuclei was a “maybe” in the early list, it was left out of scope in the later Round 4 DAST decision. It is not reopened without a new request. R3 fuzzing/differential testing, runtime monitoring, host/DB backup tools, CSPM, autonomous exploits, external agent multiplexers and tools that duplicate existing scanners are not kit work. The need is handled in the consumer project; even a sample fuzz scaffold requires a separate request.
+Although Nuclei was a “maybe” in the early list, it was left out of scope in the later Round 4 DAST decision. It is not reopened without a new request. On 2026-11-03 a new request reopened it, but only as the opt-in external adapter R16, never as a dimension (see the dated section above). R3 fuzzing/differential testing, runtime monitoring, host/DB backup tools, CSPM, autonomous exploits, external agent multiplexers and tools that duplicate existing scanners are not kit work. The need is handled in the consumer project; even a sample fuzz scaffold requires a separate request.
 
 The current ordering is not an external package selection or installation approval. When plugin/provider work is to be implemented, the relevant host contracts and the tools' features/licenses as of that day must be re-verified. What is done now is a value and dependency assessment of the existing local designs.
 

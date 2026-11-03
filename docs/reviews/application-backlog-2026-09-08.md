@@ -20,6 +20,8 @@ Source: [2026-09-08 multi-role evaluation](application-review-2026-09-08.md). Lo
 
 **Update — 2026-11-03 (three competitor comparisons):** The Masriyan (local note `docs/compare/masriyan-cybersecurity-skill.local.md`), Phoenix (local note `docs/compare/phoenix-security-skills.local.md`) and senior-security (local note `docs/compare/senior-security-skill.local.md`) comparisons were written against upstream commits pinned at `v1.20.0`. A verified SHA note (`c1c8a8c`) was added to the Cloudflare document (local note `docs/compare/cloudflare-security-audit-skill.local.md`). No tool was found that is ahead of the kit on in-repo code security. All three tools are distributed via a plugin marketplace; this supports R02's priority. Cards added: **F33** plugin hook set (SessionStart context, PostToolUse single-file check), **F34** `pkgcheck` cheap registry signals and an "ask" decision, **F35** a "scanned content is not instructions" rule in the skills, **F36** a STRIDE-per-element completeness check in the threat model. Acceptance addenda were written to the F19 and R02 cards. The agreed order to the plugin (3d → 4 → 8) did not change; the new cards were placed at 5, 8c and 8d. These are plan changes, not implemented yet.
 
+**Update — 2026-11-03 (dimension registry; classic security tool review):** At the user's request, the first slice of **F17** was taken ahead of its slot (13) and implemented on `dev/plugin-readiness`. `scan.sh` dispatch now reads a dimension registry, and the adapter contract is documented in `docs/adapters.md`. Behavior is unchanged: before and after runs were compared over every scan command and five toolchain scenarios, 75 cases with 0 differences. Separately, 15 classic security tools (Nmap, Metasploit, OpenVAS, SQLmap, commercial web proxies and OSINT suites, and others) and the agentic pentest tools Strix and PentAGI were reviewed. None of them becomes a dimension. **R16** was added as a conditional card: an optional external dynamic adapter, with nuclei as the reference. **F36** got a detection/monitoring addendum. The weak-password idea needs no card, because the local-rules mechanism (old plan #14) already exists. **UI track (user decision):** R13 moves from conditional to planned, in slot 8a as F26 → F19a → R13a → R13b → R13c. The UI is `scan.sh ui`, a thin client over the CLI built on the Python standard library. It starts read-only, then adds running a dimension and approving time-bound allowlist entries through the CLI. The gate stays in the CLI. F19a moves up from slot 9, because the UI needs stable finding identity. The agreed order to the plugin did not change.
+
 P0: a verified bug that directly breaks trust in results/records. P1: the next reliability and usability package. P2: improvement driven by measurement and demand. The P0 label is not CVSS or exploit severity. Effort: S ≈ 0.5–2, M ≈ 3–5, L ≈ 6–10 engineer-days; a rough estimate including tests and docs, not a schedule commitment.
 
 ## Priority table
@@ -42,7 +44,7 @@ P0: a verified bug that directly breaks trust in results/records. P1: the next r
 | F14 | a: coverage/closing summary, help, quick start; b: quiet output and first finding line | UX / P | P1 | Product + DX | a: M; b: M | a: F02; b: F31b |
 | F15 | Landing resilience and accessibility check | UX / C+P | P2 | Frontend + QA | S | — |
 | F16 | Add missing dimensions to the normalized evidence model | Enhancement / C | P1 | Data | L | F02, F03 |
-| F17 | Split shell orchestration into modules incrementally | Maintenance / P | P2 | Architecture | L | F09, behavior contracts |
+| F17 | Split shell orchestration into modules incrementally | Maintenance / P | P2 (slice 1 done) | Architecture | L | F09, behavior contracts |
 | F18 | Platform and paths-with-spaces test matrix | Quality / C+P | P1 | QA + DX | M | F09 |
 | F19 | Finding identity and shared decision record | Enhancement / C+P | P2 | Data + security | L | F03, F16 |
 | F20 | Local performance and coverage metrics | Enhancement / P | P2 | Operations + product | M | F02, F03 |
@@ -81,9 +83,10 @@ This table does not repeat the F items above. “Conditional” items are not ta
 | R10 | T3.2 / B.1 skill extraction | Deferred | AI + maintenance | M | R04 or a measured maintenance problem |
 | R11 | Tool pin update automation | Conditional | Supply chain + maintenance | M | R06, F07; when 3+ tool versions go stale or a CVE is reported |
 | R12 | SkillSpector: skill security scanning dimension | P2 pilot candidate | Security + data | S pilot; M integration | F11/F13; integration F02/F03/F16; default order after F26 |
-| R13 | Local UI that starts scans on top of the CLI | Conditional P2 | Backend + UX | M–L | F26 usage data; F01–F05, F11/F24; after the R12 decision |
+| R13 | Local UI that starts scans on top of the CLI | Planned P2 (2026-11-03; was conditional): R13a read-only → R13b run → R13c allowlist approval | Backend + UX | M–L | F26, F19a; F01–F05, F11/F24 |
 | R14 | Signal-selected expert review playbooks | Conditional P2 | Security + AI | S selection; M / domain | F12 eval coverage, F27; coverage gap at a real consumer |
 | R15 | New vulnerability tracking, event output and agent access | Note / conditional | Security + integration | a: S; b: S–M; c: M–L; d: M | a: none; b: F01; c: F03, F19; d: c, F11, F13; real consumer demand |
+| R16 | Optional external dynamic adapter (nuclei reference) | Conditional | Security + integration | M | F17 registry (done), F16b normalizer; real consumer request for a live-target check |
 
 ## Work cards / acceptance criteria
 
@@ -266,6 +269,14 @@ Narrow/wide screen, keyboard, basic screen reader flow, use with JS disabled and
 
 First, the status/exit code/output contract must be pinned down. Adapters, discovery and artifact management must be extracted into separate modules with small PRs; CLI compatibility must be preserved. If there is a Bash 3.2 target, each step must be tested against it. If modularization would introduce a new runtime dependency, its benefit must be measured separately.
 
+**Slice 1 — dimension registry and adapter contract (2026-11-03, implemented on `dev/plugin-readiness`):**
+- Two text tables in `scan.sh` (`DIM_UNITS`, `SCAN_COMMANDS`) replace the dispatch `case`. Each unit records its record name, adapter function, gate class and toolchain need. Each command records its units in run order and what it leaves out. `run_scans`, the help line "not in 'all'" and the closing summary read these tables. No `scan_*` adapter was changed. The tables are plain text because the code must still run on Bash 3.2.
+- The contract is in `docs/adapters.md`: return codes, status helpers, SARIF location, and the rules guarded by e2e.
+- e2e has two new static checks. The first verifies that every unit names an existing function with valid values and that every command's units are registered. The second verifies that `run_scans` is the only dispatch site.
+- Behavior is unchanged. The old and new `scan.sh` were run on the same fixture with shimmed docker/uvx/npm, covering 13 commands, `bogus` and `help`, each in five scenarios: clean, findings, scanner error, no docker, no uvx. The 75 normalized outputs and `summary.json` files were identical. A deliberately reordered registry was caught in all 10 affected cases. The offline e2e run gave 243 passed and 0 failed.
+- **Naming:** the F16b "adapters" are native-output → evidence normalizers. They are a different layer. They attach to the same registry as an extra column (a SARIF or normalizer per unit) and need no second dispatch.
+- **Next slices, as needed:** move the image and tool pins used by `warm` and provenance into the registry; have `doctor` read the `needs` column; declare each unit's SARIF file name.
+
 ### F18 — Platform and paths
 
 Automated Linux and macOS smoke tests; for WSL2 there must be an actually executed result or an explicit “not verified” state. The minimum Python version must be documented. Repo and file paths containing spaces/Turkish characters, worktrees, unborn/shallow repos and deleted/renamed files must be tested. Arguments split on spaces must be moved to array/NUL-safe handling.
@@ -273,6 +284,8 @@ Automated Linux and macOS smoke tests; for WSL2 there must be an actually execut
 ### F19 — Finding / decision lifecycle
 
 A line shift must not needlessly reopen the same finding; two different packages with the same CVE in the same manifest must not be lost. Fixtures must be prepared for package identity and tool fingerprint. The decision record must carry owner/rationale/due date/verification conditions. The alias mapping source and applicable scanners must be specified; an ambiguous match must not produce automatic suppression. A backward compatibility/migration design must be done. The JSONL event history left over from T3.1 and the Phase A SQLite/checkpoint idea are a conditional continuation of this model: two separate persistent storage systems must not be added without measuring the re-run cost of interrupted long AI runs; if needed, start with a single format and test crash/resume and idempotent replay.
+
+**UI track — 2026-11-03:** F19a is taken directly after F26, as a prerequisite of the R13 local UI. Only the identity and decision-record contract moves. F19b (schema validation, output migration) stays in slot 9. R13a reads the F19a record, and R13c's allowlist approval writes it through the CLI.
 
 **2026-10-11 acceptance addendum — structured AI evidence:**
 
@@ -349,6 +362,8 @@ Consumers update versions with `bootstrap.sh`, but breaking changes between vers
 
 ### F26 — Serverless HTML report usability
 
+**UI track — 2026-11-03:** F26 is the first step of F26 → F19a → R13. It stays the zero-install view: a file that opens without a server. Its escaping and rendering are written so that the R13 local UI can reuse them instead of building a second renderer.
+
 Builds on the existing `lib/report_html.py` and `evidence.json`. The goal is to meet the first visual-use need with a small delivery; not to rewrite the scanners or the AI runner. As P2 it is taken up after the reliability deliveries, as a continuation of the F14 first-use flow. The F04 correct report contract is a prerequisite; F16's coverage/gap display is used. The F19 decision write model and the F21 cache are not prerequisites for this read-only view.
 
 **Acceptance criteria:**
@@ -393,7 +408,7 @@ If the consumer needs independent signature verification, design an identity/iss
 
 ### R08 — Situational static coverage
 
-Scorecard/conftest/modelscan are old research candidates, not selected dependencies. Nothing is added until a concrete consumer need, a gap in the existing tools, current license/pin, internet/token and maintenance cost are verified. The selected tool conforms to the F02/F16 contract. Nuclei/DAST is out of scope for this card; the old “maybe” was closed by a later out-of-scope decision.
+Scorecard/conftest/modelscan are old research candidates, not selected dependencies. Nothing is added until a concrete consumer need, a gap in the existing tools, current license/pin, internet/token and maintenance cost are verified. The selected tool conforms to the F02/F16 contract. Nuclei/DAST is out of scope for this card; the old “maybe” was closed by a later out-of-scope decision. Since 2026-11-03, an opt-in external form of it is tracked separately as R16.
 
 ### R09 — Wizard, last
 
@@ -432,9 +447,19 @@ The security of skill packages loaded into the agent is a concrete candidate tha
 - JSON/SARIF results are normalized via F03/F16 into the same run's `evidence.json` and HTML output. Tool/rule, file/line, scan mode and original risk information are preserved; the risk score does not replace CVSS or the kit's REAL decision.
 - Reporting only at the start. The baseline is not bulk-accepted automatically; a pre-install/hard gate is opened only with a separate policy decision and a false positive/miss measurement. If LLM mode is added, quality and uncertainty are evaluated separately with F12.
 
-### R13 — Local UI that starts scans (conditional)
+### R13 — Local UI that starts scans (planned, after F26 → F19a)
 
-Opened if the F26 report does not meet daily use and the user shows a concrete need for starting scans/tracking progress. The default plan order is after the R12 pilot decision; SkillSpector integration is not a technical prerequisite, and if the pilot is dropped the UI is not blocked. CLI and hook/CI behaviors remain the shared execution path.
+**Direction — 2026-11-03 (user decision):** No longer conditional. As the product grows, it needs control a static report cannot give: new vs resolved findings, approving a time-bound exception, seeing expiries and starting a scan. The UI track is **F26 → F19a → R13**. F19a comes first because, without a stable finding identity, a line shift shows the same finding as new and the UI would be wrong about the one thing it exists to show. Shape:
+- `scan.sh ui` starts a localhost server built only on the Python standard library. It adds no new dependency and no install step. This settles the framework question left open below.
+- **R13a — read-only:** run history, coverage (including skipped and indeterminate), and findings with their evidence and decisions, read from `summary.json`, `evidence.json` and the F19a decision record.
+- **R13b — run a dimension:** the first slice described below.
+- **R13c — approve a time-bound allowlist entry:** an expiry is mandatory. The UI does this through a CLI command, never by writing the file itself.
+- The UI is only a thin client over the CLI. Everything it writes shows up as a `git diff`, and it never commits. The gate decision always stays with the CLI and the hooks.
+- The static F26 report stays the zero-install fallback and shares its escaping and renderer with the UI.
+
+This supersedes "no writing suppressions from the UI" below. That rule now holds only until R13c, which requires F19a. The opening condition below, and the ordering after R12, no longer apply.
+
+Original record: opened if the F26 report does not meet daily use and the user shows a concrete need for starting scans/tracking progress. The default plan order is after the R12 pilot decision; SkillSpector integration is not a technical prerequisite, and if the pilot is dropped the UI is not blocked. CLI and hook/CI behaviors remain the shared execution path.
 
 **First slice:** Single repo, single active scan, fixed coverage options, start/status/log/result screen. A small local Python service calls the existing `scan.sh` commands; the screen reads the shared evidence output. The framework choice is made during implementation. The first version has no central hosting, user management, multi-repo panel, database, or writing suppressions/fixes from the UI.
 
@@ -493,6 +518,24 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - **R15d — Read-only MCP server:** `get_summary`, `list_findings`, `get_finding`, `diff_since`, `coverage_gaps`; local stdio, optional component. Starting scans and writing decisions are not exposed to MCP: finding text comes from scanned code (prompt injection, F11) and the single source of decisions remains `findings-<date>.md`.
 
 **Opening trigger:** A real consumer's request for between-scan vulnerability notification or alerting/agent integration. Since R15a is documentation, it can be taken during F14 without waiting for a trigger.
+
+### R16 — Optional external dynamic adapter (conditional)
+
+**Record — 2026-11-03:** Arose from user questions on agentic pentest tools (Strix, PentAGI) and a list of 15 classic security tools. None of them becomes a `scan.sh` dimension. A dimension must be deterministic, run in seconds, need no live target and be safe to gate a hook on, and these tools are not. Strix runs exploits and has an LLM in the loop. PentAGI is a self-hosted platform with Postgres and a mounted `docker.sock`. Nmap, OpenVAS, SQLmap and commercial web proxies need a live target or attack it, and several carry GPL/AGPL/NPSL or commercial licenses. The only defensible shape is an adapter that sits outside `all` and the hooks and is called explicitly. This card reopens the Round 4 "Nuclei/DAST out of scope" decision **only** in that shape.
+
+**Reference tool: nuclei** (to be verified when opened: MIT license, current version, digest). It is a single pinned binary or image whose templates can be limited to non-intrusive tags. It is preferred over Strix and ZAP for a first adapter because it is the furthest from "the kit attacks". Strix and ZAP baseline may follow through the same adapter shape if a consumer asks.
+
+**Acceptance criteria:**
+- The adapter is registered in the F17 registry under its own command. It is never part of `all` or `fast`, and no hook calls it.
+- The target is named explicitly on the command line and confirmed. There is no default target and no discovery. A run without a target is `not_applicable`, not `pass`.
+- Only non-intrusive template tags are used. An allowlist of tags is pinned in the kit, and widening it requires an explicit opt-in variable.
+- Native JSON is normalized to SARIF, then to `evidence.json` through the F16b normalizer, and is then judged by `/sec-triage` under the same hard-evidence bar. Live-target findings carry a separate source marker so they are never read as code findings.
+- The image or binary is pinned by digest, appears in provenance, and is listed in the F13 data-flow table, because it sends requests over the network.
+- License, version and template-set provenance are re-verified when the card opens.
+
+**Not in scope:** exploit execution, credential attacks, network/host scanning, and any tool that needs a server, a database or `docker.sock`.
+
+**Opening trigger:** a real consumer request for a live-target check that the static dimensions cannot answer, after F16b.
 
 ### F29 — py-deps environment selection
 
@@ -607,6 +650,7 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - Before the model closes, each applicable category for each element in the inventory must be tied either to a threat row or to a justified "not applicable" row. An empty cell must block closing.
 - The existing "boundary | STRIDE | threat | …" record format must be preserved, with the element identity added as an extra column. Earlier dated models are not overwritten.
 - The coverage record may later merge with F27; this card does not wait for F27.
+- **Addendum — 2026-11-03 (classic tool review: OSSEC/Snort):** For processes and data stores, the Repudiation and Tampering rows must ask whether an attack would be **detected**: is there security-relevant logging, alerting, and file-integrity or intrusion monitoring, and where is it evidenced? The answer is recorded as a threat row or a justified "not applicable" row. These are questions only. The kit does not run or recommend a specific HIDS/NIDS product.
 
 ## Current delivery order — primary planning source
 
@@ -627,17 +671,17 @@ The order below is the suggested default for a single team; items on the same ro
 | 6 | **F18** platform/path matrix and the remaining WSL2 validation | Portability is a core product promise; if there is no WSL2 environment, the other tests continue |
 | 7 | **F16a → R01 scope decision → F16b** | First the real output/suppression matrix; then the needed adapters. If the R01 helper is chosen, after F16b |
 | 8 | **R02 (local/private marketplace first) → R02 public + F32 → F15** plugin channel, first impression and landing QA (F10 moved to 4, F14 to 3b) | First use should be understandable and safe before the new distribution channel. R02 was moved here from slot 11 on 2026-11-02: distribution is the main bottleneck. F32's comparison row waits for the F12b measurement; the rest does not. The F31a pre-push profile can be taken together with F14a or here |
-| 8a | **F26** serverless HTML report usability | First visual use on top of F04/F14 and the F16 coverage contract; does not wait for F19/cache/agent runner |
+| 8a | **F26 → F19a → R13a → R13b → R13c** UI track: serverless report, finding identity, then the `scan.sh ui` local UI | F26 first visual use on top of F04/F14 and the F16 coverage contract. F19a moved up from slot 9 on 2026-11-03 because the UI needs stable finding identity. R13 (planned since 2026-11-03) runs on the Python standard library, starts read-only, then adds running a dimension and time-bound allowlist approval through the CLI; the gate stays in the CLI |
 | 8b | **R12a → R12b if the condition is met** SkillSpector | First a fixture-based benefit/false positive measurement, then a pinned optional adapter; the default gate does not change |
 | 8c | **F33a → F33b → F34** plugin hook set and `pkgcheck` signals | Added on 2026-11-03 (Phoenix comparison). Comes after R02 because hooks come with the plugin's `hooks.json` file. F34 waits for F06's cache policy. Not in scope for the plugin-ready release |
 | 8d | **F36** STRIDE-per-element completeness check | Added on 2026-11-03. A small skill text change with no dependencies; can be slotted in |
-| 9 | **F19a → F19b** finding/decision and evidence contract | Stable identity, uncertainty, schema validation and backward compatibility; JSONL/resume only with a measured need |
+| 9 | **F19b** (F19a moved to 8a on 2026-11-03) finding/decision and evidence contract | Stable identity, uncertainty, schema validation and backward compatibility; JSONL/resume only with a measured need |
 | 9a | **F27 → F28a → F28b if the condition is met** deep review quality | Coverage record followed by an independent validation pilot; F28 also waits for F12c. This AI track does not block the independent F20/F21 work |
 | 10 | **F20 → F31b + F14b → F21a** measurement, parallel dimensions, quiet output and opt-in dimension cache | No cache without measuring speed gain and invalidation equivalence. F31b only gives a meaningful gain after F30; F14b uses the same output infrastructure |
 | 11 | *(R02 moved to slot 8)* | — |
 | 12 | **F21b / R03** expansion where the need opens up | F21b if there is a monorepo cost; R03 if there is a Python/JS triage load. Neither is a prerequisite of the other |
-| 13 | **F17** modular maintenance as needed | Small slices on top of stable behavior; no rewrite that holds up all work |
-| 14 | **R04/R05/R06/R07/R08/R10/R11/R13/R14/R15** conditional reserve | Planned only if the trigger and dependencies on the card occur. R11 opens when pin staleness or a CVE triggers it; R13 when the need for scan control in F26 usage is verified |
+| 13 | **F17** modular maintenance as needed | Small slices on top of stable behavior; no rewrite that holds up all work. Slice 1 (dimension registry + `docs/adapters.md`) was taken early on 2026-11-03 at the user's request; the remaining slices stay here |
+| 14 | **R04/R05/R06/R07/R08/R10/R11/R14/R15/R16** conditional reserve | Planned only if the trigger and dependencies on the card occur. R11 opens when pin staleness or a CVE triggers it. R13 left this list on 2026-11-03 and is now planned in 8a |
 | 15 | **R09 wizard** last | After the active priority work, redesign with current UX data |
 
 **Independent AI measurement track:** F12a can start in the same planning period as slot 1; it does not need an API key. F12b follows with suitable backend access, and F12c if the results are sufficient. This is not an instruction to run agents in parallel; it is a description of development dependencies. The prompt/threshold does not change without measuring the production default; deterministic fixes do not wait for this track. R04/R05 are not opened until the relevant F12 gates are complete.
