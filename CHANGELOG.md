@@ -4,37 +4,39 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.20.0] - 2026-11-03
 
 ### Upgrade notes
-- py-deps no longer audits an active `VIRTUAL_ENV` that lives outside the repo or is not a venv.
-  If your repo has no `.venv` and you relied on a venv activated from elsewhere, set
-  `PY_VENV=/path/to/venv` (env or `.security-audit.conf`). Without it, py-deps reads the committed
-  manifests statically, or reports `indeterminate` when there are none.
+Read the first three before updating: they change what scripts that read the kit's output see.
+
 - **`summary.json` schema 2 (breaking for parsers of `status`).** The value `"fail"` is gone: it is
   now `"findings"` or `"error"`. Dimensions whose tool was missing or that had nothing to scan are
   no longer `"pass"`: they are `"skipped"` or `"not_applicable"`. Branch on the new
   `schema_version` (absent = 1). If you meant "this dimension blocked", read the new per-dimension
   `gate` (`block`/`allow`) or top-level `gate.blocked_by`. Full mapping:
-  [docs/schema/summary.md](docs/schema/summary.md#migrating-from-schema-1).
-- The gate itself is unchanged: what blocked before blocks now, what was allowed is still allowed.
+  [docs/schema/summary.md](docs/schema/summary.md#migrating-from-schema-1). The gate itself is
+  unchanged: what blocked before blocks now, and what was allowed is still allowed.
 - **`sarif/` holds the latest `SARIF=1` run's files only.** An earlier run's SARIF is no longer
   carried forward: after `scan.sh secret` with `SARIF=1`, `sarif/semgrep.sarif` is gone. If you
   upload the directory, run every dimension you want uploaded in the same scan (e.g. `all`).
-- `summary.json` gains `provenance` and `artifacts`; `evidence.json` gains `scan.provenance`
-  (both additive).
-- The end-of-scan output is now one closing summary (F14a). Lines other tools may read are kept:
-  `── run: <id>` (now followed by `· scan <cmd> · <s>s`), `NOT inspected:`, `BLOCKED (rc=…)`,
-  `NEXT STEP`. The hooks' own BLOCKED line no longer guesses the cause ("secret in staged changes").
-  It points at the summary, which says whether a finding or a failed scanner blocked.
-- `summary.json` gains `seconds` (run and per dimension; additive, not copied into evidence.json).
+- `scan.sh evidence` and `scan.sh report` now exit 1 when they cannot write their file (no SARIF,
+  no evidence.json, no python3, builder failure). Scripts that called them and ignored a missing
+  output should check the exit code. A scan's own exit code is not affected.
+- py-deps no longer audits an active `VIRTUAL_ENV` that lives outside the repo or is not a venv.
+  If your repo has no `.venv` and you relied on a venv activated from elsewhere, set
+  `PY_VENV=/path/to/venv` (env or `.security-audit.conf`). Without it, py-deps reads the committed
+  manifests statically, or reports `indeterminate` when there are none.
 - trivy now keeps its DB in a docker volume, `security-audit-trivy`, which takes ~1.7 GB on disk. To
   reclaim the space: `docker volume rm security-audit-trivy`. In CI, set `TRIVY_CACHE=/abs/path` and
   cache that directory. Otherwise each job downloads the DB once, as before. `summary.json` gains
   `trivy_db` and `provenance.trivy_db` (additive).
-- `scan.sh evidence` and `scan.sh report` now exit 1 when they cannot write their file (no SARIF,
-  no evidence.json, no python3, builder failure). Scripts that called them and ignored a missing
-  output should check the exit code. A scan's own exit code is not affected.
+- The end-of-scan output is now one closing summary (F14a). Lines other tools may read are kept:
+  `── run: <id>` (now followed by `· scan <cmd> · <s>s`), `NOT inspected:`, `BLOCKED (rc=…)`,
+  `NEXT STEP`. The hooks' own BLOCKED line no longer guesses the cause ("secret in staged changes").
+  It points at the summary, which says whether a finding or a failed scanner blocked.
+- `summary.json` gains `provenance` and `artifacts`; `evidence.json` gains `scan.provenance` and
+  `scan.artifacts` (all additive).
+- `summary.json` gains `seconds` (run and per dimension; additive, not copied into evidence.json).
 
 ### Added
 - **Closing summary and `scan.sh help` (F14a).** Every scan ends with one screen. It shows each
