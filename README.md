@@ -110,8 +110,23 @@ bash bootstrap.sh v1.20.0 --expect=<sha>  # enforce the pin: refuse if the tag r
 > `KIT_REPO=https://… bash bootstrap.sh v1.20.0`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
-at the kit's hooks folder -> copies the `sec-triage` + `sec-sast-deep` skills into
-`.claude/skills/`. Idempotent, safe to re-run.
+at the kit's hooks folder -> copies the `sec-*` skills into `.claude/skills/`. Idempotent, safe to
+re-run.
+
+Hooks the repo already has are **kept**. That covers `.git/hooks`, a custom `core.hooksPath` such
+as `.husky`, and the pre-commit framework. Install names what it found and chains it:
+`core.hooksPath` then points at generated wrappers in `.git/security-audit-hooks/`, which run the
+kit's hook and then the repo's own, with the same arguments and stdin. A failing hook of yours
+still blocks. A repo with no hooks gets the kit's hooks folder directly, without a question.
+What install changed is recorded in `.git/security-audit-install.state`, and
+**`install.sh --uninstall`** undoes exactly that:
+- `core.hooksPath` goes back to its previous value (or is unset);
+- the wrappers are removed;
+- skills you have not edited are removed;
+- the agent hook entry is removed if install added it.
+
+It keeps `.security-audit.conf`, `.security-exclusions.md`, the scan record, any skill you edited,
+and the vendored kit. Running `--uninstall` twice is safe.
 
 ## Other ways to install
 

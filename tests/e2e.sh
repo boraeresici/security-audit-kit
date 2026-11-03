@@ -1166,6 +1166,81 @@ if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SR
 [ -z "$(git -C "$TSO" config core.hooksPath 2>/dev/null || true)" ] && ok "--skills-only: core.hooksPath NOT set" || no "--skills-only: hooksPath should be unset"
 rm -rf "$TSO"
 
+echo "-- F10: install keeps the hooks a repo already has, says so, and can be undone --"
+# f10repo <dir>: a repo with the kit vendored and one commit.
+f10repo(){ mkdir -p "$1/tools/security-audit-kit"
+  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$1/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$1/tools/security-audit-kit"/; fi
+  ( cd "$1" && git init -q && git -c user.email=e2e@test -c user.name=e2e commit -q --allow-empty -m init ); }
+f10hook(){ printf '#!/bin/sh\necho "%s $*" >> "%s"\ncat >> "%s" 2>/dev/null\nexit %s\n' "$2" "$3" "$3" "${4:-0}" > "$1"; chmod +x "$1"; }
+f10commit(){ (cd "$1" && echo "$2" > "f$2.txt" && git add "f$2.txt" && SKIP_SECURITY=1 git -c user.email=e2e@test -c user.name=e2e commit -qm "c$2") >/dev/null 2>&1; }
+# (a) hooks in .git/hooks: kept running, after the kit's; install says what it found
+T10="$(mktemp -d)"; f10repo "$T10"; M10="$T10/.markers"
+f10hook "$T10/.git/hooks/pre-commit" user-pre-commit "$M10"; f10hook "$T10/.git/hooks/commit-msg" user-commit-msg "$M10"
+f10hook "$T10/.git/hooks/pre-push" user-pre-push "$M10"
+I10="$(cd "$T10" && bash tools/security-audit-kit/install.sh 2>&1)"
+grep -q 'pre-commit' <<<"$I10" && grep -qi 'keep running' <<<"$I10" \
+  && ok "F10: install names the repo's existing hooks and says they keep running" || no "F10: existing hooks not reported: $(grep -i hook <<<"$I10" | head -3)"
+f10commit "$T10" 1
+grep -q '^user-pre-commit' "$M10" && grep -q '^user-commit-msg' "$M10" \
+  && ok "F10: after install the repo's own pre-commit and commit-msg still run" || no "F10: user hooks silenced: $(cat "$M10" 2>/dev/null)"
+git init -q --bare "$T10/remote.git"; git -C "$T10" remote add origin "$T10/remote.git"
+(cd "$T10" && SKIP_SECURITY=1 git push -q origin HEAD:refs/heads/main) >/dev/null 2>&1
+grep -q '^user-pre-push origin' "$M10" && grep -q 'refs/heads/main' "$M10" \
+  && ok "F10: a chained pre-push gets its args and the refs on stdin" || no "F10: pre-push chain lost args/stdin: $(cat "$M10")"
+f10hook "$T10/.git/hooks/pre-commit" user-pre-commit "$M10" 1
+f10commit "$T10" 2
+if git -C "$T10" log --format=%s | grep -qx c2; then no "F10: a failing user pre-commit no longer blocks the commit"
+elif [ "$(grep -c '^user-pre-commit' "$M10")" -ge 2 ]; then ok "F10: a failing user pre-commit still blocks the commit"
+else no "F10: the user pre-commit did not run on the second commit"; fi
+f10hook "$T10/.git/hooks/pre-commit" user-pre-commit "$M10"
+# uninstall: hooksPath back to what it was (unset), user hooks untouched, unmodified skills removed,
+# a modified one kept, config kept; a second run has nothing to undo
+printf '\nlocal note\n' >> "$T10/.claude/skills/sec-triage/SKILL.md"
+U10="$(cd "$T10" && bash tools/security-audit-kit/install.sh --uninstall 2>&1)"; U10RC=$?
+[ "$U10RC" -eq 0 ] && [ -z "$(git -C "$T10" config core.hooksPath || true)" ] && [ -x "$T10/.git/hooks/pre-commit" ] \
+  && ok "F10: uninstall restores the previous hooksPath (unset) and leaves the repo's hooks" || no "F10: uninstall hooks (rc=$U10RC): $(git -C "$T10" config core.hooksPath)"
+[ ! -e "$T10/.claude/skills/sec-audit/SKILL.md" ] && [ -f "$T10/.claude/skills/sec-triage/SKILL.md" ] && grep -q 'sec-triage' <<<"$U10" \
+  && [ -f "$T10/.security-audit.conf" ] \
+  && ok "F10: uninstall removes unmodified skills, keeps a modified one (and says so), keeps the config" \
+  || no "F10: uninstall skills/config: $(find "$T10/.claude/skills" -mindepth 1 -maxdepth 1 2>&1 | tr '\n' ' ')"
+U10B="$(cd "$T10" && bash tools/security-audit-kit/install.sh --uninstall 2>&1)"; U10RC=$?
+[ "$U10RC" -eq 0 ] && grep -qi 'nothing to undo' <<<"$U10B" && ok "F10: uninstall is idempotent" || no "F10: second uninstall (rc=$U10RC)"
+f10commit "$T10" 3; grep -c '^user-pre-commit' "$M10" | grep -q '^[2-9]' && ok "F10: after uninstall the repo's own hooks run as before" || no "F10: user hooks broken after uninstall"
+rm -rf "$T10"
+# (b) a custom hooksPath (husky-style .husky/): chained, and restored by uninstall
+T10="$(mktemp -d)"; f10repo "$T10"; M10="$T10/.markers"; mkdir -p "$T10/.husky"
+f10hook "$T10/.husky/pre-commit" husky-pre-commit "$M10"; git -C "$T10" config core.hooksPath .husky
+(cd "$T10" && bash tools/security-audit-kit/install.sh) >/dev/null 2>&1; f10commit "$T10" 1
+grep -q '^husky-pre-commit' "$M10" && ok "F10: a custom core.hooksPath keeps running after install" || no "F10: custom hooksPath silenced"
+(cd "$T10" && bash tools/security-audit-kit/install.sh --uninstall) >/dev/null 2>&1
+[ "$(git -C "$T10" config core.hooksPath)" = ".husky" ] && ok "F10: uninstall restores a custom hooksPath" || no "F10: custom hooksPath not restored: $(git -C "$T10" config core.hooksPath)"
+rm -rf "$T10"
+# (c) pre-commit framework: its hook is kept, and the alternative (--skills-only) is named
+T10="$(mktemp -d)"; f10repo "$T10"; M10="$T10/.markers"
+printf 'repos: []\n' > "$T10/.pre-commit-config.yaml"
+printf '#!/bin/sh\n# File generated by pre-commit: https://pre-commit.com\necho framework >> "%s"\n' "$M10" > "$T10/.git/hooks/pre-commit"; chmod +x "$T10/.git/hooks/pre-commit"
+I10="$(cd "$T10" && bash tools/security-audit-kit/install.sh 2>&1)"; f10commit "$T10" 1
+grep -qi 'pre-commit framework' <<<"$I10" && grep -q -- '--skills-only' <<<"$I10" && grep -q '^framework' "$M10" \
+  && ok "F10: a pre-commit framework hook keeps running; the --skills-only alternative is named" || no "F10: pre-commit framework handling"
+rm -rf "$T10"
+# (d) a fresh repo: no question, no chain — the kit's hooks dir directly (as before)
+T10="$(mktemp -d)"; f10repo "$T10"
+I10="$(cd "$T10" && bash tools/security-audit-kit/install.sh </dev/null 2>&1)"; I10RC=$?
+[ "$I10RC" -eq 0 ] && [ "$(git -C "$T10" config core.hooksPath)" = "tools/security-audit-kit/hooks" ] \
+  && ok "F10: a fresh repo installs without a question, hooksPath -> the kit's hooks" || no "F10: fresh install (rc=$I10RC): $(git -C "$T10" config core.hooksPath)"
+(cd "$T10" && bash tools/security-audit-kit/install.sh --uninstall) >/dev/null 2>&1
+[ -z "$(git -C "$T10" config core.hooksPath || true)" ] && [ ! -d "$T10/.claude/skills/sec-audit" ] \
+  && ok "F10: uninstall of a fresh install leaves no hooksPath and no kit skills" || no "F10: fresh uninstall left state"
+rm -rf "$T10"
+# (e) an install made before F10 has no record: hooksPath = the kit's dir and unedited kit skills
+#     are recognisably the kit's, so they are undone; nothing else is touched
+T10="$(mktemp -d)"; f10repo "$T10"
+(cd "$T10" && bash tools/security-audit-kit/install.sh) >/dev/null 2>&1; rm -f "$T10/.git/security-audit-install.state"
+U10="$(cd "$T10" && bash tools/security-audit-kit/install.sh --uninstall 2>&1)"
+[ -z "$(git -C "$T10" config core.hooksPath || true)" ] && [ ! -d "$T10/.claude/skills/sec-audit" ] && grep -qi 'older' <<<"$U10" \
+  && ok "F10: an install made before the record existed is still undone (hooksPath, unedited skills)" || no "F10: legacy uninstall: $U10"
+rm -rf "$T10"
+
 echo "-- gate honesty: no file listing piped into 'grep -q' (SIGPIPE -> silent false negative) --"
 # `git ls-files | grep -q` exits at the first match, git takes SIGPIPE, and pipefail turns the
 # pipeline into 141 -> the `||` branch runs and the dimension reports "not present". It is

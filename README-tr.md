@@ -190,6 +190,21 @@ pre-commit install                         # sec-staged + sec-deps
 pre-commit install --hook-type pre-push    # sec-all
 ```
 
+`install.sh` repoda zaten olan hook'lari **korur**: `.git/hooks`, `.husky` gibi ozel bir
+`core.hooksPath`, pre-commit framework. Bulduklarini adlariyla yazar ve zincirler: `core.hooksPath`,
+`.git/security-audit-hooks/` icinde uretilen sarmalayicilari gosterir; bunlar once kitin hook'unu,
+sonra repo'nun kendi hook'unu ayni argumanlar ve stdin ile calistirir. Senin hook'un basarisiz
+olursa commit yine bloklanir. Hic hook'u olmayan repo, soru sormadan dogrudan kitin hooks dizinini
+alir. Kurulumun degistirdikleri `.git/security-audit-install.state` dosyasina yazilir ve
+**`install.sh --uninstall`** tam olarak bunlari geri alir:
+- `core.hooksPath` eski degerine doner (ya da kaldirilir);
+- sarmalayicilar silinir;
+- duzenlemedigin skill'ler silinir;
+- agent hook kaydi, kurulum eklediyse kaldirilir.
+
+`.security-audit.conf`, `.security-exclusions.md`, tarama kaydi, duzenledigin skill'ler ve vendor'daki
+kit korunur. `--uninstall`'i iki kez calistirmak guvenlidir.
+
 **Ya** pre-commit framework **ya da** kitin kendi hook'lari (`install.sh` / `core.hooksPath`)
 kullan, ikisi birden degil (`core.hooksPath` pre-commit'i golgeler). Hook'lara dokunmadan
 yalniz Claude skill'leri + config icin: `bash tools/security-audit-kit/install.sh --skills-only`.

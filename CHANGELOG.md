@@ -11,6 +11,8 @@ All notable changes to this project are documented here. The format is based on
   It used to exit `1`, the same code as "update available"; automation that treated non-zero as
   "update" should check for 1. Release candidates are offered only with `--channel=rc` (or
   `KIT_CHANNEL=rc`); before, an RC pin was offered newer RCs implicitly.
+- If your repo had its own git hooks, re-run `install.sh` after updating. Your hooks were silenced
+  by the old install; now they are chained and run again. `install.sh --uninstall` is new.
 - The pkgcheck cache format changed (findings, not verdicts). Entries written by older kits are
   ignored, so each package is scanned once more on its next check (~15-20 s), and then cached again.
 - semgrep and trivy no longer scan `docs/security/scan-findings/`. If your repo committed scan
@@ -33,6 +35,16 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **install silenced the hooks a repo already had (F10).** It pointed `core.hooksPath` at the
+  kit's folder unconditionally, so `.git/hooks/*`, a custom `core.hooksPath` (husky) and the
+  pre-commit framework's hook stopped running without a word. There was also no way back. Now
+  install names the hooks it finds and chains them: generated wrappers in
+  `.git/security-audit-hooks/` run the kit's hook, then the repo's own, with the same arguments
+  and stdin. A failing hook still blocks. A repo with no hooks gets the kit's folder as before,
+  with no question. `install.sh --uninstall` restores the previous `core.hooksPath`, removes the
+  wrappers, unedited kit skills and the agent hook (if install added it), and keeps the config,
+  edited skills and the scan record. It is idempotent, and works on installs made before the
+  record existed.
 - **A stable release could go out with CI unverified (F07).** `scripts/release.sh final` only
   *warned* when `gh` was missing, the API failed, no check-runs existed, or a required check was
   missing. It treated a pending run as "not found", and took whichever run of a re-run check the

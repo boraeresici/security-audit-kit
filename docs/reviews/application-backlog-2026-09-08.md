@@ -180,6 +180,13 @@ An e2e job that requires no external API key must run on PRs and be added to the
 
 Default, custom hooksPath and pre-commit framework fixtures must be prepared. Existing integration must not be silently disabled; a concrete install plan including `--skills-only` must be shown. An idempotent rollback/uninstall path that records the changes the kit made must preserve existing config and user hooks. A fresh install must not require needless extra interaction; a decision should be required only on a real conflict.
 
+**Status — 2026-11-03:** implemented on `dev/plugin-readiness`.
+- **Existing hooks:** hooks the repo already has are chained, not silenced. This covers `.git/hooks`, a custom hooksPath such as `.husky`, and the pre-commit framework. Generated wrappers in `.git/security-audit-hooks/` run the kit's hook first, then the repo's own, with the same arguments and stdin (stdin only for hooks git feeds through it, such as pre-push). A failing user hook still blocks.
+- **Plan and questions:** install prints what it found and what it does. It asks no question, because chaining leaves no conflict to decide. The pre-commit framework case also names `--skills-only` as the alternative.
+- **Record and uninstall:** a record in `.git/security-audit-install.state` drives an idempotent `--uninstall`. Uninstall restores the previous hooksPath and removes the wrappers, unedited skills, and the agent hook entry if install added it. It keeps the config, edited skills, the scan record and the kit.
+- **Older installs:** an install made before the record existed is recognised by the kit's hooksPath, or by a skill identical to the kit's template.
+- **Tests:** 15 e2e checks. Fixtures: `.git/hooks`, husky-style hooksPath, pre-commit framework, fresh install, legacy install.
+
 ### F11 — Kit threat model
 
 Data/privilege flows must be mapped for config, scanned code, scanner output, AI instructions, cache, vendor and external registries. It must be stated explicitly that the config is executable. A read-only source + separate writable artifact mount must be tested with at least gitleaks and trivy fixtures. If compatibility breaks, the migration cost must be recorded; an unverified risk must not be presented as an exploit.
