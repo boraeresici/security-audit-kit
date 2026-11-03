@@ -553,7 +553,32 @@ printf 'v2.1.0-rc.1 0000000000000000000000000000000000000000\n' > "$F25C/tools/s
 F25OUT="$(cd "$F25C" && KIT_REPO="$F25K" bash "$KIT_SRC/bootstrap.sh" --check 2>&1 || true)"
 grep -q 'note-B' <<<"$F25OUT" && grep -q 'breaking-A' <<<"$F25OUT" \
   && ok "F25: an RC pin also gets its own final version's notes" || no "F25: RC pin skipped its final's notes"
-rm -rf "$F25K" "$F25C"
+# An RC tester's pin is NEWER than the latest final (v1.20.0-rc.1 vs v1.19.1, found dogfooding
+# v1.20.0-rc.1): --check said "UPDATE AVAILABLE -> v1.19.1", i.e. a downgrade.
+F25K2="$(mktemp -d)"
+printf '# Changelog\n\n## [4.0.0] - 2026-04-01\n\n### Upgrade notes\n- note-4\n\n## [3.0.0] - 2026-03-01\n\n### Upgrade notes\n- note-3\n' > "$F25K2/CHANGELOG.md"
+( cd "$F25K2" && git init -q && git add -A && git -c user.email=e2e@test -c user.name=e2e commit -qm k \
+    && git tag v3.0.0 && git tag v4.0.0-rc.1 )
+printf 'v4.0.0-rc.1 0000000000000000000000000000000000000000\n' > "$F25C/tools/security-audit-kit/.kit-version"
+F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check 2>&1)" || F25RC=$?
+[ "$F25RC" -eq 0 ] && ! grep -q 'UPDATE AVAILABLE' <<<"$F25OUT" && grep -q 'ahead of the latest release' <<<"$F25OUT" \
+  && ok "F25: an RC pin newer than the latest final is not told to 'update' (downgrade) to it" \
+  || no "F25: RC pin offered a downgrade (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+# ...but a newer RC of its own line IS offered to an RC tester
+( cd "$F25K2" && git tag v4.0.0-rc.2 )
+F25RC=0; F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check 2>&1)" || F25RC=$?
+[ "$F25RC" -eq 1 ] && grep -q 'UPDATE AVAILABLE -> .*v4.0.0-rc.2' <<<"$F25OUT" \
+  && ok "F25: an RC pin is offered the newer RC" || no "F25: newer RC not offered (rc=$F25RC): $(tr '\n' '|' <<<"$F25OUT")"
+# ...and the final, once it exists (rc.10 > rc.2 numerically, final > every rc)
+( cd "$F25K2" && git tag v4.0.0-rc.10 && git tag v4.0.0 )
+F25OUT="$(cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check 2>&1 || true)"
+grep -q 'UPDATE AVAILABLE -> .*v4.0.0$' <<<"$F25OUT" && ok "F25: an RC pin is offered its final once released" \
+  || no "F25: RC pin not offered the final: $(tr '\n' '|' <<<"$F25OUT")"
+# a final pin at the latest final is up to date (exit 0)
+printf 'v4.0.0 0000000000000000000000000000000000000000\n' > "$F25C/tools/security-audit-kit/.kit-version"
+F25RC=0; (cd "$F25C" && KIT_REPO="$F25K2" bash "$KIT_SRC/bootstrap.sh" --check >/dev/null 2>&1) || F25RC=$?
+[ "$F25RC" -eq 0 ] && ok "F25: a pin at the latest final is up to date" || no "F25: latest final pin rc=$F25RC"
+rm -rf "$F25K" "$F25C" "$F25K2"
 # install.sh re-run: an existing config is kept, and settings added since are named
 F25I="$(mktemp -d)"
 # shellcheck disable=SC2016  # the config line is a literal: its ${...} is for scan.sh to expand
@@ -1396,6 +1421,10 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
     && ok "F30: DB identity in provenance, its age only in summary.json run metadata" || no "F30: trivy_db fields wrong: $F02SUM"
   grep -qE 'container +pass .*trivy DB 1h old' <<<"$(sed 's/\x1b\[[0-9;]*m//g' "$F02/out")" \
     && ok "F30: the closing table shows the DB age" || no "F30: DB age not in closing table"
+  # soft findings keep the DB age visible in the closing table (rc.1 dogfood: a 72-char cut hid it)
+  f30 env F30_META="$(f30meta 1)" F30_RC=5 "$BASH" tools/security-audit-kit/scan.sh container
+  grep -qE 'container +findings .*trivy DB 1h old' <<<"$(sed 's/\x1b\[[0-9;]*m//g' "$F02/out")" \
+    && ok "F30: with soft findings the closing table still shows the DB age" || no "F30: DB age cut off on a findings row"
   # (c) stale DB (48h > 24h) -> let trivy refresh it, and say why
   f30 env F30_META="$(f30meta 48)" "$BASH" tools/security-audit-kit/scan.sh container
   ! f30fs | grep -q -- '--skip-db-update' && grep -q 'refreshing' "$F02/out" \

@@ -56,6 +56,19 @@ cd "$ROOT"
 # --- upgrade notes (F25): what changes for a consumer between the pinned version and a target ---
 semver_base(){ printf '%s' "${1#v}" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' || true; }
 ver_lt(){ [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
+# Release order for tags: an RC comes BEFORE its final (sort -V alone puts v1.2.0-rc.1 after v1.2.0)
+# and rc.10 after rc.2. Key: X.Y.Z.1 for a final, X.Y.Z.0.N for a pre-release N.
+release_key(){
+  local t="${1#v}" b n
+  b="$(semver_base "$t")"; [ -n "$b" ] || return 0
+  if [ "$t" = "$b" ]; then printf '%s.1\n' "$b"
+  else n="$(printf '%s' "${t#"$b"}" | grep -oE '[0-9]+' | head -1 || true)"; printf '%s.0.%s\n' "$b" "${n:-0}"; fi
+}
+newest_tag(){   # tags on stdin -> the newest in release order
+  local t k
+  while IFS= read -r t; do k="$(release_key "$t")"; [ -n "$k" ] && printf '%s %s\n' "$k" "$t"; done \
+    | sort -V -k1,1 | tail -1 | awk '{print $2}'
+}
 # <changelog> <pinned ref> <target tag> -> the "### Upgrade notes" of every version after the pin, up
 # to and including the target, newest first. An RC pin (v1.2.0-rc.1) also gets 1.2.0's notes: the
 # final may say more than the RC did.
@@ -83,14 +96,26 @@ upgrade_notes(){
 if [ "$DO_CHECK" = "1" ]; then
   cur="(no vendor)"; [ -f "$ROOT/$DEST_REL/.kit-version" ] && cur="$(awk '{print $1}' "$ROOT/$DEST_REL/.kit-version")"
   tags="$(git ls-remote --tags --refs "$KIT_REPO" 2>/dev/null | awk -F/ '{print $NF}' | grep -E '^v?[0-9]+' || true)"
-  # Final releases first: sort -V puts v1.2.0-rc.1 AFTER v1.2.0, so a plain sort offered a final's
-  # own (older) RC as "latest". An RC is offered only when no final release exists at all.
-  latest="$(grep -v -- '-' <<<"$tags" | sort -V | tail -1)"
-  [ -n "$latest" ] || latest="$(sort -V <<<"$tags" | tail -1)"
-  [ -z "$latest" ] && die "no remote tag found (repo unreachable or no tags at all)."
+  # A final pin follows final releases; an RC pin (someone testing a pre-release) follows the
+  # newest tag of any kind. Ordering is release order (release_key), not sort -V: that put a final's
+  # own older RC above it, and an RC pin newer than the latest final was told to "update" — down.
+  final="$(grep -v -- '-' <<<"$tags" | newest_tag)"
+  newest="$(newest_tag <<<"$tags")"
+  [ -n "$newest" ] || die "no remote tag found (repo unreachable or no tags at all)."
+  latest="${final:-$newest}"
+  case "$cur" in *-*) latest="$newest" ;; esac
   echo "vendored version : $cur"
-  echo "latest tag       : $latest"
-  if [ "$cur" = "$latest" ]; then ok "up to date."; exit 0; fi
+  echo "latest tag       : ${final:-(no final release yet)}"
+  case "$cur" in *-*) [ "$newest" != "$final" ] && echo "newest pre-release: $newest" ;; esac
+  if [ "$cur" = "$latest" ]; then
+    case "$cur" in *-*) [ -n "$final" ] && [ "$cur" != "$final" ] \
+      && ok "pre-release pin, ahead of the latest release ($final) — nothing newer to move to." ;; esac
+    ok "up to date."; exit 0
+  fi
+  ck="$(release_key "$cur")"
+  if [ -n "$ck" ] && [ "$(printf '%s\n%s\n' "$ck" "$(release_key "$latest")" | sort -V | tail -1)" = "$ck" ]; then
+    ok "ahead of the latest release ($latest) — nothing newer to move to."; exit 0
+  fi
   warn "UPDATE AVAILABLE -> bash $DEST_REL/bootstrap.sh $latest"
   # One commit of the target tag, into a throwaway bare repo — enough to read its CHANGELOG.
   if [ -z "$(semver_base "$cur")" ]; then

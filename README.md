@@ -350,7 +350,7 @@ scan ends with one screen, the closing summary:
    secret     pass             2.8s
    sast       error            4.7s  semgrep exit 2 (scan error, not a finding)
    js-deps    skipped          0.1s  package.json found but none is auditable ...
-   container  findings        48.3s  CRITICAL/HIGH findings (soft: reported, does not block)
+   container  findings         4.5s  CRITICAL/HIGH findings (soft, not blocking) · trivy DB 3h old
    iac        not_applicable   0.0s  no terraform
 ── not in 'all': osv guarddog zizmor sbom — run scan.sh <name> for those
 ── BLOCKED (rc=1): sast (error) — commit/push is blocked.

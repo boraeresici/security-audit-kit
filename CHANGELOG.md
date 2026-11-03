@@ -73,6 +73,17 @@ Read the first three before updating: they change what scripts that read the kit
   - `provenance.trivy_db.updated_at` names the DB used (so evidence.json does too), and the
     top-level `trivy_db` records its age.
 
+### Fixed (v1.20.0-rc.2 — rc.1 dogfood)
+- **`bootstrap.sh --check` told an RC tester to "update" to an older release.** With the repo
+  pinned to v1.20.0-rc.1 and v1.19.1 the latest final, it printed `UPDATE AVAILABLE -> v1.19.1`, a
+  downgrade. The cause was rc.1's own "offer the final, not its RC" change, which compared tags for
+  equality only. Tags are now compared in release order: an RC comes before its final, and rc.10
+  comes after rc.2. A final pin follows final releases. An RC pin follows the newest tag, final or
+  RC. A pin at or ahead of what would be offered is "up to date" (exit 0), and an RC pin ahead of
+  the latest final says so.
+- The closing table cut the container row's reason at 72 characters, which hid the trivy DB age
+  on a findings row. The soft-findings reason is shorter now: "(soft, not blocking)".
+
 ### Fixed
 - **`bootstrap.sh --check` offered a release candidate older than the final.** `sort -V` puts
   `v1.19.1-rc.1` after `v1.19.1`, so once 1.19.1 was released, `--check` reported `latest tag:
