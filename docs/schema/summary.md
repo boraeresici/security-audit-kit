@@ -28,6 +28,7 @@ lives in [`evidence.json`](evidence.md).
                  "rules": {"semgrep_configs": "--config p/python …", "local_rules_sha256": null},
                  "tools": {"semgrep": "1.166.0", "…": "…", "gitleaks": "ghcr.io/gitleaks/gitleaks:v8.21.2@sha256:…"}},
   "artifacts": [{"path": "sarif/semgrep.sarif", "sha256": "…"}],
+  "trivy_db": {"updated_at": "2026-11-03T01:30:30Z", "downloaded_at": "2026-11-03T05:44:24Z", "age_hours": 3.2, "cache": "security-audit-trivy"},
   "dimensions": [
     {"name": "secret",  "exit_code": 0, "status": "skipped",        "gate": "allow", "reason": "no docker -> gitleaks skipped"},
     {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "seconds": 3.1, "reason": null},
@@ -99,6 +100,12 @@ is why `evidence.json` can carry it verbatim and stay diffable.
 | `tools` | every pinned tool: a version for the uvx tools, `image:tag@digest` for the docker ones |
 
 Digests are `null` when the machine has no sha256 tool.
+
+When the `container` dimension ran, `provenance.trivy_db.updated_at` names the vulnerability DB it
+used (F30). That is the DB's identity: the same DB always gives the same value, so it can be part of
+`evidence.json`. Its **age** is run metadata and goes only into the top-level `trivy_db` object
+(`updated_at`, `downloaded_at`, `age_hours`, `cache`; `null` when trivy did not run). A "clean" from
+a 20-hour-old DB and one from a fresh DB can be told apart there.
 
 ## `artifacts` — what this run produced
 

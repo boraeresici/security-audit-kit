@@ -312,6 +312,18 @@ You don't need to permanently install any tool. Every version is pinned — Pyth
 (semgrep/checkov/pip-audit) by version, docker tools (gitleaks/trivy/syft) by **immutable
 digest** — so there is no drift vs. CI. Run `scan.sh doctor` to print the resolved pins.
 
+**trivy's vulnerability DB is downloaded once and reused.** It lives in a docker volume
+(`security-audit-trivy`, ~1.7 GB on disk once unpacked from a ~130 MiB download), not in your repo.
+It is refreshed when it is older than `TRIVY_DB_MAX_AGE_H` (default 24: upstream rebuilds it once a
+day). Measured on this repo, `scan.sh all` went from 46–58 s to 6.5–9.6 s; the container scan went
+from 39–49 s to ~2 s, with the same findings. The first run downloads the DB and says so;
+`scan.sh warm` does that and pulls the pinned images ahead of time, so the first pre-push does not.
+`SCAN_OFFLINE=1` never downloads: it uses the cached DB at any age, and with none the container
+dimension is `skipped` (not a pass). For CI, set `TRIVY_CACHE` to an absolute path and cache that
+directory. `scan.sh doctor` shows the cached DB and its age. `summary.json` records the DB's
+`updated_at` in `provenance` (so in `evidence.json`) and its age in `trivy_db`. To reclaim the
+space: `docker volume rm security-audit-trivy`.
+
 ## Usage
 
 ```

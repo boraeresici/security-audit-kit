@@ -59,6 +59,13 @@
 # --- container (trivy) ---
 # Build-output dirs trivy should skip (noise + memory + speed). Comma-separated globs.
 # : "${TRIVY_SKIP_DIRS:=**/.next,**/dist,**/build,**/.nuxt,**/.svelte-kit,**/.turbo}"
+# Where trivy keeps its vulnerability DB between runs: a docker volume name, or an absolute path to
+# bind-mount (cache that directory in CI). ~1.7 GB once unpacked; never inside the repo.
+# : "${TRIVY_CACHE:=security-audit-trivy}"
+# Refresh the DB when it is older than this many hours (upstream rebuilds it once a day).
+# : "${TRIVY_DB_MAX_AGE_H:=24}"
+# 1 = never download a scanner DB: use the cached one at any age; none cached -> "skipped".
+# : "${SCAN_OFFLINE:=0}"
 
 # --- Tool version pins (keep ALL of these aligned with CI to avoid drift) ---
 # Python tools (uvx/pipx) — pinned by version:
