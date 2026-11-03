@@ -698,7 +698,7 @@ secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
    (sablon: `security-audit.conf.example`).
 2. Degerleri projene gore ayarla ve **repo'ya commit et** (ekip paylasimi):
    ```sh
-   : "${SAST_PATHS:=backend frontend}"     # kaynak dizinleri daralt
+   : "${SAST_PATHS:=backend frontend}"     # kaynak dizinleri daralt (olmayan dizin atlanir, soylenir)
    : "${TF_DIR:=infra/terraform}"          # terraform dizini
    # : "${JS_DIRS:=frontend}"              # js-deps: JS uygulamasi nerede (asagi bak)
    # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: repo disindaki bir venv'i denetle (asagi bak)

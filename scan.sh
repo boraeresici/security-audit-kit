@@ -452,8 +452,22 @@ scan_secret_staged(){
 # ---- sast (semgrep) ----
 scan_sast(){
   # Default: whole repo (semgrep's default .semgrepignore skips node_modules/.git/.venv).
-  # Override SAST_PATHS via env to narrow/speed up the scan.
-  local paths="${SAST_PATHS:-.}"
+  # Override SAST_PATHS via env to narrow/speed up the scan. A root that does not exist is dropped
+  # with a reason: semgrep exits 2 on one, and until v1.20.0 the example config shipped
+  # `backend frontend` active, so every install without both dirs crashed sast on every push.
+  local paths="" missing="" p
+  for p in ${SAST_PATHS:-.}; do
+    if [ -e "$ROOT/$p" ]; then paths="$paths $p"; else missing="$missing $p"; fi
+  done
+  paths="${paths# }"
+  if [ -n "$missing" ] && [ -z "$paths" ]; then
+    paths="."
+    dim_mark "" "SAST_PATHS:$missing not found -> scanned the whole repo (fix SAST_PATHS in .security-audit.conf)"
+    warn sast "SAST_PATHS:$missing not found -> scanning the whole repo instead"
+  elif [ -n "$missing" ]; then
+    dim_mark "" "SAST_PATHS:$missing not found -> not scanned (fix SAST_PATHS in .security-audit.conf)"
+    warn sast "SAST_PATHS:$missing not found -> skipped; scanning $paths"
+  fi
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
   say sast "semgrep ($paths, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086

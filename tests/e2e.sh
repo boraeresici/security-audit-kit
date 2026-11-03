@@ -1451,6 +1451,26 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   f30 "$BASH" tools/security-audit-kit/scan.sh warm
   grep -q -- '--download-db-only' "$F30LOG" && grep -q 'pull' "$F30LOG" \
     && ok "F30: scan.sh warm pulls the pinned images and the trivy DB" || no "F30: warm did not pull/download: $(cat "$F30LOG")"
+  echo "-- SAST_PATHS: a configured root that does not exist is skipped, never a crash (v1.20.0-rc.2 dogfood) --"
+  # The example config shipped `SAST_PATHS:=backend frontend` ACTIVE since v1.0: every install without
+  # both dirs ran semgrep on a missing root -> exit 2 -> the gate blocked every push.
+  SPS="$F02/spshims"; mkdir -p "$SPS"; SPLOG="$F02/sp.log"
+  # shellcheck disable=SC2016
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$SP_LOG"\nexit 0\n' > "$SPS/uvx"; chmod +x "$SPS/uvx"
+  fsp(){ : > "$SPLOG"; (cd "$F02/repo" && env PATH="$SPS:$F02SYS" SP_LOG="$SPLOG" "$@" "$BASH" tools/security-audit-kit/scan.sh sast >"$F02/out" 2>&1); F02SUM="$(cat "$F03D/summary.json" 2>/dev/null)"; }
+  fsp SAST_PATHS="backend frontend"
+  grep -qE 'semgrep scan .* \.$' "$SPLOG" && [[ "$(f02dim sast)" == "pass allow "*"not found"* ]] \
+    && ok "SAST_PATHS: none of the roots exist -> whole repo scanned, and the reason says why" \
+    || no "SAST_PATHS: missing roots -> '$(f02dim sast)' args: $(cat "$SPLOG")"
+  mkdir -p "$F02/repo/backend"; printf 'x = 1\n' > "$F02/repo/backend/a.py"
+  fsp SAST_PATHS="backend frontend"
+  grep -qE 'semgrep scan .* backend$' "$SPLOG" && grep -q 'frontend' "$F02/out" \
+    && ok "SAST_PATHS: only the existing root is scanned; the missing one is named" \
+    || no "SAST_PATHS: partial roots -> args: $(cat "$SPLOG")"
+  rm -rf "$F02/repo/backend"
+  F14EX="$(grep -n 'SAST_PATHS:=' "$F02/repo/tools/security-audit-kit/security-audit.conf.example" | grep -v '^[0-9]*:#' || true)"
+  [ -z "$F14EX" ] && ok "SAST_PATHS: the example config no longer sets it (default: whole repo)" \
+    || no "SAST_PATHS: the example still sets it: $F14EX"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 
