@@ -449,6 +449,11 @@ scan_secret_staged(){
     protect --staged --source /repo $cfg --redact --exit-code 1 --verbose
 }
 
+# The kit's own record (raw logs, SARIF, reports under docs/security/scan-findings) is output, not
+# source. A repo that once committed it had semgrep scan its logs (a timeout in the v1.20.0 dogfood),
+# and trivy fs reads it even untracked; findings "in" a raw log are noise about the scan itself.
+record_rel(){ printf '%s' "${LOG_DIR#"$ROOT"/}"; }
+
 # ---- sast (semgrep) ----
 scan_sast(){
   # Default: whole repo (semgrep's default .semgrepignore skips node_modules/.git/.venv).
@@ -471,7 +476,7 @@ scan_sast(){
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
   say sast "semgrep ($paths, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $paths
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $paths
   semgrep_rc $?
 }
 
@@ -501,12 +506,15 @@ changed_files(){
   fi
 }
 scan_sast_changed(){
-  local files; files="$(changed_files | sort -u | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)"
+  local files rec; rec="$(record_rel)/"
+  files="$(changed_files | sort -u | while IFS= read -r f; do
+    case "$f" in "$rec"*) continue ;; esac   # explicit targets bypass --exclude: drop them here
+    [ -f "$f" ] && printf '%s\n' "$f"; done)"
   [ -z "$files" ] && { dim_na sast "no changed files vs base -> semgrep skipped"; return 0; }
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
   say sast "semgrep (changed files, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $files
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $files
   semgrep_rc $?
 }
 
@@ -583,7 +591,7 @@ scan_container(){
   # .trivyignore.yaml auto-detect does not work in this docker setup -> pass it explicitly
   # (only if present; for deliberately accepted findings, committed to the repo).
   local ign=""; [ -f "$ROOT/.trivyignore.yaml" ] && ign="--ignorefile /repo/.trivyignore.yaml"
-  local skip=""; [ -n "$TRIVY_SKIP_DIRS" ] && skip="--skip-dirs $TRIVY_SKIP_DIRS"
+  local skip; skip="--skip-dirs ${TRIVY_SKIP_DIRS:+$TRIVY_SKIP_DIRS,}$(record_rel)"
   # Soft: findings must not block, but they must be told apart from a clean run — so trivy exits
   # TRIVY_FINDINGS_RC on findings and that code is recorded as findings, then mapped back to 0.
   local out="--exit-code $TRIVY_FINDINGS_RC"

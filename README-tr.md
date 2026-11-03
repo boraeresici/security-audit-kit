@@ -673,7 +673,11 @@ Kullanicinin hatirlamasi GEREKMEZ; tetikleme kendini gosterir:
 2. **scan.sh** ayrica ham ciktiyi `docs/security/scan-findings/raw-<BUGUN>.log`'a
    yazar — klasorde duran gorunur bir "yapilacak" izi (transient). Ilk tarama
    `scan-findings/.gitignore` yazar: triyaj kaydi `findings-*.md` disindaki tum ciktilari
-   git disinda tutar. O `.gitignore`'u commit et; scan.sh var olani asla ezmez.
+   git disinda tutar. O `.gitignore`'u commit et; scan.sh var olani asla ezmez. Tarayicilarin
+   kendisi bu klasoru hic okumaz (semgrep `--exclude`, trivy `--skip-dirs`): burasi kaynak kodun
+   degil, taramanin ciktisi. Onceden log'larini bir kez commit etmis bir repo, bu log'larin
+   "icinde" bulgu aliyordu. Git gecmisine gercekten girmis bir secret'i ise `secret` boyutu
+   (gitleaks, tum gecmis) yakalamaya devam eder.
 3. **Claude'da `/sec-triage`** calistir (argumansiz): skill once `raw-<BUGUN>.log`'u
    okur (yoksa taramayi kendi kosar), her bulgu icin gercek/FP karari verir,
    `findings-<BUGUN>.md`'yi yazar, FP->allowlist / gercek->fix uygular.

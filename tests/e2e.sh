@@ -1410,6 +1410,8 @@ assert isinstance(d.get("seconds"),(int,float))' "$F14SUM" 2>/dev/null \
   grep -q 'first run: downloading the trivy vulnerability DB' "$F02/out" && f30fs | grep -q -- '-v security-audit-trivy:/root/.cache/trivy' \
     && f30fs | grep -q -- '--skip-check-update' && f30fs | grep -q -- '--no-progress' && ! f30fs | grep -q -- '--skip-db-update' \
     && ok "F30: first run downloads the DB into the persistent cache volume, and says so" || no "F30: first run: $(f30fs)"
+  f30fs | grep -qE -- '--skip-dirs [^ ]*docs/security/scan-findings' \
+    && ok "scan record: trivy never scans docs/security/scan-findings" || no "scan record: trivy scans the kit's own logs: $(f30fs)"
   # (b) fresh DB (1h) -> no download at all
   f30 env F30_META="$(f30meta 1)" "$BASH" tools/security-audit-kit/scan.sh container
   f30fs | grep -q -- '--skip-db-update' && ok "F30: a fresh cached DB is used without any download" || no "F30: fresh DB still updated: $(f30fs)"
@@ -1467,6 +1469,11 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   grep -qE 'semgrep scan .* backend$' "$SPLOG" && grep -q 'frontend' "$F02/out" \
     && ok "SAST_PATHS: only the existing root is scanned; the missing one is named" \
     || no "SAST_PATHS: partial roots -> args: $(cat "$SPLOG")"
+  # The kit's own record (raw logs, SARIF, reports) is not source: a repo that once committed it got
+  # its logs scanned by semgrep (a timeout in the v1.20.0 dogfood), and trivy fs reads it untracked.
+  fsp
+  grep -q -- '--exclude docs/security/scan-findings' "$SPLOG" \
+    && ok "scan record: semgrep never scans docs/security/scan-findings" || no "scan record: semgrep scans the kit's own logs: $(cat "$SPLOG")"
   rm -rf "$F02/repo/backend"
   F14EX="$(grep -n 'SAST_PATHS:=' "$F02/repo/tools/security-audit-kit/security-audit.conf.example" | grep -v '^[0-9]*:#' || true)"
   [ -z "$F14EX" ] && ok "SAST_PATHS: the example config no longer sets it (default: whole repo)" \

@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Upgrade notes
+- semgrep and trivy no longer scan `docs/security/scan-findings/`. If your repo committed scan
+  artifacts there, findings that pointed into them (old raw logs, SARIF) disappear. They were
+  about the scan's own output, not your code. gitleaks still scans full git history.
+
+### Fixed
+- **Scanners read the kit's own record as source** (v1.20.0 dogfood). semgrep scanned tracked
+  files under `docs/security/scan-findings/`: a repo that had committed its raw logs got a
+  timeout, and findings "in" a log. trivy fs read the folder untracked, so secret-like lines in old
+  logs showed up as CRITICAL. Measured on a fixture with a committed log containing an AWS-style
+  key and a `shell=True` snippet: before, sast reported 2 findings in the log (and blocked) and
+  trivy 2 CRITICAL secrets; after, neither scanner reads the folder (semgrep `--exclude`, trivy
+  `--skip-dirs`, and `scan.sh changed` drops those paths from its explicit file list).
+
 ## [1.20.0] - 2026-11-03
 
 ### Upgrade notes

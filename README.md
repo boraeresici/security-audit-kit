@@ -695,7 +695,10 @@ The user doesn't have to remember; the trigger announces itself:
    `docs/security/scan-findings/raw-<TODAY>.log` — a visible "to-do" trail sitting
    in the folder (transient). The first scan writes `scan-findings/.gitignore`, which keeps
    every artifact there out of git except `findings-*.md`, the triage record. Commit that
-   `.gitignore`; scan.sh never overwrites it once it exists.
+   `.gitignore`; scan.sh never overwrites it once it exists. The scanners themselves never
+   read this folder (semgrep `--exclude`, trivy `--skip-dirs`): it is the scan's output, not your
+   source. Before this, a repo that once committed its logs got findings "in" them. A secret that
+   really reached git history is still caught by the `secret` dimension (gitleaks, full history).
 3. **Run `/sec-triage` in Claude** (no args): the skill first reads
    `raw-<TODAY>.log` (or runs the scan itself if absent), decides real/FP for each
    finding, writes `findings-<TODAY>.md`, applies FP->allowlist / real->fix.
