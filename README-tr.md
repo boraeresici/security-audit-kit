@@ -311,6 +311,17 @@ Hicbir tool'u kalici kurmana gerek yok. Her surum pinli — Python araclari
 (semgrep/checkov/pip-audit) surumle, docker araclari (gitleaks/trivy/syft) **immutable
 digest**'le — yani CI ile drift yok. Pinleri gormek icin: `scan.sh doctor`.
 
+**trivy'nin zafiyet DB'si bir kez indirilir ve tekrar kullanilir.** Repoda degil, bir docker
+volume'unda durur (`security-audit-trivy`; ~130 MiB indirme, acildiginda diskte ~1,7 GB).
+`TRIVY_DB_MAX_AGE_H`'den (varsayilan 24: upstream DB'yi gunde bir yeniden uretir) eskiyse yenilenir.
+Bu repoda olculdu: `scan.sh all` 46–58 sn'den 6,5–9,6 sn'ye, container taramasi 39–49 sn'den ~2 sn'ye
+indi; bulgular ayni. Ilk kosu DB'yi indirir ve bunu soyler; `scan.sh warm` bunu ve pinli image'larin
+cekilmesini onceden yapar, boylece ilk pre-push beklemez. `SCAN_OFFLINE=1` hic indirmez: cache'teki
+DB'yi yasi ne olursa olsun kullanir, hic yoksa container boyutu `skipped` olur (pass degil). CI icin
+`TRIVY_CACHE`'i mutlak bir yola ayarla ve o dizini cache'le. `scan.sh doctor` cache'teki DB'yi ve
+yasini gosterir. `summary.json` DB'nin `updated_at`'ini `provenance`'a (dolayisiyla `evidence.json`'a),
+yasini `trivy_db`'ye yazar. Yeri geri almak icin: `docker volume rm security-audit-trivy`.
+
 ## Kullanim
 
 ```

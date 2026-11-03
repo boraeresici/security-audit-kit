@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format is based on
   `NEXT STEP`. The hooks' own BLOCKED line no longer guesses the cause ("secret in staged changes").
   It points at the summary, which says whether a finding or a failed scanner blocked.
 - `summary.json` gains `seconds` (run and per dimension; additive, not copied into evidence.json).
+- trivy now keeps its DB in a docker volume, `security-audit-trivy`, which takes ~1.7 GB on disk. To
+  reclaim the space: `docker volume rm security-audit-trivy`. In CI, set `TRIVY_CACHE=/abs/path` and
+  cache that directory. Otherwise each job downloads the DB once, as before. `summary.json` gains
+  `trivy_db` and `provenance.trivy_db` (additive).
 - `scan.sh evidence` and `scan.sh report` now exit 1 when they cannot write their file (no SARIF,
   no evidence.json, no python3, builder failure). Scripts that called them and ignored a missing
   output should check the exit code. A scan's own exit code is not affected.
@@ -50,6 +54,22 @@ All notable changes to this project are documented here. The format is based on
   example has that it does not. `scripts/release.sh` refuses to tag a version without an Upgrade
   notes section (write `- None.` when nothing changes). RELEASING.md now covers the deprecation
   policy for commands and settings and the schema versioning rules.
+
+- **trivy's vulnerability DB is cached between runs (F30).** It was re-downloaded (~130 MiB) on
+  every run. Measured on the kit repo with real tools, `scan.sh all` went from 46–58 s to 6.5–9.6 s,
+  and the container scan from 39–49 s to ~2 s, with the same findings. The DB lives in the docker
+  volume `TRIVY_CACHE` (default `security-audit-trivy`; an absolute path bind-mounts a directory,
+  for CI). It is refreshed when older than `TRIVY_DB_MAX_AGE_H` (default 24; upstream rebuilds it
+  daily).
+  - The first run says it is downloading.
+  - `SCAN_OFFLINE=1` never downloads, and records `skipped` when no DB is cached.
+  - The misconfig check bundle is no longer downloaded: the checks built into the pinned trivy are
+    used, which also removes the rego ERROR lines a newer bundle caused in every log.
+  - New `scan.sh warm` pulls the pinned images and the DB ahead of the first pre-push; `install.sh`
+    suggests it.
+  - `doctor` shows the cached DB and its age.
+  - `provenance.trivy_db.updated_at` names the DB used (so evidence.json does too), and the
+    top-level `trivy_db` records its age.
 
 ### Fixed
 - **`bootstrap.sh --check` offered a release candidate older than the final.** `sort -V` puts

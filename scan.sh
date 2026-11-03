@@ -19,6 +19,7 @@
 #   fast      staged + deps  (pre-commit / package install)
 #   all       secret + sast + deps + container + iac         (pre-push / pre-PR)
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
+#   warm      Pull the pinned images + the trivy DB now        (one-time downloads; no scan)
 #   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
 #   checksums (Re)generate the CHECKSUMS manifest             (maintainer)
 #   rules-test Run semgrep --test over the repo's OWN rules    (no scan)
@@ -33,6 +34,7 @@
 #   OSV_CALL_ANALYSIS=go (reachability signal in scan.sh osv; adds --all-vulns so the gate is
 #     unchanged. rust also works but RUNS dependency build scripts -> refused unless
 #     OSV_ALLOW_BUILD_SCRIPTS=1),
+#   TRIVY_CACHE=<volume|/abs/path>, TRIVY_DB_MAX_AGE_H=24, SCAN_OFFLINE=1 (trivy DB cache: never download),
 #   pins: GITLEAKS_VER/_DIGEST, TRIVY_VER/_DIGEST, SYFT_VER/_DIGEST,
 #         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER, GUARDDOG_VER, ZIZMOR_VER.
 set -uo pipefail
@@ -75,6 +77,16 @@ TRIVY_SKIP_DIRS="${TRIVY_SKIP_DIRS:-**/.next,**/dist,**/build,**/.nuxt,**/.svelt
 # The exit code trivy is told to use for findings — internal, so container (soft) can tell findings
 # from a clean run and from a failed one.
 TRIVY_FINDINGS_RC=5
+# trivy keeps its vulnerability DB (~130 MiB) in a cache dir. Without a persistent one, every run
+# re-downloaded it: measured 36–51 s of the container scan, against ~1 s with the DB cached (same
+# findings). A named docker volume lives in the docker VM (fast on macOS, nothing written to the
+# repo); an absolute path bind-mounts that directory instead, for a CI cache.
+TRIVY_CACHE="${TRIVY_CACHE:-security-audit-trivy}"
+# The DB is rebuilt upstream once a day (its NextUpdate is UpdatedAt + 24h): refreshing more often
+# buys nothing, waiting longer lets new advisories lag. Older than this -> trivy refreshes it.
+TRIVY_DB_MAX_AGE_H="${TRIVY_DB_MAX_AGE_H:-24}"
+# 1 = never download a scanner database: use the cached one at any age; none cached -> "skipped".
+SCAN_OFFLINE="${SCAN_OFFLINE:-0}"
 
 # js-deps: which directories hold a JS project. JS_DIRS (space separated) overrides the search
 # outright; otherwise every tracked package.json is considered except the paths JS_SKIP_RE drops —
@@ -505,9 +517,54 @@ scan_iac(){
   return 0
 }
 
+# ---- trivy DB cache (F30) ----
+trivy_cache_mount(){
+  case "$TRIVY_CACHE" in /*) mkdir -p "$TRIVY_CACHE" 2>/dev/null ;; esac
+  printf -- '-v %s:/root/.cache/trivy' "$TRIVY_CACHE"
+}
+# The cached DB as "UpdatedAt<TAB>DownloadedAt", or nothing when the cache holds no DB. Read with
+# trivy itself (`version` reports the DB it would use), so no other image is involved.
+trivy_db_meta(){
+  local out db u d
+  # shellcheck disable=SC2046
+  out="$(docker run --rm $(trivy_cache_mount) "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" version --format json 2>/dev/null)" || return 0
+  db="$(sed -n 's/.*"VulnerabilityDB":{\([^}]*\)}.*/\1/p' <<<"$out")"
+  [ -n "$db" ] || return 0
+  u="$(sed -n 's/.*"UpdatedAt":"\([^"]*\)".*/\1/p' <<<"$db")"
+  d="$(sed -n 's/.*"DownloadedAt":"\([^"]*\)".*/\1/p' <<<"$db")"
+  [ -n "$u" ] && printf '%s\t%s\n' "$u" "$d"
+}
+iso_epoch(){   # 2026-11-03T05:44:24.577Z -> epoch seconds (GNU date, else BSD date)
+  local t="${1%%.*}"; t="${t%Z}"
+  date -u -d "$t" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%S' "$t" +%s 2>/dev/null
+}
+db_age_h(){   # <DownloadedAt> -> hours, one decimal; nothing if it cannot be parsed
+  local e; e="$(iso_epoch "$1")" || return 0
+  [ -n "$e" ] && awk -v s="$(( $(date +%s) - e ))" 'BEGIN{printf "%.1f", s/3600}'
+}
+
 # ---- container/fs (trivy) — soft ----
 scan_container(){
   docker_ok || { dim_skip container "no docker -> trivy skipped"; return 0; }
+  # The DB is reused while younger than TRIVY_DB_MAX_AGE_H. The misconfig check bundle is NEVER
+  # downloaded: the checks built into the pinned trivy match it, while a newer bundle failed to parse
+  # in 0.58 (rego ERROR lines on every run) — and pinned checks keep the result reproducible.
+  local meta u="" d="" age="" upd="--skip-check-update"
+  meta="$(trivy_db_meta)"
+  if [ -n "$meta" ]; then
+    IFS="$(printf '\t')" read -r u d <<<"$meta"
+    age="$(db_age_h "$d")"
+  fi
+  if [ "$SCAN_OFFLINE" = "1" ]; then
+    [ -n "$meta" ] || { dim_skip container "SCAN_OFFLINE=1 and no cached trivy DB -> not inspected (run scan.sh warm while online)"; return 0; }
+    upd="$upd --skip-db-update --offline-scan"
+  elif [ -n "$age" ] && awk -v a="$age" -v m="$TRIVY_DB_MAX_AGE_H" 'BEGIN{exit !(a < m)}'; then
+    upd="$upd --skip-db-update"
+  elif [ -n "$meta" ]; then
+    say container "trivy DB is ${age:-?}h old (> ${TRIVY_DB_MAX_AGE_H}h) -> refreshing"
+  else
+    say container "first run: downloading the trivy vulnerability DB (~130 MiB, once; cached in $TRIVY_CACHE)"
+  fi
   say container "trivy fs (report, soft)"
   # .trivyignore.yaml auto-detect does not work in this docker setup -> pass it explicitly
   # (only if present; for deliberately accepted findings, committed to the repo).
@@ -517,13 +574,22 @@ scan_container(){
   # TRIVY_FINDINGS_RC on findings and that code is recorded as findings, then mapped back to 0.
   local out="--exit-code $TRIVY_FINDINGS_RC"
   [ "$SARIF" = "1" ] && out="$out --format sarif --output /repo/$(sarif_rel trivy.sarif)"
-  # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
-    --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
+  # shellcheck disable=SC2086,SC2046
+  docker run --rm -v "$ROOT:/repo" $(trivy_cache_mount) -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
+    --no-progress $upd --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
   local rc=$?
+  # Which DB this result came from: identity -> provenance, age -> summary.json (see the summary).
+  # This runs inside the tee subshell, so it travels to the summary writer through the run dir.
+  case "$upd" in *--skip-db-update*) ;; *) meta="$(trivy_db_meta)"; u=""; d=""
+    [ -n "$meta" ] && IFS="$(printf '\t')" read -r u d <<<"$meta"; age="$(db_age_h "$d")" ;; esac
+  local dbnote=""
+  if [ -n "$u" ]; then
+    printf '%s\t%s\t%s\n' "$u" "$d" "${age:-}" > "$RUN_DIR/trivy-db" 2>/dev/null
+    [ -n "$age" ] && dbnote="trivy DB $(awk -v a="$age" 'BEGIN{printf "%d", a}')h old"
+  fi
   case "$rc" in
-    0) return 0 ;;
-    "$TRIVY_FINDINGS_RC") dim_mark findings "CRITICAL/HIGH findings (soft: reported, does not block)"; return 0 ;;
+    0) [ -n "$dbnote" ] && dim_mark "" "$dbnote"; return 0 ;;
+    "$TRIVY_FINDINGS_RC") dim_mark findings "CRITICAL/HIGH findings (soft: reported, does not block)${dbnote:+ · $dbnote}"; return 0 ;;
     *) dim_error container "trivy exit $rc (scan error, not a finding)"; return "$rc" ;;
   esac
 }
@@ -786,6 +852,17 @@ scan_doctor(){
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
   { have uvx || have pipx; } && echo "  ok  uvx/pipx      (semgrep/checkov/pip-audit/guarddog/zizmor)" || echo "  --  uvx/pipx      MISSING -> sast/iac/py-deps/guarddog/zizmor skipped"
   { have pnpm || have yarn || have npm; } && echo "  ok  js pkg mgr    (js-deps)" || echo "  --  js pkg mgr    MISSING -> js-deps skipped"
+  if docker_ok; then
+    local tm tu td
+    tm="$(trivy_db_meta)"
+    if [ -n "$tm" ]; then
+      IFS="$(printf '\t')" read -r tu td <<<"$tm"
+      printf '  trivy DB    : %s, updated %s, downloaded %sh ago (refreshed after %sh)\n' \
+        "$TRIVY_CACHE" "$tu" "$(db_age_h "$td" | awk '{printf "%d", $1}')" "$TRIVY_DB_MAX_AGE_H"
+    else
+      printf '  trivy DB    : none cached in %s -> the first container scan downloads ~130 MiB (scan.sh warm does it now)\n' "$TRIVY_CACHE"
+    fi
+  fi
   printf '\npins:\n'
   printf '  gitleaks   %s @ %s\n' "$GITLEAKS_VER" "${GITLEAKS_DIGEST:-<tag>}"
   printf '  trivy      %s @ %s\n' "$TRIVY_VER" "${TRIVY_DIGEST:-<tag>}"
@@ -1359,7 +1436,22 @@ scan_help(){
   printf '  Missing docker or uvx/pipx -> that dimension is "skipped" (not a pass); the run says which.\n'
   printf '  Start here: scan.sh doctor -> scan.sh all -> read the closing summary -> /sec-triage\n'
 }
+# warm: pay the one-time downloads now (pinned images + the trivy DB), not on the first pre-push.
+scan_warm(){
+  docker_ok || { warn warm "no docker -> nothing to warm"; return 1; }
+  local i rc=0
+  for i in "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" \
+           "$(img anchore/syft "$SYFT_VER" "$SYFT_DIGEST")" "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")"; do
+    say warm "docker pull $i"
+    docker pull -q "$i" >/dev/null || { warn warm "pull failed: $i"; rc=1; }
+  done
+  say warm "trivy vulnerability DB -> $TRIVY_CACHE (~130 MiB, refreshed after ${TRIVY_DB_MAX_AGE_H}h)"
+  # shellcheck disable=SC2046
+  docker run --rm $(trivy_cache_mount) "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" image --download-db-only --no-progress || rc=1
+  return $rc
+}
 case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
+[ "${1:-}" = "warm" ]      && { scan_warm; exit $?; }
 [ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
 [ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
@@ -1413,7 +1505,7 @@ run_scans(){
     zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
     fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
     all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report|help)"; return 2 ;;
+    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report|warm|help)"; return 2 ;;
   esac
   return $rc
 }
@@ -1574,6 +1666,14 @@ RUN_SECONDS="$(awk -v ms="$(( $(now_ms) - RUN_T0 ))" 'BEGIN{printf "%.1f", ms/10
 # says what happened (status + reason) and, separately, what it did to the gate. Contract in
 # docs/schema/summary.md.
 blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$RESULTS_FILE")"
+# The trivy DB this run used (F30): its identity is part of WHAT was scanned with (provenance, and so
+# evidence.json); its age is run metadata, summary.json only.
+TRIVY_DB_JSON="null"
+if [ -s "$RUN_DIR/trivy-db" ]; then
+  IFS="$(printf '\t')" read -r tdb_u tdb_d tdb_a < "$RUN_DIR/trivy-db"
+  PROVENANCE="${PROVENANCE%\}}, \"trivy_db\": {\"updated_at\": $(json_str "$tdb_u")}}"
+  TRIVY_DB_JSON="{\"updated_at\": $(json_str "$tdb_u"), \"downloaded_at\": $(json_str "$tdb_d"), \"age_hours\": ${tdb_a:-null}, \"cache\": $(json_str "$TRIVY_CACHE")}"
+fi
 {
   printf '{\n'
   printf '  "schema_version": 2,\n'
@@ -1586,6 +1686,7 @@ blocked="$(awk -F'\t' '$4=="block"{printf "%s%s", (n++?",":""), "\""$1"\""}' "$R
   printf '  "sarif": %s,\n' "$([ "$SARIF" = "1" ] && echo true || echo false)"
   printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
   printf '  "provenance": %s,\n' "$PROVENANCE"
+  printf '  "trivy_db": %s,\n' "$TRIVY_DB_JSON"
   printf '  "artifacts": %s,\n' "$(artifacts_json)"
   printf '  "dimensions": [\n'
   first=1

@@ -486,6 +486,19 @@ Seçilen alan için giriş sinyali, incelenecek sınırlar, uygulanmama nedeni, 
 - Kazanç, aynı ölçüm yöntemiyle önce/sonra olarak raporlanmalı (tahmin: `all` ~40 sn → ~9 sn). Cache açık ve kapalı koşumlar aynı bulguları üretmeli.
 - İsteğe bağlı: `scan.sh warm` (imaj çekme + DB indirme), `install.sh` sonunda önerilir; böylece ilk pre-push dakikalar sürmez.
 
+**Karar ve durum — 3 Kasım 2026:** `feat/f30-trivy-db-cache` branch'inde uygulandı.
+- **Cache:** varsayılan olarak `security-audit-trivy` adlı bir docker volume. `TRIVY_CACHE` mutlak bir yol olarak verilirse o dizin bind mount ediliyor (CI için). Disk kullanımı ~1,7 GB: 130 MiB'lık indirme açıldığında bu boyuta çıkıyor. Bu, README'de ve yükseltme notunda yazıyor.
+- **Tazelik eşiği:** `TRIVY_DB_MAX_AGE_H=24`. Gerekçe: upstream DB'yi günde bir kez yeniden üretiyor (DB metadata'sında `NextUpdate` = `UpdatedAt` + 24 saat). Daha sık yenilemek yeni bir şey getirmez, daha seyrek yenilemek yeni advisory'lerin gecikmesine yol açar.
+- **Check bundle:** hiç indirilmiyor (`--skip-check-update`). Pinli trivy'nin içine gömülü check'ler kullanılıyor. Bu hem rego ERROR satırlarını kaldırıyor hem de sonucun tekrarlanabilir olmasını sağlıyor.
+- **DB kimliği ve yaşı:** kimlik (`UpdatedAt`) provenance'a ve oradan evidence'a gidiyor. Yaş yalnız `summary.json`'daki `trivy_db` alanına, `doctor` çıktısına ve kapanış tablosuna yazılıyor.
+- **`SCAN_OFFLINE=1`:** cache'te DB yoksa boyut `skipped` oluyor; varsa yaşına bakılmadan offline tarama yapılıyor.
+- **Ölçüm:** kitin kendi reposunda, gerçek araçlarla, üçer çalıştırma.
+  - Önce: `all` 46–58 sn, container 39–49 sn.
+  - Sonra: `all` 6,5–9,6 sn, container 2,0–2,4 sn.
+  - İlk (soğuk) çalıştırma 42 sn sürüyor; bu süre DB indirmesinden geliyor ve bir kez ödeniyor.
+  - Cache açık ve kapalı çalıştırmalar aynı bulguları verdi (2/2). Cache'li çalıştırmada indirme ve ERROR satırı yok.
+- **Testler:** 11 e2e kontrolü önce yazıldı ve kırmızıydı. Docker shim'i ile ilk çalıştırma, taze DB, bayat DB, iki offline durumu, mutlak yol cache, evidence, `doctor` ve `warm` test ediliyor.
+
 ### F31 — Hook profili ve paralel boyutlar
 
 **Bulgu — 2 Kasım 2026 (Ö):** pre-push bugün `all`'u çalıştırıyor. Bloklamayan (soft) `container` boyutu tek başına sürenin ~%90'ı. gitleaks her push'ta tam geçmişi tarıyor; büyük geçmişlerde bu dakikalar sürebilir. Boyutlar sırayla çalışıyor.

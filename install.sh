@@ -49,6 +49,10 @@ else
   ok "core.hooksPath -> $KIT_REL/hooks (pre-commit=staged+deps, pre-push=all)"
 fi
 
+if [ "$SKILLS_ONLY" != "1" ] && have docker; then
+  ok "tip: bash $KIT_REL/scan.sh warm — pulls the scanner images + the trivy DB now, so the first pre-push does not wait"
+fi
+
 echo "== project config =="
 if [ -f "$ROOT/.security-audit.conf" ]; then
   ok ".security-audit.conf already exists (preserved)"

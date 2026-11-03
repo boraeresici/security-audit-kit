@@ -32,7 +32,11 @@ Sıra 3a'daki **F29** PR #38 ile `main`'e girdi; sıra 3'teki **F02** `feat/f02-
 
 **F25** (2 Kasım, `feat/f25-upgrade-notes`): her sürümün CHANGELOG'unda artık bir "Upgrade notes" bölümü zorunlu. `bootstrap.sh --check` pin ile son sürüm arasındaki notları gösteriyor; `install.sh` tekrar çalıştırıldığında yeni ayarları adlarıyla listeliyor. Gerçek repoya karşı denenirken önceden var olan bir hata çıktı: `--check`, v1.19.1 yayımlanmışken kullanıcıya daha eski olan v1.19.1-rc.1'i öneriyordu. Bu da düzeltildi. 3b böylece tamamlandı.
 
-**Sırada:** F30 (3c) → yayın kapısı F06–F08. Birikmiş değişiklikler kırıcı (`summary.json` schema 2, `sarif/` dizininde eski dosyaların taşınmaması, `report`/`evidence` çıkış kodları); bu yüzden bir sonraki sürüm v1.20.0 olarak, RC → dogfood → final akışıyla çıkmalı. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
+**F25** PR #44 ile `main`'de.
+
+**F30** (3 Kasım, `feat/f30-trivy-db-cache`): trivy DB'si artık çalıştırmalar arasında cache'leniyor. Ölçülen kazanç: `all` 46–58 sn'den 6,5–9,6 sn'ye, container 39–49 sn'den ~2 sn'ye indi; bulgular aynı. PERF incelemesinin tahmini (~9 sn) tuttu. Kullanıcının kararıyla F30, v1.20.0'a dahil ediliyor.
+
+**Sırada:** v1.20.0. Akış: release-prep PR (README pinleri, compare, landing, CHECKSUMS dahil), sonra RC, dogfood ve final. Ardından yayın kapısı F06–F08. Her biri bir öncekinin merge'inden sonra `origin/main`'den ayrı bir branch'te açılacak; PR'lar zincirlenmeyecek. Kararlar ve kabul kriterlerine göre durum, ilgili kartlarda.
 
 ## 2 Kasım 2026 — Performans ölçümü ve konumlandırma (F30–F32, R02 öne alındı)
 

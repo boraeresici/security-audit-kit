@@ -1370,6 +1370,58 @@ assert isinstance(d.get("seconds"),(int,float))' "$F14SUM" 2>/dev/null \
   f04 env F02_DINFO=1 F02_RC=1 "$BASH" tools/security-audit-kit/hooks/pre-push
   grep -q 'allowlist with an expiry' "$F02/out" && grep -q -- '--no-verify' "$F02/out" && ! grep -q 'scanner FAILED' "$F02/out" \
     && ok "F14a: pre-push blocked by findings lists the options" || no "F14a: pre-push findings message missing"
+  echo "-- F30: trivy DB cached between runs; refreshed by age; identity in provenance, age in summary --"
+  F30S="$F02/f30shims"; mkdir -p "$F30S"; F30LOG="$F02/f30.log"
+  # docker shim: logs every call; `trivy version --format json` answers with $F30_META (or "no DB").
+  # shellcheck disable=SC2016
+  printf '#!/bin/sh\n[ "$1" = info ] && exit 0\nprintf "%%s\\n" "$*" >> "$F30_LOG"\ncase " $* " in *" version --format json "*) [ -n "$F30_META" ] && printf "%%s\\n" "$F30_META" || printf "%%s\\n" "{\\"Version\\":\\"0.58.0\\"}"; exit 0 ;; esac\nexit "${F30_RC:-0}"\n' > "$F30S/docker"
+  chmod +x "$F30S/docker"
+  f30(){ : > "$F30LOG"; (cd "$F02/repo" && env PATH="$F30S:$F02S:$F02SYS" F30_LOG="$F30LOG" "$@" >"$F02/out" 2>&1); F02SUM="$(cat "$F03D/summary.json" 2>/dev/null)"; }
+  f30iso(){ /usr/bin/python3 -I -c 'import datetime,sys; print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(hours=float(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%S.123456789Z"))' "$1"; }
+  f30meta(){ printf '{"Version":"0.58.0","VulnerabilityDB":{"Version":2,"NextUpdate":"2099-01-01T00:00:00Z","UpdatedAt":"2026-11-03T01:30:30.031564361Z","DownloadedAt":"%s"}}' "$(f30iso "$1")"; }
+  f30fs(){ grep ' fs ' "$F30LOG"; }
+  # (a) first run: no DB in the cache -> say so, download into the persistent cache, never the bundle
+  f30 "$BASH" tools/security-audit-kit/scan.sh container
+  grep -q 'first run: downloading the trivy vulnerability DB' "$F02/out" && f30fs | grep -q -- '-v security-audit-trivy:/root/.cache/trivy' \
+    && f30fs | grep -q -- '--skip-check-update' && f30fs | grep -q -- '--no-progress' && ! f30fs | grep -q -- '--skip-db-update' \
+    && ok "F30: first run downloads the DB into the persistent cache volume, and says so" || no "F30: first run: $(f30fs)"
+  # (b) fresh DB (1h) -> no download at all
+  f30 env F30_META="$(f30meta 1)" "$BASH" tools/security-audit-kit/scan.sh container
+  f30fs | grep -q -- '--skip-db-update' && ok "F30: a fresh cached DB is used without any download" || no "F30: fresh DB still updated: $(f30fs)"
+  /usr/bin/python3 -I -c 'import json,sys
+d=json.loads(sys.argv[1]); t=d.get("trivy_db") or {}; p=(d.get("provenance") or {}).get("trivy_db") or {}
+assert p.get("updated_at")=="2026-11-03T01:30:30.031564361Z", p
+assert "age_hours" not in p and "downloaded_at" not in p, p
+assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
+    && ok "F30: DB identity in provenance, its age only in summary.json run metadata" || no "F30: trivy_db fields wrong: $F02SUM"
+  grep -qE 'container +pass .*trivy DB 1h old' <<<"$(sed 's/\x1b\[[0-9;]*m//g' "$F02/out")" \
+    && ok "F30: the closing table shows the DB age" || no "F30: DB age not in closing table"
+  # (c) stale DB (48h > 24h) -> let trivy refresh it, and say why
+  f30 env F30_META="$(f30meta 48)" "$BASH" tools/security-audit-kit/scan.sh container
+  ! f30fs | grep -q -- '--skip-db-update' && grep -q 'refreshing' "$F02/out" \
+    && ok "F30: a DB older than TRIVY_DB_MAX_AGE_H is refreshed" || no "F30: stale DB not refreshed: $(f30fs)"
+  # (d) offline + no DB -> not inspected, never a pass; (e) offline + DB -> offline scan, no download
+  f30 env SCAN_OFFLINE=1 "$BASH" tools/security-audit-kit/scan.sh container
+  [[ "$(f02dim container)" == "skipped allow "*SCAN_OFFLINE* ]] && [ -z "$(f30fs)" ] \
+    && ok "F30: SCAN_OFFLINE=1 with no cached DB -> skipped (not a pass), nothing run" || no "F30: offline/no-DB -> '$(f02dim container)'"
+  f30 env SCAN_OFFLINE=1 F30_META="$(f30meta 200)" "$BASH" tools/security-audit-kit/scan.sh container
+  f30fs | grep -q -- '--skip-db-update' && f30fs | grep -q -- '--offline-scan' \
+    && ok "F30: SCAN_OFFLINE=1 with a cached DB scans offline, whatever its age" || no "F30: offline scan args: $(f30fs)"
+  # (f) TRIVY_CACHE as an absolute path -> bind mount (CI caches a directory)
+  f30 env TRIVY_CACHE="$F02/trivy-cache" F30_META="$(f30meta 1)" "$BASH" tools/security-audit-kit/scan.sh container
+  f30fs | grep -q -- "-v $F02/trivy-cache:/root/.cache/trivy" && ok "F30: TRIVY_CACHE=/abs/path bind-mounts that directory" \
+    || no "F30: TRIVY_CACHE path not used: $(f30fs)"
+  # (g) evidence carries the identity, never the age (it must diff to nothing on unchanged code)
+  f30 env SARIF=1 F30_META="$(f30meta 1)" "$BASH" tools/security-audit-kit/scan.sh container
+  grep -q '"updated_at": "2026-11-03T01:30:30.031564361Z"' "$F03D/evidence.json" && ! grep -q 'age_hours' "$F03D/evidence.json" \
+    && ok "F30: evidence.json carries the DB identity, not its age" || no "F30: evidence trivy_db wrong"
+  # (h) doctor + warm
+  f30 env F30_META="$(f30meta 3)" "$BASH" tools/security-audit-kit/scan.sh doctor
+  grep -qE 'trivy DB +: .*updated 2026-11-03T01:30:30.*3h ago' "$F02/out" && ok "F30: doctor shows the cached DB and its age" \
+    || no "F30: doctor has no trivy DB line"
+  f30 "$BASH" tools/security-audit-kit/scan.sh warm
+  grep -q -- '--download-db-only' "$F30LOG" && grep -q 'pull' "$F30LOG" \
+    && ok "F30: scan.sh warm pulls the pinned images and the trivy DB" || no "F30: warm did not pull/download: $(cat "$F30LOG")"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 
