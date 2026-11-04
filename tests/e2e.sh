@@ -1300,9 +1300,13 @@ rm -rf "$T10"
 echo "-- F13: no absolute 'nothing leaves' claim on a user-facing surface; the data-flow table exists --"
 # Dependency lookups send package names, and the AI layer sends what the agent reads: an absolute
 # locality claim is false. docs/data-flow.md is the table the surfaces point to.
-F13HIT="$(cd "$KIT_SRC" && git grep -n -i -E 'nothing (leaves|left) (your|this) machine|fully local' -- README.md README-tr.md landing/index.html docs/compare/feature-comparison.md lib/report_html.py 2>/dev/null)"
+F13HIT="$(cd "$KIT_SRC" && git grep -n -i -E 'nothing (leaves|left) (your|this) machine|fully local' -- README.md README-tr.md PRIVACY.md landing/index.html docs/compare/feature-comparison.md lib/report_html.py 2>/dev/null)"
 [ -z "$F13HIT" ] && [ -f "$KIT_SRC/docs/data-flow.md" ] && grep -q 'docs/data-flow.md' "$KIT_SRC/README.md" && grep -q 'docs/data-flow.md' "$KIT_SRC/README-tr.md" \
   && ok "F13: no absolute locality claim; README en/tr link the data-flow table" || no "F13: ${F13HIT:-data-flow.md missing or unlinked}"
+# The plugin directory asks for a privacy policy: PRIVACY.md, pointing at the data-flow table.
+[ -f "$KIT_SRC/PRIVACY.md" ] && grep -q 'docs/data-flow.md' "$KIT_SRC/PRIVACY.md" \
+  && grep -q '](PRIVACY.md)' "$KIT_SRC/README.md" && grep -q '](PRIVACY.md)' "$KIT_SRC/README-tr.md" \
+  && ok "F13: PRIVACY.md exists, cites the data-flow table, and README en/tr link it" || no "F13: PRIVACY.md missing, or not linked from README en/tr"
 echo "-- F32: README and docs/ links resolve (the reference moved out of the README) --"
 if [ -x /usr/bin/python3 ]; then
   F32L="$(cd "$KIT_SRC" && /usr/bin/python3 -I tests/linkcheck.py README.md README-tr.md docs/*.md)"

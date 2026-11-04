@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 - The plugin has a listing icon, `.claude-plugin/icon.png`: the banner's shield mark, drawn by
   `scripts/make_icon.py` with no dependencies. e2e checks its size and that the script redraws it.
+- `PRIVACY.md`: the privacy policy the plugin directory asks for. The kit and the plugin collect
+  nothing; it summarises what the scanner's lookups send and points at `docs/data-flow.md`.
 
 ## [1.21.0] - 2026-11-04
 
