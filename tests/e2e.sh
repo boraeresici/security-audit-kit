@@ -1365,6 +1365,32 @@ PY
   R02C="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$KIT_SRC/CHANGELOG.md" | head -1 | grep -oE '[0-9.]+[0-9]')"
   [ -n "$R02V" ] && [ "$R02V" = "$R02C" ] && ok "R02: plugin.json version = the newest CHANGELOG release ($R02C)" \
     || no "R02: plugin.json version '$R02V' != CHANGELOG '$R02C'"
+  # The plugin directory takes its listing icon once, at the first submission: a square PNG,
+  # 512-2048 px, under 2 MB, at .claude-plugin/icon.png. scripts/make_icon.py draws it.
+  R02I="$KIT_SRC/.claude-plugin/icon.png"
+  python3 - "$R02I" 2>/dev/null <<'PY' && ok "R02: icon.png is a square PNG the directory accepts" || no "R02: icon.png missing or not a 512-2048 px square PNG under 2 MB"
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+assert b[:8] == b"\x89PNG\r\n\x1a\n" and b[12:16] == b"IHDR"
+w, h = struct.unpack(">II", b[16:24])
+assert w == h and 512 <= w <= 2048 and len(b) < 2 * 1024 * 1024
+PY
+  # Pixels, not bytes: another zlib may compress the same image differently.
+  R02T="$(mktemp)"
+  python3 "$KIT_SRC/scripts/make_icon.py" "$R02T" >/dev/null 2>&1 && python3 - "$R02T" "$R02I" 2>/dev/null <<'PY' \
+    && ok "R02: scripts/make_icon.py reproduces icon.png pixel for pixel" || no "R02: icon.png is not what scripts/make_icon.py draws"
+import sys, zlib
+def pixels(path):
+    b, i, idat = open(path, "rb").read(), 8, b""
+    while i < len(b):
+        n = int.from_bytes(b[i:i + 4], "big")
+        if b[i + 4:i + 8] == b"IDAT":
+            idat += b[i + 8:i + 8 + n]
+        i += 12 + n
+    return zlib.decompress(idat)
+assert pixels(sys.argv[1]) == pixels(sys.argv[2])
+PY
+  rm -f "$R02T"
 else skip "R02: manifest checks (no python3)"; fi
 # The skills use the REPO's vendored scanner, never fetch one: one identical contract in each.
 R02S='## Where the scanner is'

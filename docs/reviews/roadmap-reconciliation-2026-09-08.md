@@ -4,6 +4,24 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
+
+The developer portal validated `main @ 7770088`: 7 checks passed, 16 warnings and 16 policy holds, all from the plugin root being the repo root (classification in the R17 card). The user decided to submit as is and leave the holds to the reviewer (A), and to move the plugin into its own folder later (B → R17, P2). The listing icon was the only real gap; the portal takes it once, at the first save, so `.claude-plugin/icon.png` (drawn by `scripts/make_icon.py`, checked by e2e) went to `main` before the submission.
+
+## 2026-11-04 — v1.21.0 released (plugin-ready)
+
+`dev/plugin-readiness` merged to `main` as PR #49 (squash). `v1.21.0-rc.1` was cut on that commit. CI on the PR first failed two e2e tests that assumed the local git default branch and gh location; both were fixed in the PR (`RELEASE_GH`, `clone -b main`).
+
+**Dogfood (`scripts/dogfood.sh`):** OK on clones of TMS (300 s; real findings, no `error`), buzz-hermes-stack (11 s) and a fresh install. Also OK on TMS's kit branch, upgrading from a v1.20.0 pin: 14 new settings listed, `verify` ok, `--check` up to date before and after (the RC was not offered on the stable channel). Manual checks:
+- `doctor` is correct, and the moved "repo-local rules" pointer resolves.
+- js-deps `skipped` is right there (vendored assets without lockfiles).
+- A headless `/sec-triage` pass with the RC's plugin kept to its contract. It wrote proposals only, stated that no scan and no `--check` ran, and read the new `git` field correctly.
+- Follow-up from that pass: osv may list some advisories twice in py-deps' output; to check.
+
+**Final:** `v1.21.0` on the RC commit. `claude plugin marketplace add boraeresici/security-audit-kit` and install from GitHub, checked in a throwaway config: version 1.21.0, enabled. Post-release: the README demo was regenerated from v1.21.0.
+
+**Next (agreed earlier):** F33b per-file check, raised by the comparison (the Semgrep plugin checks every agent edit). Then the public listing in the official marketplace, which is the user's submission.
+
 ## 2026-11-04 — path to the plugin, steps 1–4 implemented (`dev/plugin-readiness`, unreleased)
 
 Local-dev mode since v1.20.0: one branch, one commit per item, pushed. No PR, RC or version until the plugin-ready release. Status per item is in its backlog card.

@@ -87,6 +87,7 @@ This table does not repeat the F items above. “Conditional” items are not ta
 | R14 | Signal-selected expert review playbooks | Conditional P2 | Security + AI | S selection; M / domain | F12 eval coverage, F27; coverage gap at a real consumer |
 | R15 | New vulnerability tracking, event output and agent access | Note / conditional | Security + integration | a: S; b: S–M; c: M–L; d: M | a: none; b: F01; c: F03, F19; d: c, F11, F13; real consumer demand |
 | R16 | Optional external dynamic adapter (nuclei reference) | Conditional | Security + integration | M | F17 registry (done), F16b normalizer; real consumer request for a live-target check |
+| R17 | The plugin in its own folder, so the directory scan sees only the plugin | P2 (2026-11-04) | Release + DX | M | R02 (released); the first directory review's outcome |
 
 ## Work cards / acceptance criteria
 
@@ -429,7 +430,7 @@ First write the contract for repos with/without a vendored scanner and for a dif
 
 **2026-11-03 acceptance addendum (Phoenix (local note `docs/compare/phoenix-security-skills.local.md`) and Masriyan (local note `docs/compare/masriyan-cybersecurity-skill.local.md`) comparisons):** All three competitor tools are in a marketplace; the distribution gap was confirmed by the comparison. `claude plugin validate --strict` must run in CI. Manifest-to-disk consistency must also be tested: every skill, hook and command path in the manifest must exist, but there must also be no skill that is not in the manifest. Hooks must come with the plugin's `hooks.json` file; the user's `settings.json` file must not be merged. Phoenix's `jq` merge overwrites the user's existing hook arrays; the same bug must not be repeated.
 
-**Status — 2026-11-04 (local/private channel):** implemented on `dev/plugin-readiness`. The manifest facts were checked against the current Claude Code docs (plugins manifest and marketplace references, skills, hooks, plugin security) before writing.
+**Released in v1.21.0 (2026-11-04)**; installs from GitHub with `claude plugin marketplace add boraeresici/security-audit-kit`. The official-marketplace listing is still open. **Status — 2026-11-04 (local/private channel):** implemented on `dev/plugin-readiness`. The manifest facts were checked against the current Claude Code docs (plugins manifest and marketplace references, skills, hooks, plugin security) before writing.
 - **Manifests:** `.claude-plugin/plugin.json` (name `security-audit-kit`, version = kit release) and `.claude-plugin/marketplace.json` at the repo root (`source: "./"`, same repo). Default discovery only: no component paths in the manifest.
 - **Skills:** moved to `skills/<name>/SKILL.md`, a single source for both the plugin and `install.sh`.
 - **Contract (repo with or without a vendored scanner, any working directory):** one identical "Where the scanner is" section in every skill. Use `<git toplevel>/tools/security-audit-kit/scan.sh` only, never the plugin's copy. If it is missing, download nothing, explain `bootstrap.sh`, continue without the scan, and say so. `install.sh --no-skills` prevents loading the skills twice.
@@ -464,7 +465,7 @@ First write the contract for repos with/without a vendored scanner and for a dif
   - Edited copies are kept, with a removal hint.
   - `release.sh` refuses missing sums.
   - 7 e2e checks.
-  - The listing icon and the public listing (F32 / public R02).
+  - The listing icon: `.claude-plugin/icon.png`, drawn by `scripts/make_icon.py` (2026-11-04). The directory listing was submitted through the developer portal with the plugin at the repo root; R17 narrows what the directory scans.
   - Branch protection needs `plugin` added as a required check, a GitHub setting.
 
 ### R03 — Heavy reachability pilot
@@ -617,6 +618,23 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 **Not in scope:** exploit execution, credential attacks, network/host scanning, and any tool that needs a server, a database or `docker.sock`.
 
 **Opening trigger:** a real consumer request for a live-target check that the static dimensions cannot answer, after F16b.
+
+### R17 — The plugin in its own folder
+
+**Record — 2026-11-04:** The developer portal validated `main @ 7770088` (v1.21.0): 7 checks passed, with 16 warnings and 16 policy holds. Holds do not reject a submission; they hold the version for a reviewer. All of them come from one fact: `marketplace.json` uses `source: "./"`, so the directory scans the whole kit as the plugin, not just `plugin.json` and the 5 skills. Classification of what it flagged:
+- **"Image or font the plugin could run" (8):** the landing fonts, named by `scan.sh` / `CHECKSUMS` / `e2e.sh` (file lists), `landing/index.html` (`@font-face`) and `make_banner.py` (embedded in the banner). Nothing executes them. One hold is a semgrep exclude glob the validator could not expand.
+- **"Uses a credential from the user's machine" (8):** word matches next to a URL in the same file: `LOCK_TOKEN` (the lock's content digest), the e2e `PASS` counter, Turkish "pass değil", "tests pass clean" in `sec-triage`, "HTTP" in `sec-ai-review` (an attack class it describes). The plugin reads no credential and makes no request.
+- **"Download-and-run command" (15):** install commands in documentation and maintainer scripts (READMEs, CHANGELOG, CONTRIBUTING, templates, landing, `bootstrap.sh`, `dogfood.sh`, e2e). The two skill matches are patterns the skills tell the reviewer to look for (`exec`, `eval`, `pickle.loads`). e2e already checks that no skill pipes a download into a shell.
+- **No icon:** fixed in this card's PR (`.claude-plugin/icon.png`). The portal takes the icon once, at the first save, so it went in before the submission.
+
+**Decision (user, 2026-11-04):** submit as is (A) and leave the holds to the reviewer; move the plugin into its own folder in a later release (B, this card).
+
+**Acceptance criteria:**
+- A plugin folder holds only `.claude-plugin/plugin.json`, the icon and `skills/<name>/SKILL.md`; `marketplace.json` points at it. No symlinks (the directory refuses them), so the skills live there and `install.sh` copies from there.
+- e2e: the plugin folder holds nothing else; `install.sh` installs exactly its skills; `lib/released-skills.sums` still recognises older copies.
+- `claude plugin validate --strict` passes; the portal's plugin path is the new folder, and its validation shows no hold from kit files outside it.
+- Existing installs (`marketplace add boraeresici/security-audit-kit`) keep working after an update; checked in a throwaway config.
+- CHANGELOG upgrade note for anyone who read the skills at `skills/` directly.
 
 ### F29 — py-deps environment selection
 
