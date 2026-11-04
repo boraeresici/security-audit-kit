@@ -29,6 +29,7 @@ lives in [`evidence.json`](evidence.md).
                  "tools": {"semgrep": "1.166.0", "…": "…", "gitleaks": "ghcr.io/gitleaks/gitleaks:v8.21.2@sha256:…"}},
   "artifacts": [{"path": "sarif/semgrep.sarif", "sha256": "…"}],
   "trivy_db": {"updated_at": "2026-11-03T01:30:30Z", "downloaded_at": "2026-11-03T05:44:24Z", "age_hours": 3.2, "cache": "security-audit-trivy"},
+  "git": {"branch": "main", "upstream": "origin/main", "ahead": 0, "behind": 12, "last_fetch_hours": 3},
   "dimensions": [
     {"name": "secret",  "exit_code": 0, "status": "skipped",        "gate": "allow", "reason": "no docker -> gitleaks skipped"},
     {"name": "sast",    "exit_code": 1, "status": "findings",       "gate": "block", "seconds": 3.1, "reason": null},
@@ -113,6 +114,14 @@ used (F30). That is the DB's identity: the same DB always gives the same value, 
 `evidence.json`. Its **age** is run metadata and goes only into the top-level `trivy_db` object
 (`updated_at`, `downloaded_at`, `age_hours`, `cache`; `null` when trivy did not run). A "clean" from
 a 20-hour-old DB and one from a fresh DB can be told apart there.
+
+## `git` — was the scanned branch behind its upstream
+
+`{"branch", "upstream", "ahead", "behind", "last_fetch_hours"}`, or `null` when the branch has no
+upstream. `behind` > 0 means the scan judged older code than the upstream has. The kit never
+fetches, so the counts are as of the last fetch, `last_fetch_hours` ago (`null` if never fetched).
+Run metadata, like `trivy_db`: not part of `provenance`, never in `evidence.json`, never changes
+the gate. The closing summary and `doctor` print it as a `git: … behind …` line.
 
 ## `artifacts` — what this run produced
 

@@ -432,6 +432,13 @@ tek satirda yazar. Bu satir her hook kosusunda tekrarlanir, cunku kurulum gunu i
 gun degildir. Bir sey bloklarsa ozet bunun bir bulgu mu (bloku kaldirma yollariyla) yoksa coken bir
 tarayici mi (taramayi duzelt, asla allowlist'e ekleme) oldugunu soyler.
 
+Tarama checkout edilmis kodu okur. Branch upstream'inin gerisindeyse remote'takinden eski kodu
+degerlendirmis olur: upstream'de duzeltilmis bulgular acik gorunur, upstream'e eklenen kod hic
+taranmamistir. Kapanis ozeti bunu yazar:
+`── git: main is 12 commit(s) behind origin/main (as of the last fetch, 3h ago) — this scan saw older code …`;
+`doctor` da taramadan once soyler. Bu bir uyaridir, asla blok degil. Kit fetch yapmaz; "geride"
+son fetch'e goredir ve satir o fetch'in yasini da verir.
+
 Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar: gate'in karari
 (`gate.exit_code`, `gate.blocked_by`), onu yazan kosunun `run_id`'si (asagidaki *Ayni anda iki
 tarama* bolumune bak) ve boyut basina gercekte ne oldugu — `pass`, `findings`, `error`, `skipped`,

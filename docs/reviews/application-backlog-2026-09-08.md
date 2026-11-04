@@ -204,6 +204,12 @@ Default, custom hooksPath and pre-commit framework fixtures must be prepared. Ex
 - **Tests:** 2 e2e checks with real gitleaks and a real `git merge --no-commit`.
 - **Out of scope:** the repo's own false positives (digests, UUIDs) are fixed by narrow `.gitleaks.toml` entries in that repo, as the triage proposed.
 
+**Addendum 3 — 2026-11-04 (TMS: a scan on a stale branch):**
+- **What happened:** the scan ran on a local branch far behind its remote. Coverage was silently incomplete: findings already fixed upstream looked open, and upstream code went unscanned.
+- **The fix:** read-only, no fetch. When `HEAD` is behind `@{u}`, the closing summary and `doctor` print `git: <branch> is N commit(s) behind <upstream> (as of the last fetch, Xh ago)`. `summary.json` gains a top-level `git` object (run metadata, not provenance). The skills' "Where the scanner is" section tells the report to name it as reduced coverage. Never a block.
+- **Tests:** 4 e2e checks (up to date: silent; behind: closing summary, `summary.json`, `doctor`).
+- **Next:** `scan.sh changed` diffs against a hardcoded `origin/main`; it should use the remote's default branch.
+
 ### F11 — Kit threat model
 
 Data/privilege flows must be mapped for config, scanned code, scanner output, AI instructions, cache, vendor and external registries. It must be stated explicitly that the config is executable. A read-only source + separate writable artifact mount must be tested with at least gitleaks and trivy fixtures. If compatibility breaks, the migration cost must be recorded; an unverified risk must not be presented as an exploit.

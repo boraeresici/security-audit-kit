@@ -444,6 +444,13 @@ to fix that. This is repeated on every hook run, because the day you install is 
 push. When something blocks, the summary says whether it was a finding (with the ways to unblock)
 or a scanner that failed (fix the scan, never allowlist it).
 
+A scan reads the code that is checked out. When the branch is behind its upstream, it judged older
+code than the remote has: findings already fixed upstream look open, and upstream code went
+unscanned. The closing summary then says
+`── git: main is 12 commit(s) behind origin/main (as of the last fetch, 3h ago) — this scan saw older code …`,
+and `doctor` says it before you scan. It is a warning, never a block. The kit does not fetch, so
+"behind" is as of your last fetch, and the line gives its age.
+
 Every run writes a machine-readable `docs/security/scan-findings/summary.json`: the gate's decision
 (`gate.exit_code`, `gate.blocked_by`), the `run_id` of the run that wrote it (see *Two scans at
 once* below), and per dimension what actually happened — `pass`, `findings`, `error`, `skipped`,

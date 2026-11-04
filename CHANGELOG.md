@@ -53,6 +53,13 @@ All notable changes to this project are documented here. The format is based on
   summary says `── config: N warning(s)`, `summary.json` gains `config.warnings`, and
   `doctor`/`verify` list them. e2e also checks that every setting `scan.sh` reads is documented in
   `security-audit.conf.example`.
+- **A scan says when the branch is behind its upstream.** A scan reads what is checked out; on a
+  real repo it ran on a branch far behind its remote, so findings fixed upstream looked open and
+  upstream code went unscanned. When `HEAD` is behind `@{u}`, the closing summary prints
+  `── git: <branch> is N commit(s) behind <upstream> (as of the last fetch, Xh ago) — this scan saw
+  older code …`, `doctor` prints it before a scan, and `summary.json` gains a top-level `git`
+  object (run metadata, not provenance). Never a block, and no fetch: "behind" is as of the last
+  fetch. The skills report it as reduced coverage.
 - **`scripts/dogfood.sh <tag> [repo...]`: the RC dogfood as a script** (maintainers). It works on a
   clone of each consumer repo, so the real repo is untouched, and also tries a fresh install. Per
   repo it runs:

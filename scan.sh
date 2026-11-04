@@ -957,7 +957,8 @@ scan_doctor(){
         printf 'platform: WSL2 — full support (docker via Docker Desktop WSL integration).\n\n'
       fi ;;
   esac
-  local hp_warn; hp_warn="$(hookspath_check)"
+  local hp_warn gf; hp_warn="$(hookspath_check)"
+  gf="$(git_freshness_line "$(git_freshness)" doctor)"; [ -n "$gf" ] && printf '!!  %s\n\n' "$gf"
   if [ -n "$hp_warn" ]; then printf '!!  %s\n\n' "$hp_warn"; fi
   printf 'toolchain (a missing one only skips that dimension):\n'
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
@@ -1601,6 +1602,28 @@ hookspath_check(){
     "$hp" "${KIT_DIR#"$ROOT"/}"
 }
 
+# Is the scanned branch behind its upstream? Then the scan judged older code than the remote has:
+# things fixed upstream look open, code added upstream went unscanned. Seen on a real repo, 1389
+# commits behind. Read-only: no fetch, so "behind" is as of the last fetch, and its age is said.
+# -> "branch<TAB>upstream<TAB>ahead<TAB>behind<TAB>hours since the last fetch", or nothing.
+git_freshness(){
+  local br up ab fh="" fm
+  br="$(git -C "$ROOT" symbolic-ref -q --short HEAD 2>/dev/null)" || br="(detached)"
+  up="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || return 0
+  ab="$(git -C "$ROOT" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)" || return 0
+  fm="$(file_mtime "$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null | sed "s|^\([^/]\)|$ROOT/\1|")/FETCH_HEAD" 2>/dev/null)"
+  [ -n "$fm" ] && fh="$(( ( $(date +%s) - fm ) / 3600 ))"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$br" "$up" "$(awk '{print $1}' <<<"$ab")" "$(awk '{print $2}' <<<"$ab")" "$fh"
+}
+git_freshness_line(){   # <freshness> [doctor] -> the warning, or nothing when not behind
+  local br up behind fh what="this scan saw older code than the upstream has; pull, then scan again"
+  [ "${2:-}" = doctor ] && what="a scan now sees older code than the upstream has; pull first"
+  IFS="$(printf '\t')" read -r br up _ behind fh <<<"$1"
+  [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null || return 0
+  printf 'git: %s is %s commit(s) behind %s%s — %s' \
+    "$br" "$behind" "$up" "${fh:+ (as of the last fetch, ${fh}h ago)}" "$what"
+}
+
 # ---- config check (F24) ----------------------------------------------------------------------
 # .security-audit.conf is SOURCED: it is bash, and runs with your privileges on every scan and hook.
 # Nothing here refuses to load it (fail-open, as the gate is). It says out loud what the file does
@@ -1857,6 +1880,7 @@ provenance_json(){
     "$(json_str "$(tool_ref ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")")"
 }
 PROVENANCE="$(provenance_json)"
+GIT_FRESH="$(git_freshness)"
 
 # This run's SARIF, by name and digest — what evidence.py may treat as this run's findings.
 artifacts_json(){
@@ -1907,6 +1931,13 @@ fi
   printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
   printf '  "provenance": %s,\n' "$PROVENANCE"
   printf '  "trivy_db": %s,\n' "$TRIVY_DB_JSON"
+  if [ -n "$GIT_FRESH" ]; then
+    IFS="$(printf '\t')" read -r gf_br gf_up gf_ahead gf_behind gf_fh <<<"$GIT_FRESH"
+    printf '  "git": {"branch": %s, "upstream": %s, "ahead": %s, "behind": %s, "last_fetch_hours": %s},\n' \
+      "$(json_str "$gf_br")" "$(json_str "$gf_up")" "${gf_ahead:-0}" "${gf_behind:-0}" "${gf_fh:-null}"
+  else
+    printf '  "git": null,\n'
+  fi
   if [ -f "$CONF" ]; then
     printf '  "config": {"path": %s, "warnings": [' "$(json_str "${CONF#"$ROOT"/}")"
     cfirst=1
@@ -1995,6 +2026,8 @@ awk -F'\t' '{ why=$6; if (length(why) > 72) why=substr(why,1,69) "..."
   printf "   %-10s %-14s %5.1fs  %s\n", $1, $3, $5/1000, why }' "$RESULTS_FILE"
 not_covered="$(scan_command_field "$CMD" 3 2>/dev/null)"
 [ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
+GF_WARN="$(git_freshness_line "$GIT_FRESH")"
+[ -n "$GF_WARN" ] && printf '\033[33m── %s\033[0m\n' "$GF_WARN"
 HP_WARN="$(hookspath_check)"
 [ -n "$HP_WARN" ] && printf '\033[33m── %s\033[0m\n' "$HP_WARN"
 if [ -n "$CONFIG_WARNINGS" ]; then

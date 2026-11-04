@@ -1952,6 +1952,24 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   f24 doctor; grep -q 'SAST_PATH' "$F02/out" && ok "F24: doctor lists the config warnings" || no "F24: doctor silent"
   f24 verify; grep -q 'SAST_PATH' "$F02/out" && ok "F24: verify lists the config warnings (and does not fail on them)" || no "F24: verify silent"
   rm -f "$F24C"
+  echo "-- git freshness: a branch behind its upstream is said to be scanning older code --"
+  # Seen on a real repo: the scanned branch was 1389 commits behind its upstream, so the scan judged
+  # code that had moved on: fixed things looked open, new code went unscanned. Read-only: no fetch.
+  GF="$F02/gf"; git init -q --bare "$GF.git"
+  git -C "$F02/repo" remote add origin "$GF.git" 2>/dev/null; git -C "$F02/repo" push -q -u origin HEAD:refs/heads/main >/dev/null 2>&1
+  git -C "$F02/repo" branch -q --set-upstream-to=origin/main >/dev/null 2>&1
+  git clone -q "$GF.git" "$GF.other" >/dev/null 2>&1
+  ( cd "$GF.other" && echo n > newer.txt && git add newer.txt && git -c user.email=e2e@test -c user.name=e2e commit -qm newer && git push -q ) >/dev/null 2>&1
+  f02 iac; grep -q 'behind' "$F02/out" && no "freshness: warned while up to date" || ok "freshness: an up-to-date branch gets no warning"
+  git -C "$F02/repo" fetch -q origin >/dev/null 2>&1
+  f02 iac; GFO="$(sed 's/\x1b\[[0-9;]*m//g' "$F02/out")"
+  grep -qE '── git: .* 1 commit\(s\) behind origin/main' <<<"$GFO" && grep -q 'older code' <<<"$GFO" && [ "$F02RC" -eq 0 ] \
+    && ok "freshness: a branch behind its upstream is named in the closing summary (not a block)" || no "freshness: behind not reported: $(grep -i git <<<"$GFO")"
+  /usr/bin/python3 -I -c 'import json,sys; g=json.loads(sys.argv[1]).get("git") or {}; assert g.get("behind")==1 and g.get("upstream")=="origin/main", g' "$F02SUM" 2>/dev/null \
+    && ok "freshness: summary.json records upstream + behind" || no "freshness: summary.json git field: $F02SUM"
+  GFD="$(cd "$F02/repo" && env PATH="$F02S:$F02SYS" "$BASH" tools/security-audit-kit/scan.sh doctor 2>&1)"
+  grep -q 'behind origin/main' <<<"$GFD" && ok "freshness: doctor says it too" || no "freshness: doctor silent: $(head -6 <<<"$GFD")"
+  git -C "$F02/repo" merge -q --ff-only origin/main >/dev/null 2>&1; git -C "$F02/repo" remote remove origin >/dev/null 2>&1; rm -rf "$GF.git" "$GF.other"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 
