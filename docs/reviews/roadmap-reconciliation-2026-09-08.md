@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
+
+The developer portal validated `main @ 7770088`: 7 checks passed, 16 warnings and 16 policy holds, all from the plugin root being the repo root (classification in the R17 card). The user decided to submit as is and leave the holds to the reviewer (A), and to move the plugin into its own folder later (B → R17, P2). The listing icon was the only real gap; the portal takes it once, at the first save, so `.claude-plugin/icon.png` (drawn by `scripts/make_icon.py`, checked by e2e) went to `main` before the submission.
+
 ## 2026-11-04 — v1.21.0 released (plugin-ready)
 
 `dev/plugin-readiness` merged to `main` as PR #49 (squash). `v1.21.0-rc.1` was cut on that commit. CI on the PR first failed two e2e tests that assumed the local git default branch and gh location; both were fixed in the PR (`RELEASE_GH`, `clone -b main`).
