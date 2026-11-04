@@ -85,6 +85,10 @@ All notable changes to this project are documented here. The format is based on
   `skills.md` and `configuration.md`; the README keeps the first screen, install, the plugin, the
   lifecycle and finding loop, and trust. `README-tr.md` keeps the full reference in Turkish. e2e
   checks that every README/docs link and anchor resolves (`tests/linkcheck.py`).
+  The comparison now starts with the tools in the same channel: Semgrep's Claude Code plugin and
+  Trail of Bits' `static-analysis` plugin, checked against their repos and docs on 2026-11-04 and
+  listing where each is stronger. The landing page shows this table; the platform comparison
+  stays in `docs/compare/feature-comparison.md`.
   The demo is generated from a real run by `scripts/make_demo.py`, with a plain-text transcript in
   `docs/assets/demo.txt`. The comparison's unmeasured default-backend row is removed until it is
   measured. An OpenSSF Scorecard workflow and badge were added.

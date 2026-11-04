@@ -693,7 +693,7 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - **OpenSSF Scorecard:** `.github/workflows/scorecard.yml` (pinned by SHA, `main` only, results to code scanning and the public API) and a README badge. The badge fills in after the first run on `main`.
 - **Still open:**
   - ~~Moving the deep reference content out of the README.~~ **Done — 2026-11-04 (user's choice b):** the English reference moved into `docs/install.md`, `usage.md`, `rules.md`, `skills.md`, `configuration.md` (README 918 → about 260 lines). README-tr keeps the full Turkish reference, since it is the only Turkish file. A link and anchor check runs in e2e.
-  - Re-framing the landing comparison around agent-channel tools. Needs a sourced feature check of those plugins first.
+  - ~~Re-framing the landing comparison around agent-channel tools.~~ **Done — 2026-11-04:** a sourced check of the Semgrep plugin (Guardian) and Trail of Bits' `static-analysis` (their repos and docs, retrieved 2026-11-04) became a new first table in `docs/compare/feature-comparison.md`, with a "where they are stronger" paragraph. The landing's comparison section now shows that table; the SaaS/Semgrep platform table stays in the doc. Notable finding: the Semgrep plugin checks every agent edit, which raises F33b's priority.
   - The banner's terminal block from a real run (the demo does this now; the banner still uses fixed rows).
 
 ### F33 — Plugin hook set

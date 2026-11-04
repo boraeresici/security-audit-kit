@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the comparison table + version/date strings in landing/index.html
-from docs/compare/feature-comparison.md (the maintained source of truth).
+from docs/compare/feature-comparison.md (the maintained source of truth). The landing shows the
+agent-channel table (security plugins for Claude Code); the platform table stays in the doc.
 
 Intended as the Cloudflare Pages build command (`python3 landing/build.py`,
 output dir `landing`) so every deploy is in sync with the repo state.
@@ -33,11 +34,12 @@ if not m:
     die("could not parse '**Last updated:** YYYY-MM-DD · kit **vX.Y.Z**' from the doc header")
 doc_date, ver = m.group(1), m.group(2)
 
-# --- parse the feature comparison table ---
+# --- parse the agent-channel comparison table ---
+SECTION = "## In the coding agent"
 try:
-    section = md.split("## Feature comparison", 1)[1]
+    section = md.split(SECTION, 1)[1]
 except IndexError:
-    die("no '## Feature comparison' section in the doc")
+    die(f"no '{SECTION}' section in the doc")
 
 rows = []
 started = False
@@ -54,7 +56,7 @@ for line in section.splitlines():
     if cells[0].lower() == "capability" or set(cells[0]) <= {"-", ":"}:
         continue
     rows.append(cells)
-if len(rows) < 10:
+if len(rows) < 12:
     die(f"only {len(rows)} data rows parsed — table format changed?")
 
 
@@ -75,8 +77,8 @@ def cell(raw):
     s = raw.strip()
     if not s:
         return "<td></td>"
-    if s.lower() == "unpublished":
-        return '<td class="m d">unpublished</td>'
+    if s.lower() in ("unpublished", "not documented"):
+        return f'<td class="m d">{s.lower()}</td>'
     if s.startswith("MIT"):
         return f'<td class="m y">{clean(s)}</td>'
     for prefix, cls, sym in MARKS:

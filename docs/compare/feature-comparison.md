@@ -1,12 +1,60 @@
-# How security-audit-kit compares — all-in-one SaaS vs Semgrep vs security-audit-kit
+# How security-audit-kit compares
+
+Two comparisons. First, the tools a developer actually chooses between inside a coding agent:
+security plugins for Claude Code. Second, the wider platforms (all-in-one SaaS, Semgrep).
 
 > **Last updated:** 2026-11-04 · kit **v1.20.0**
 >
-> SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep
+> Plugin data was checked on 2026-11-04 against the plugins' own repositories and docs (sources under
+> the table). SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep
 > (retrieved 2026-07) plus public product docs. Semgrep is a trademark of its owner. This table is maintained as features ship — rows marked
 > **🔜 Planned** describe intended work, not commitments, and may change.
 
-## Positioning
+## In the coding agent: security plugins for Claude Code
+
+Compared with the two security plugins in the same channel: Semgrep's official plugin (Semgrep
+Guardian, marketplace `claude-plugins-official`) and Trail of Bits' open-source `static-analysis`
+plugin (`trailofbits/skills`). Checked on **2026-11-04** against their repositories and docs (sources
+below). "Not documented" means no statement was found either way.
+
+| Capability | Semgrep plugin | trailofbits static-analysis | security-audit-kit |
+|---|---|---|---|
+| Works without an account | ✗ needs a Semgrep account; 30-day trial, then a paid license | ✓ (optional Semgrep Pro) | ✓ |
+| Checks every file the agent writes | ✓ hooks on every write/edit; the agent fixes and it rescans | ✗ run on request | 🔜 planned (per-file advisory check, F33b); today git hooks gate every commit and push |
+| Gate outside the agent (git hooks / CI) | ✗ agent only; keep Semgrep in CI | Partial — scripts usable in CI | ✓ pre-commit + pre-push hooks, same `scan.sh` in CI |
+| SAST | ✓ Semgrep Code (hosted) | ✓ CodeQL + Semgrep with third-party rules, merged SARIF | ✓ semgrep (pinned), stack-aware packs, plus `/sec-sast-deep` for authz/IDOR and business logic |
+| Secrets | ✓ Semgrep Secrets | Partial — semgrep secret rulesets only | ✓ gitleaks: full history + staged |
+| Dependency CVEs (SCA) | ✓ Semgrep Supply Chain | ✗ (a separate plugin) | ✓ pip-audit, npm/pnpm/yarn audit, OSV-Scanner |
+| Malicious packages / pre-install check | Partial — separate malware firewall, private beta | ✗ (a separate plugin) | ✓ GuardDog + `pkgcheck` before install, opt-in agent hook |
+| IaC | Not documented | Partial — semgrep terraform/kubernetes rules | ✓ checkov |
+| Container image | Not documented | ✗ Dockerfile rules only | ✓ trivy |
+| GitHub Actions | Not documented | Partial — semgrep github-actions rules | ✓ zizmor |
+| SBOM | Not documented | ✗ | ✓ syft (CycloneDX + SPDX) |
+| False-positive triage with an evidence bar | ✗ findings go back to the agent | ✗ (a separate fp-check plugin) | ✓ `/sec-triage`: sink, source and path required; default verdict FP; measured with evals |
+| Threat model · AI/LLM app review | ✗ | ✗ | ✓ `/sec-threat-model` (STRIDE) · `/sec-ai-review` (OWASP LLM Top 10) |
+| A failed or skipped scan is never shown as clean | Not documented | ✓ the report must list failed and skipped scans | ✓ per-dimension status (`skipped`, `error`, `indeterminate`) in every summary |
+| Pinned versions | Partial — versioned, self-updating binaries | ✗ third-party rule repos cloned unpinned | ✓ exact versions + image digests, `CHECKSUMS` checked before every push |
+| Where your code goes | Edited files to a hosted scanner; telemetry (can be turned off) | No code upload found; downloads rules | No scanner sends code; dependency names and versions go to advisory services ([data-flow](../data-flow.md)) |
+| Platforms | ✓ macOS, Linux, Windows, WSL | Not documented (macOS notes) | Linux + macOS; Windows via WSL2 (documented, not yet verified by us) |
+| License | Not documented (no license file; prebuilt binaries) | CC-BY-SA-4.0 (CodeQL has its own terms) | MIT, free |
+
+**Where they are stronger.** The Semgrep plugin checks every edit as the agent writes it and loops
+until the code comes back clean. It runs natively on Windows, and a team can manage it centrally.
+Trail of Bits' plugin brings CodeQL's interprocedural dataflow, a large set of third-party rules and
+generated models for project-specific sources and sinks. The kit's answer to per-edit checking is
+planned (F33b); until then it gates at commit and push.
+
+**Sources (retrieved 2026-11-04):**
+- Semgrep plugin: github.com/semgrep/guardian (README, `plugin/hooks/hooks.json`, CHANGELOG) and
+  docs.semgrep.dev/semgrep-guardian (faq, rules-and-configuration, choose-your-setup,
+  ide-setup/claude-code).
+- trailofbits static-analysis: github.com/trailofbits/skills/tree/main/plugins/static-analysis
+  (README, `skills/*/SKILL.md`, `rulesets.md`, `run-scans.sh`), plugins/fp-check, and the CodeQL CLI
+  license (github.com/github/codeql-cli-binaries).
+
+## Platforms: all-in-one SaaS vs Semgrep vs security-audit-kit
+
+### Positioning
 
 These are three different product shapes, so some "missing" cells are deliberate scope decisions:
 
@@ -20,7 +68,7 @@ These are three different product shapes, so some "missing" cells are deliberate
   versions to advisory services, and the AI layer sends what it reads to the agent's model
   provider ([data-flow](../data-flow.md)).
 
-## Legend
+### Legend
 
 | Mark | Meaning |
 |---|---|
@@ -30,7 +78,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | 🔜 | Planned for the kit — not shipped yet |
 | — | Out of scope for the kit **by design** (see below) |
 
-## Feature comparison
+### Feature comparison
 
 | Capability | All-in-one SaaS | Semgrep | security-audit-kit |
 |---|---|---|---|
@@ -64,7 +112,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest enforced by the pre-push hook (an edited vendored copy blocks the push), SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
 | Pricing | Freemium SaaS | Freemium | MIT, free |
 
-## Why some rows are "—" (out of scope by design)
+### Why some rows are "—" (out of scope by design)
 
 The kit's hard boundary is **scan + judge, never exploit or run in production**:
 
