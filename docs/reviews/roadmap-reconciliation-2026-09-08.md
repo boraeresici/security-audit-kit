@@ -24,8 +24,8 @@ Local-dev mode since v1.20.0: one branch, one commit per item, pushed. No PR, RC
 **Same day, before step 5:** F13 data-flow disclosure (`docs/data-flow.md`; the "nothing leaves" claims are gone from the landing, comparison and report footer), F36 STRIDE completeness grid in `/sec-threat-model`.
 
 **Step 5, started:** F32 first screen (quickstart, a demo generated from a real run by `scripts/make_demo.py`, "What you get"), the unmeasured comparison row removed, OpenSSF Scorecard. Open, waiting on a decision or research:
-- moving the README's deep reference content into `docs/`: what README-tr keeps;
-- the landing comparison re-framed around agent-channel tools: needs a sourced feature check;
+- ~~moving the README's deep reference content into `docs/`~~ done the same day (user's choice: English moves to `docs/`, README-tr keeps the full Turkish reference);
+- ~~the landing comparison re-framed around agent-channel tools~~ done the same day, from a sourced check of the Semgrep plugin and Trail of Bits' `static-analysis`. Finding: the Semgrep plugin checks every agent edit, so F33b (per-file check) matters more than its P2 suggested;
 - the public plugin listing: after the plugin-ready release reaches `main`.
 
 **Next:** the plugin-ready release through RC → dogfood → final (needs the user's approval for the PR, tags and release).
