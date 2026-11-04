@@ -439,6 +439,11 @@ taranmamistir. Kapanis ozeti bunu yazar:
 `doctor` da taramadan once soyler. Bu bir uyaridir, asla blok degil. Kit fetch yapmaz; "geride"
 son fetch'e goredir ve satir o fetch'in yasini da verir.
 
+`scan.sh changed`, remote'un varsayilan branch'iyle merge-base'den bu yana degisen dosyalari tarar
+(`origin/HEAD`, yoksa `origin/main`, yoksa `origin/master`). `BASE_REF=<ref>` tabani elle verir.
+Ikisi de yoksa yalniz commit edilmemis degisikliklere bakar. Kosu her durumda tabanini yazar
+(`vs origin/master`).
+
 Her kosu makine-okunur bir `docs/security/scan-findings/summary.json` yazar: gate'in karari
 (`gate.exit_code`, `gate.blocked_by`), onu yazan kosunun `run_id`'si (asagidaki *Ayni anda iki
 tarama* bolumune bak) ve boyut basina gercekte ne oldugu — `pass`, `findings`, `error`, `skipped`,

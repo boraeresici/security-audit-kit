@@ -208,7 +208,7 @@ Default, custom hooksPath and pre-commit framework fixtures must be prepared. Ex
 - **What happened:** the scan ran on a local branch far behind its remote. Coverage was silently incomplete: findings already fixed upstream looked open, and upstream code went unscanned.
 - **The fix:** read-only, no fetch. When `HEAD` is behind `@{u}`, the closing summary and `doctor` print `git: <branch> is N commit(s) behind <upstream> (as of the last fetch, Xh ago)`. `summary.json` gains a top-level `git` object (run metadata, not provenance). The skills' "Where the scanner is" section tells the report to name it as reduced coverage. Never a block.
 - **Tests:** 4 e2e checks (up to date: silent; behind: closing summary, `summary.json`, `doctor`).
-- **Next:** `scan.sh changed` diffs against a hardcoded `origin/main`; it should use the remote's default branch.
+- **Follow-up, same day:** `scan.sh changed` diffed against a hardcoded `origin/main`. It now uses the remote's default branch (`origin/HEAD`, then `origin/main`, `origin/master`), `BASE_REF` still overrides, and the run names its base. The test also caught `changed` crashing under bash 3.2 (a `case` inside `$( … )`, introduced on this branch by e6d1f7d, never released). 3 e2e checks.
 
 ### F11 — Kit threat model
 

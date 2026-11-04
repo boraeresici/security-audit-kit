@@ -553,12 +553,20 @@ semgrep_rc(){
 }
 
 # ---- sast on changed files only (diff-aware, fast) ----
-# Base ref: $BASE_REF, else merge-base with origin/main, else staged + unstaged changes.
-changed_files(){
-  local base="${BASE_REF:-}"
-  if [ -z "$base" ] && git rev-parse --verify -q origin/main >/dev/null 2>&1; then
-    base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
-  fi
+# Base: $BASE_REF as given, else the merge-base with the remote's default branch (origin/HEAD, then
+# origin/main, origin/master). It was hardcoded origin/main: on a master remote it found no base and
+# fell back to uncommitted changes, calling a branch full of commits "no changed files".
+default_base_ref(){
+  local r
+  r="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)" && [ -n "$r" ] && { echo "$r"; return 0; }
+  for r in origin/main origin/master; do
+    git rev-parse --verify -q "$r" >/dev/null 2>&1 && { echo "$r"; return 0; }
+  done
+  return 0
+}
+changed_files(){   # <ref, or empty: staged + unstaged changes>
+  local base="${1:-}"
+  if [ -n "$base" ] && [ -z "${BASE_REF:-}" ]; then base="$(git merge-base HEAD "$base" 2>/dev/null || true)"; fi
   if [ -n "$base" ]; then
     git diff --name-only --diff-filter=ACMR "$base"
   else
@@ -566,14 +574,21 @@ changed_files(){
     git diff --name-only --diff-filter=ACMR
   fi
 }
+changed_targets(){   # changed files that exist, minus the scan record (explicit targets bypass --exclude)
+  local rec f; rec="$(record_rel)/"
+  changed_files "${1:-}" | sort -u | while IFS= read -r f; do
+    case "$f" in "$rec"*) continue ;; esac
+    [ -f "$f" ] && printf '%s\n' "$f"
+  done
+}
 scan_sast_changed(){
-  local files rec; rec="$(record_rel)/"
-  files="$(changed_files | sort -u | while IFS= read -r f; do
-    case "$f" in "$rec"*) continue ;; esac   # explicit targets bypass --exclude: drop them here
-    [ -f "$f" ] && printf '%s\n' "$f"; done)"
-  [ -z "$files" ] && { dim_na sast "no changed files vs base -> semgrep skipped"; return 0; }
+  local files ref vs
+  ref="${BASE_REF:-$(default_base_ref)}"
+  vs="vs ${ref:-uncommitted changes only (no base: no origin default branch; set BASE_REF)}"
+  files="$(changed_targets "$ref")"
+  [ -z "$files" ] && { dim_na sast "no changed files $vs -> semgrep skipped"; return 0; }
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
-  say sast "semgrep (changed files, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
+  say sast "semgrep (changed files $vs, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
   pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $files
   semgrep_rc $?

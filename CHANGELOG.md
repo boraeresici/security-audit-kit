@@ -75,6 +75,12 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **`scan.sh changed` used a hardcoded `origin/main` as its base.** On a remote whose default branch
+  is `master` (or anything else) it found no base, fell back to uncommitted changes only, and
+  reported "no changed files" for a branch full of commits. The base is now the merge-base with the
+  remote's default branch (`origin/HEAD`, then `origin/main`, then `origin/master`); `BASE_REF`
+  still overrides it. The run names its base (`semgrep (changed files vs origin/master …)`), and
+  with no base the reason says only uncommitted changes were looked at.
 - **A merge commit was blocked by secrets the merged branch already had.** `pre-commit` runs
   `gitleaks protect --staged`, and a merge stages the whole other branch. On a real repo, merging a
   1389-commit dev branch blocked on QA digests, UUIDs and test data that dev had carried for months.

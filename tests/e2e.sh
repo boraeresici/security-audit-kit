@@ -1970,6 +1970,24 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   GFD="$(cd "$F02/repo" && env PATH="$F02S:$F02SYS" "$BASH" tools/security-audit-kit/scan.sh doctor 2>&1)"
   grep -q 'behind origin/main' <<<"$GFD" && ok "freshness: doctor says it too" || no "freshness: doctor silent: $(head -6 <<<"$GFD")"
   git -C "$F02/repo" merge -q --ff-only origin/main >/dev/null 2>&1; git -C "$F02/repo" remote remove origin >/dev/null 2>&1; rm -rf "$GF.git" "$GF.other"
+  echo "-- changed: the base is the remote's default branch, and the run names it --"
+  # It was hardcoded origin/main. On a remote whose default is master it found no base, fell back to
+  # uncommitted changes only, and said "no changed files" about a branch full of commits.
+  GB="$F02/gb"; git init -q --bare "$GB.git"
+  git -C "$F02/repo" remote add origin "$GB.git" 2>/dev/null
+  git -C "$F02/repo" push -q origin HEAD:refs/heads/master >/dev/null 2>&1
+  git -C "$F02/repo" fetch -q origin >/dev/null 2>&1; git -C "$F02/repo" remote set-head origin master >/dev/null 2>&1
+  git -C "$F02/repo" checkout -q -b feat >/dev/null 2>&1
+  ( cd "$F02/repo" && printf 'print(2)\n' > feat.py && git add feat.py && git -c user.email=e2e@test -c user.name=e2e commit -qm feat ) >/dev/null 2>&1
+  f02 changed; D="$(f02dim sast)"
+  [[ "$D" != "not_applicable"* ]] && grep -q 'vs origin/master' "$F02/out" \
+    && ok "changed: the base is origin/HEAD (master here), and the run names it" || no "changed: master remote -> '$D': $(grep -i 'sast' "$F02/out" | head -3)"
+  f02 changed BASE_REF=HEAD; grep -q 'vs HEAD' "$F02/out" && ok "changed: BASE_REF still wins" || no "changed: BASE_REF ignored"
+  git -C "$F02/repo" checkout -q - >/dev/null 2>&1; git -C "$F02/repo" branch -q -D feat >/dev/null 2>&1
+  git -C "$F02/repo" remote remove origin >/dev/null 2>&1; rm -rf "$GB.git"
+  f02 changed; D="$(f02dim sast)"
+  grep -q 'no base' <<<"$D" && grep -q 'BASE_REF' <<<"$D" \
+    && ok "changed: with no remote base, the reason says only uncommitted changes were looked at" || no "changed: no-base reason: '$D'"
 else skip "F02 status tests (no /usr/bin/python3)"; fi
 rm -rf "$F02"
 

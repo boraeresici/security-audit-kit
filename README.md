@@ -451,6 +451,11 @@ unscanned. The closing summary then says
 and `doctor` says it before you scan. It is a warning, never a block. The kit does not fetch, so
 "behind" is as of your last fetch, and the line gives its age.
 
+`scan.sh changed` scans the files that differ from the merge-base with the remote's default branch
+(`origin/HEAD`, else `origin/main`, else `origin/master`). `BASE_REF=<ref>` sets the base instead.
+With neither, it looks only at uncommitted changes. The run names its base (`vs origin/master`)
+either way.
+
 Every run writes a machine-readable `docs/security/scan-findings/summary.json`: the gate's decision
 (`gate.exit_code`, `gate.blocked_by`), the `run_id` of the run that wrote it (see *Two scans at
 once* below), and per dimension what actually happened — `pass`, `findings`, `error`, `skipped`,
