@@ -276,7 +276,7 @@ def main() -> int:
 <title>Security scan report — {esc(repo)} — {esc(date)}</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <h1>Security scan report</h1>
-<p class="sub">{esc(repo)} · {esc(scanned)} · report generated {esc(generated)} by security-audit-kit, locally — nothing left this machine.</p>
+<p class="sub">{esc(repo)} · {esc(scanned)} · report generated {esc(generated)} by security-audit-kit, locally: this file was rendered offline and loads nothing. The scan's dependency lookups queried advisory services (docs/data-flow.md).</p>
 
 <div class="panel">
   <div class="meta">

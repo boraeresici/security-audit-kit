@@ -904,6 +904,11 @@ privileges, is in [docs/threat-model.md](docs/threat-model.md). In short:
 - Docker scanners read the repo read-only.
 - The skills treat repo text as evidence, never instructions.
 - The kit never builds or runs the scanned project (the opt-in rust call analysis is the only exception).
+- **What leaves the machine:** no scanner sends source code, and the kit has no server or telemetry.
+  Dependency lookups send package names and versions to advisory services (PyPI, osv.dev, the JS
+  registry). semgrep fetches rule packs by name, and trivy downloads its DB. The AI layer sends
+  what the agent reads to your agent's model provider. Per command, and how to run offline:
+  [docs/data-flow.md](docs/data-flow.md).
 
 ## License
 [MIT](LICENSE) — developed by [studiobinary.co](https://studiobinary.co).

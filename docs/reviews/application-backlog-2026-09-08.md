@@ -258,6 +258,11 @@ Data/privilege flows must be mapped for config, scanned code, scanner output, AI
 
 For each command, local computation, internet need and the types of data that may be sent to an external service must be listed. Landing meta/comparison, the READMEs and the HTML footer must carry the same limitations. An absolute claim like “Nothing leaves” must be used only for a component that actually guarantees it. If no real traffic measurement is done, the table must say it is based on a code/tool-contract review.
 
+**Status — 2026-11-04:** implemented on `dev/plugin-readiness`.
+- `docs/data-flow.md`: per command, what runs locally, what is downloaded, and what data about the repo is sent where. It separates "runs locally", "needs the network" and "sends data". It says it is a code / tool-contract review, with no traffic capture. It also covers the AI layer (the largest flow, outside the kit's control) and how to run offline.
+- Absolute claims fixed: the landing meta ("Nothing leaves your machine"), the public comparison and the HTML report footer ("nothing left this machine"). The report now says the file was rendered offline, and that the scan's dependency lookups queried advisory services.
+- README en/tr ("Security & trust") and threat-model row 10 carry the same limits and link the table.
+
 ### F14 — First use and coverage
 
 A new user must be able to complete the `doctor → scan → understand the result → next step` flow via a quick start. Help must show each command's dimensions, prerequisites and gate behavior. Dimensions outside `all` must be explicit in the coverage summary. If profiles are added, existing defaults must be preserved. Time to first report and coverage misinterpretations must be measured with at least a few real users; targets must be finalized after a baseline measurement.

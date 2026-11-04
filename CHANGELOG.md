@@ -75,6 +75,12 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Changed
+- **"Nothing leaves your machine" was not true, and is gone (F13).** No scanner sends source code,
+  and the kit has no server or telemetry. But dependency lookups send package names and versions to
+  advisory services, semgrep fetches rule packs by name, and the AI layer sends what the agent reads
+  to its model provider. New `docs/data-flow.md` lists this per command, and how to run offline. The
+  landing page, the public comparison, the README (en/tr) and the HTML report's footer now say the
+  same thing.
 - `scripts/release.sh` (maintainers): the CI gate's required checks can be set with
   `RELEASE_REQUIRED_CHECKS`, for a fork that does not run every job (e.g. no `plugin`). RELEASING.md
   documents requiring checks on `main` as optional, the repo admin's choice, with the CLI command.

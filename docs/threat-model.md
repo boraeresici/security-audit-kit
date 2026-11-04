@@ -65,7 +65,7 @@ pip-audit, guarddog and zizmor run as **host processes and inherit your whole en
 | 7 | A secret in the environment leaks to a scanner | Docker scanners receive no host environment | uvx scanners inherit it. semgrep runs with `--metrics off` |
 | 8 | Scanning executes the target's code | Not by default (see above) | rust call analysis is opt-in. The venv interpreter start-up is an unverified risk |
 | 9 | A scanner or its rules are swapped upstream | Images by digest; uvx tools by exact version | uvx tools are not hash-pinned (R06). **semgrep `p/...` packs are fetched unpinned at run time**: the rules a scan used can change without a kit change |
-| 10 | Data leaves the machine | Package names and versions go to osv.dev / PyPI (advisory lookups). guarddog fetches packages. Images and DBs are downloaded. Source code is not sent | The full table is F13's job |
+| 10 | Data leaves the machine | Package names and versions go to osv.dev / PyPI / the JS registry (advisory lookups). guarddog fetches packages. semgrep fetches rule packs by name. Images and DBs are downloaded. No scanner sends source code | The AI layer sends what the agent reads to its model provider. Per command: [data-flow.md](data-flow.md) |
 
 ## The plugin boundary (input to R02)
 

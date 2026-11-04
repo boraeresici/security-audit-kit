@@ -15,8 +15,10 @@ These are three different product shapes, so some "missing" cells are deliberate
 - **Semgrep** — a **SAST-first platform** (engine + registry + cloud), strongest at static code
   analysis, thinner elsewhere.
 - **security-audit-kit** — a **portable local kit** vendored into your repo: a deterministic,
-  pinned-toolchain scan layer plus an AI judgment layer (Claude Code skills). Nothing leaves your
-  machine unless you opt in; there is no server side.
+  pinned-toolchain scan layer plus an AI judgment layer (Claude Code skills). It runs on your
+  machine with no server side and no telemetry; dependency lookups send package names and
+  versions to advisory services, and the AI layer sends what it reads to the agent's model
+  provider ([data-flow](../data-flow.md)).
 
 ## Legend
 
