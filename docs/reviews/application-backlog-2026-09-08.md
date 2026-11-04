@@ -415,8 +415,15 @@ First write the contract for repos with/without a vendored scanner and for a dif
   - e2e checks that the plugin version equals the CHANGELOG release, and `release.sh` refuses a mismatch.
   - e2e checks that the scanner contract is identical in every skill and that no skill pipes a download into a shell.
 - **Installed on the target host,** in a throwaway HOME (the user's settings were not touched): `claude plugin marketplace add <repo>` + `install security-audit-kit@security-audit-kit` succeeds. `claude plugin details` shows 5 skills, 0 hooks, 0 agents, 0 MCP servers, version 1.20.0, about 642 tokens always-on.
+- **Real session, no vendored scanner (2026-11-04, user's own project, VS Code extension):** installed with `claude plugin` at user scope from the local checkout. It appeared after "Developer: Reload Window". `/security-audit-kit:sec-triage` behaved as the contract says:
+  - downloaded and ran nothing, and did not use the plugin's own `scan.sh`;
+  - said the scan did not run and called it a coverage gap, not a clean result;
+  - wrote no empty findings file, because it would read as a clean scan;
+  - did not take a hand-written audit document as scanner output;
+  - explained `bootstrap.sh <tag>` and left the decision to the user;
+  - offered a judgment-only pass, stating that it does not replace the scan.
 - **Open:**
-  - Using the skills in a real session on the user's own projects, with and without a vendored scanner. This changes the user's Claude Code settings, so it waits for the user.
+  - The same session on a repo **with** a vendored scanner (both copies of the skills side by side, then `install.sh --no-skills`).
   - The listing icon and the public listing (F32 / public R02).
   - Branch protection needs `plugin` added as a required check, a GitHub setting.
 

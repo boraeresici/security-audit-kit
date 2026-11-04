@@ -145,6 +145,10 @@ oturumda gorunur. Plugin'i iceren bir surum `main`'e ulasana kadar, onu iceren b
 klonunu kullan. Geri almak icin: `claude plugin uninstall security-audit-kit@security-audit-kit`,
 ardindan `claude plugin marketplace remove security-audit-kit`.
 
+Bir oturum plugin'leri basladiginda yukler. Terminalden kurduktan sonra **yeni** bir konusma ac.
+VS Code eklentisinde once Komut Paleti'nden (`Cmd/Ctrl+Shift+P`) **Developer: Reload Window**'u
+calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
+
 - **Bir surume pinle:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. Plugin'in
   `version`'i kitin surumlerini izler. Guncellemeler, bu marketplace icin otomatik guncellemeyi
   acmadikca elle yapilir (`/plugin` → Installed → Update).

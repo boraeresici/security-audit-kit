@@ -158,6 +158,10 @@ session. Until a release that contains the plugin reaches `main`, use a local ch
 branch that has it. Undo: `claude plugin uninstall security-audit-kit@security-audit-kit`, then
 `claude plugin marketplace remove security-audit-kit`.
 
+A session loads plugins when it starts. After installing from a terminal, open a **new**
+conversation. In the VS Code extension, run **Developer: Reload Window** from the Command Palette
+(`Cmd/Ctrl+Shift+P`) first, then type `/security-audit-kit:` to see the five skills.
+
 - **Pin a release:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. The
   plugin's `version` follows the kit's releases. Updates are manual (`/plugin` → Installed → Update)
   unless you turn on auto-update for this marketplace.
