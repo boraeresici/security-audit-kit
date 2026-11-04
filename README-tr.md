@@ -899,7 +899,7 @@ yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kisaca:
   Bagimlilik sorgulari paket adlarini ve surumlerini advisory servislerine gonderir (PyPI, osv.dev,
   JS registry). semgrep kural paketlerini adiyla indirir, trivy DB'sini indirir. AI katmani,
   agent'in okudugunu agent'in model saglayicisina gonderir. Komut basina tablo ve offline calistirma:
-  [docs/data-flow.md](docs/data-flow.md).
+  [docs/data-flow.md](docs/data-flow.md). Gizlilik politikasi (Ingilizce): [PRIVACY.md](PRIVACY.md).
 
 ## Lisans
 [MIT](LICENSE) — [studiobinary.co](https://studiobinary.co) tarafindan gelistirildi.
