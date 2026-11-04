@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Upgrade notes
+- The skills moved inside the vendored kit: `skills/<name>.skill.md` is now
+  `skills/<name>/SKILL.md`, the layout the Claude Code plugin loads. `install.sh` copies from the
+  new path, and the installed `.claude/skills/<name>/SKILL.md` is unchanged. Only a script that
+  read the kit's skill files directly needs the new path.
 - `bootstrap.sh --check` now exits `2` when it cannot tell (kit repo unreachable, no release tags).
   It used to exit `1`, the same code as "update available"; automation that treated non-zero as
   "update" should check for 1. Release candidates are offered only with `--channel=rc` (or
@@ -20,6 +24,17 @@ All notable changes to this project are documented here. The format is based on
   about the scan's own output, not your code. gitleaks still scans full git history.
 
 ### Added
+- **The kit is a Claude Code plugin with its own marketplace (R02, local channel).** It adds
+  `.claude-plugin/plugin.json` and `marketplace.json` at the repo root.
+  - Install: `/plugin marketplace add boraeresici/security-audit-kit` (or a local path), then
+    `/plugin install security-audit-kit@security-audit-kit`. Pin with `#v1.20.0` on the marketplace.
+  - The plugin carries the five skills (namespaced, `/security-audit-kit:sec-triage`) and no
+    hooks. Every skill gains one identical "Where the scanner is" section: use only the repo's
+    vendored, pinned `scan.sh`, never the plugin's copy, and download nothing when it is missing.
+  - `install.sh --no-skills` wires hooks and config for repos whose skills come from the plugin.
+  - CI runs `claude plugin validate --strict` on both manifests (pinned CLI).
+  - `release.sh` refuses a release whose `plugin.json` version is not the release version.
+  - e2e checks that the manifest and the disk agree.
 - **The config file is checked on every run (F24).** `.security-audit.conf` is bash, sourced with
   your privileges. Each run now reports what it does beyond setting values: a syntax error, a
   setting `scan.sh` does not read (a typo was silently ignored), a line that runs a command, a

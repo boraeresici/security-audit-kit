@@ -38,6 +38,7 @@ git checkout -b chore/release-vX.Y.Z
 Then, on that branch:
 ```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
+#    and set the same version in .claude-plugin/plugin.json (release.sh refuses a mismatch)
 # 2) regenerate + verify the integrity manifest (kit files changed)
 bash scan.sh checksums
 bash scan.sh verify

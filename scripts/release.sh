@@ -26,7 +26,7 @@ set -euo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 cd "$KIT_DIR"
 
-REQUIRED_CHECKS="shellcheck pytest e2e checksums self-audit"   # our CI jobs (ci.yml + self-audit.yml)
+REQUIRED_CHECKS="shellcheck pytest e2e plugin checksums self-audit"   # our CI jobs (ci.yml + self-audit.yml)
 MAIN_BRANCH="main"
 
 say(){  printf '\033[36m[release]\033[0m %s\n' "$*"; }
@@ -58,6 +58,15 @@ require_changelog_version(){
   top="$(changelog_top_version || true)"
   [ "$top" = "$want" ] \
     || die "CHANGELOG top version is '${top:-none}', expected '$want' — replace [Unreleased] with [$want] before cutting a tag"
+}
+
+# The plugin's version pins plugin users to a release, so it must BE that release: a stale
+# plugin.json would ship new skills under an old version (or never reach users at all).
+require_plugin_version(){
+  local f=".claude-plugin/plugin.json" v
+  [ -f "$f" ] || return 0
+  v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
 }
 
 # Every release says what a consumer must do on upgrade, even if that is nothing (F25):
@@ -152,6 +161,7 @@ cmd_rc(){
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "final tag v$ver already exists"
   require_changelog_version "$ver"
   require_upgrade_notes "$ver"
+  require_plugin_version "$ver"
   preflight
   local n=1 t
   while git rev-parse -q --verify "refs/tags/v${ver}-rc.$n" >/dev/null; do n=$((n+1)); done
@@ -177,6 +187,7 @@ cmd_final(){
   valid_ver "$ver" || die "invalid version '$ver' (want X.Y.Z)"
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "tag v$ver already exists"
   require_changelog_version "$ver"
+  require_plugin_version "$ver"
   local last_rc; last_rc="$(git tag -l "v${ver}-rc.*" | sort -V | tail -1)"
   [ -n "$last_rc" ] || die "no RC for v$ver — cut & test one first:  scripts/release.sh rc $ver"
   preflight

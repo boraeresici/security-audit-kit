@@ -32,13 +32,17 @@ SKILLS_ONLY=0
 # agent settings is not something an installer should do on its own.
 AGENT_HOOK=0
 UNINSTALL=0
+# --no-skills: hooks + config only. For a repo whose skills come from the Claude Code plugin
+# (security-audit-kit@security-audit-kit): copying them too would load each skill twice.
+NO_SKILLS=0
 for arg in "$@"; do
   case "$arg" in
     --skills-only)     SKILLS_ONLY=1 ;;
     --with-agent-hook) AGENT_HOOK=1 ;;
     --uninstall)       UNINSTALL=1 ;;
+    --no-skills)       NO_SKILLS=1 ;;
     "") ;;
-    *) echo "unknown option: $arg (usage: install.sh [--skills-only] [--with-agent-hook] | --uninstall)"; exit 2 ;;
+    *) echo "unknown option: $arg (usage: install.sh [--skills-only | --no-skills] [--with-agent-hook] | --uninstall)"; exit 2 ;;
   esac
 done
 
@@ -64,7 +68,7 @@ uninstall(){
     local kits=0
     for s in $SKILLS; do
       f="$ROOT/.claude/skills/$s/SKILL.md"
-      [ -f "$f" ] && [ "$(fsum "$f")" = "$(fsum "$KIT/skills/$s.skill.md")" ] && kits=1
+      [ -f "$f" ] && [ "$(fsum "$f")" = "$(fsum "$KIT/skills/$s/SKILL.md")" ] && kits=1
     done
     if [ "$cur" != "$KIT_HOOKS" ] && [ "$kits" = 0 ]; then
       ok "nothing to undo (no install record in .git, no kit hooks or unedited kit skills)"; return 0
@@ -82,7 +86,7 @@ uninstall(){
   [ -d "$CHAIN_DIR" ] && rm -rf "$CHAIN_DIR" && ok "removed the hook wrappers (.git/security-audit-hooks)"
   for s in $SKILLS; do
     f="$ROOT/.claude/skills/$s/SKILL.md"; [ -f "$f" ] || continue
-    if [ "$legacy" = 1 ]; then sum="$(fsum "$KIT/skills/$s.skill.md")"; else sum="$(state_get "skill_$s")"; fi
+    if [ "$legacy" = 1 ]; then sum="$(fsum "$KIT/skills/$s/SKILL.md")"; else sum="$(state_get "skill_$s")"; fi
     if [ -n "$sum" ] && [ "$(fsum "$f")" = "$sum" ]; then
       rm -f "$f"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true; ok "removed .claude/skills/$s"
     else
@@ -204,25 +208,30 @@ else
 fi
 
 echo "== Claude skills =="
-# Source templates live in the kit under skills/; they are installed into the TARGET
-# repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
-mkdir -p "$ROOT/.claude/skills/sec-triage"
-cp "$KIT/skills/sec-triage.skill.md" "$ROOT/.claude/skills/sec-triage/SKILL.md"
-ok ".claude/skills/sec-triage/SKILL.md (finding triage)"
-mkdir -p "$ROOT/.claude/skills/sec-sast-deep"
-cp "$KIT/skills/sec-sast-deep.skill.md" "$ROOT/.claude/skills/sec-sast-deep/SKILL.md"
-ok ".claude/skills/sec-sast-deep/SKILL.md (semantic SAST: authz/IDOR/logic)"
-mkdir -p "$ROOT/.claude/skills/sec-ai-review"
-cp "$KIT/skills/sec-ai-review.skill.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
-ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
-mkdir -p "$ROOT/.claude/skills/sec-threat-model"
-cp "$KIT/skills/sec-threat-model.skill.md" "$ROOT/.claude/skills/sec-threat-model/SKILL.md"
-ok ".claude/skills/sec-threat-model/SKILL.md (STRIDE + data-flow threat modeling)"
-mkdir -p "$ROOT/.claude/skills/sec-audit"
-cp "$KIT/skills/sec-audit.skill.md" "$ROOT/.claude/skills/sec-audit/SKILL.md"
-ok ".claude/skills/sec-audit/SKILL.md (one-command orchestrator: scan + triage + signal-gated deep)"
-mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
-for s in $SKILLS; do state_set "skill_$s" "$(fsum "$ROOT/.claude/skills/$s/SKILL.md")"; done
+if [ "$NO_SKILLS" = "1" ]; then
+  miss "skipped (--no-skills): the skills come from the Claude Code plugin (/plugin install security-audit-kit@security-audit-kit)"
+  mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
+else
+  # Source templates live in the kit under skills/; they are installed into the TARGET
+  # repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
+  mkdir -p "$ROOT/.claude/skills/sec-triage"
+  cp "$KIT/skills/sec-triage/SKILL.md" "$ROOT/.claude/skills/sec-triage/SKILL.md"
+  ok ".claude/skills/sec-triage/SKILL.md (finding triage)"
+  mkdir -p "$ROOT/.claude/skills/sec-sast-deep"
+  cp "$KIT/skills/sec-sast-deep/SKILL.md" "$ROOT/.claude/skills/sec-sast-deep/SKILL.md"
+  ok ".claude/skills/sec-sast-deep/SKILL.md (semantic SAST: authz/IDOR/logic)"
+  mkdir -p "$ROOT/.claude/skills/sec-ai-review"
+  cp "$KIT/skills/sec-ai-review/SKILL.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
+  ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
+  mkdir -p "$ROOT/.claude/skills/sec-threat-model"
+  cp "$KIT/skills/sec-threat-model/SKILL.md" "$ROOT/.claude/skills/sec-threat-model/SKILL.md"
+  ok ".claude/skills/sec-threat-model/SKILL.md (STRIDE + data-flow threat modeling)"
+  mkdir -p "$ROOT/.claude/skills/sec-audit"
+  cp "$KIT/skills/sec-audit/SKILL.md" "$ROOT/.claude/skills/sec-audit/SKILL.md"
+  ok ".claude/skills/sec-audit/SKILL.md (one-command orchestrator: scan + triage + signal-gated deep)"
+  mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
+  for s in $SKILLS; do state_set "skill_$s" "$(fsum "$ROOT/.claude/skills/$s/SKILL.md")"; done
+fi
 
 echo "== agent hook (pre-install package check) =="
 if [ "$AGENT_HOOK" = "1" ]; then

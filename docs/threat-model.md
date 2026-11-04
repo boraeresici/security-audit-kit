@@ -69,8 +69,10 @@ pip-audit, guarddog and zizmor run as **host processes and inherit your whole en
 
 ## The plugin boundary (input to R02)
 
-A plugin channel changes how the kit is **found and installed**, not what it trusts:
-- **What the plugin carries:** the skills (and later hooks, F33). The deterministic scanner stays vendored in the repo and pinned. A plugin must not download the kit by itself, and must not change git hooks or `.security-audit.conf` silently.
+A plugin channel changes how the kit is **found and installed**, not what it trusts. The plugin
+manifest and its local marketplace exist (`.claude-plugin/`; `claude plugin validate --strict` runs
+in CI). As built:
+- **What the plugin carries:** the five skills only, with no hooks, commands or MCP servers (hooks are F33, later). The deterministic scanner stays vendored in the repo and pinned. Every skill says to use only the repo's vendored `scan.sh`, never the plugin's own copy, and to download nothing when it is missing. The plugin changes no git hooks and no `.security-audit.conf`.
 - **Skills keep the F35 rule.** Plugin-provided hooks run commands with the user's privileges, exactly like the git hooks above.
 - **`allowed-tools`** in a skill or plugin manifest limits what the agent is offered. It is not a sandbox, and must not be described as one.
 - **Integrity:** the plugin's own integrity story (signed release, manifest digest) is R02's and R07's to define. Until then, `CHECKSUMS` covers the vendored copy only.

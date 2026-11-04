@@ -404,6 +404,22 @@ First write the contract for repos with/without a vendored scanner and for a dif
 
 **2026-11-03 acceptance addendum (Phoenix (local note `docs/compare/phoenix-security-skills.local.md`) and Masriyan (local note `docs/compare/masriyan-cybersecurity-skill.local.md`) comparisons):** All three competitor tools are in a marketplace; the distribution gap was confirmed by the comparison. `claude plugin validate --strict` must run in CI. Manifest-to-disk consistency must also be tested: every skill, hook and command path in the manifest must exist, but there must also be no skill that is not in the manifest. Hooks must come with the plugin's `hooks.json` file; the user's `settings.json` file must not be merged. Phoenix's `jq` merge overwrites the user's existing hook arrays; the same bug must not be repeated.
 
+**Status — 2026-11-04 (local/private channel):** implemented on `dev/plugin-readiness`. The manifest facts were checked against the current Claude Code docs (plugins manifest and marketplace references, skills, hooks, plugin security) before writing.
+- **Manifests:** `.claude-plugin/plugin.json` (name `security-audit-kit`, version = kit release) and `.claude-plugin/marketplace.json` at the repo root (`source: "./"`, same repo). Default discovery only: no component paths in the manifest.
+- **Skills:** moved to `skills/<name>/SKILL.md`, a single source for both the plugin and `install.sh`.
+- **Contract (repo with or without a vendored scanner, any working directory):** one identical "Where the scanner is" section in every skill. Use `<git toplevel>/tools/security-audit-kit/scan.sh` only, never the plugin's copy. If it is missing, download nothing, explain `bootstrap.sh`, continue without the scan, and say so. `install.sh --no-skills` prevents loading the skills twice.
+- **No hooks in the plugin:** the user's `settings.json` is never touched; F33 adds plugin hooks via `hooks/hooks.json`.
+- **Tests:**
+  - `claude plugin validate --strict` passes for the plugin and the marketplace, locally and in CI as a new `plugin` job (pinned `@anthropic-ai/claude-code@2.1.316`; runs without login). It is also added to `release.sh`'s required checks.
+  - e2e checks manifest-to-disk agreement: every skill directory has a `SKILL.md` named like it, there are no stray files, and `install.sh` installs exactly these.
+  - e2e checks that the plugin version equals the CHANGELOG release, and `release.sh` refuses a mismatch.
+  - e2e checks that the scanner contract is identical in every skill and that no skill pipes a download into a shell.
+- **Installed on the target host,** in a throwaway HOME (the user's settings were not touched): `claude plugin marketplace add <repo>` + `install security-audit-kit@security-audit-kit` succeeds. `claude plugin details` shows 5 skills, 0 hooks, 0 agents, 0 MCP servers, version 1.20.0, about 642 tokens always-on.
+- **Open:**
+  - Using the skills in a real session on the user's own projects, with and without a vendored scanner. This changes the user's Claude Code settings, so it waits for the user.
+  - The listing icon and the public listing (F32 / public R02).
+  - Branch protection needs `plugin` added as a required check, a GitHub setting.
+
 ### R03 — Heavy reachability pilot
 
 Go call-analysis will not be rewritten. If there is a concrete triage cost in Python or JS, pilot on a single stack; measure install/duration and validated benefit. Do not automatically drop findings marked “not called” from the gate. Build script execution requirements, offline limits and output scope should be documented explicitly. The pilot should use F21a cache correctness and the F16 adapter contract; if there is no benefit, the integration is closed.

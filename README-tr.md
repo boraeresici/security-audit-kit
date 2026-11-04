@@ -50,6 +50,8 @@ toplar.
 flowchart TD
     Q{First time, or<br/>already installed?}
     Q -->|new| N1["mkdir -p tools/"]
+    Q -->|"skills via the Claude Code plugin"| PL["/plugin marketplace add + /plugin install<br/>skills only: still vendor the scanner<br/>(bootstrap.sh, then install.sh --no-skills)"]
+    PL --> N1
     N1 --> N2["download + review bootstrap.sh"]
     N2 --> B["bash bootstrap.sh vX.Y.Z"]
     Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
@@ -120,6 +122,32 @@ bash bootstrap.sh v1.20.0 --expect=<sha>  # pini dayat: ref baska commit'e cozul
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
 kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
 `.claude/skills/`'e kopyalar. Idempotent, tekrar kosulabilir.
+
+## Skill'leri Claude Code plugin'i olarak kur
+
+Bu repo ayni zamanda bir Claude Code plugin'i ve onun marketplace'i. Plugin **skill'leri** tasir.
+Onlarin calistirdigi tarayici senin repona vendor'lanmis ve pinli olarak kalir, bu yuzden ikisini
+de kur:
+
+```text
+/plugin marketplace add boraeresici/security-audit-kit          # ya da yerel bir klon: ./path/to/security-audit-kit
+/plugin install security-audit-kit@security-audit-kit
+```
+
+- **Bir surume pinle:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. Plugin'in
+  `version`'i kitin surumlerini izler. Guncellemeler, bu marketplace icin otomatik guncellemeyi
+  acmadikca elle yapilir (`/plugin` → Installed → Update).
+- **Tarayiciyi vendor'la:** `bash bootstrap.sh <tag>`, ardindan `bash tools/security-audit-kit/install.sh
+  --no-skills`. Bu, skill'leri ikinci kez kopyalamadan hook'lari ve config'i baglar.
+- **Skill adlari:** plugin skill'leri ad alaniyla gelir: `/security-audit-kit:sec-triage`,
+  `/security-audit-kit:sec-audit` ve digerleri.
+- **Plugin'in asla yapmadiklari:** tarayiciyi indirmez, hook'lara ya da `.security-audit.conf`'a
+  dokunmaz, `scan.sh`'in kendi kopyasini calistirmaz. Vendor'lanmis tarayici bulamayan bir skill
+  bunu soyler ve nasil eklenecegini anlatir.
+
+Plugin hook tasimaz. Bir plugin'in hook'lari senin tum yetkilerinle calisirdi. Kitin git hook'lari
+`install.sh`'ten gelir; agent hook'u istege baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
+surum itibariyla herkese acik listelenmeden once kendi projelerin icin.
 
 ## Diger kurulum yollari
 

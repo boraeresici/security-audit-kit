@@ -50,6 +50,8 @@ consolidates everything into one findings file.
 flowchart TD
     Q{First time, or<br/>already installed?}
     Q -->|new| N1["mkdir -p tools/"]
+    Q -->|"skills via the Claude Code plugin"| PL["/plugin marketplace add + /plugin install<br/>skills only: still vendor the scanner<br/>(bootstrap.sh, then install.sh --no-skills)"]
+    PL --> N1
     N1 --> N2["download + review bootstrap.sh"]
     N2 --> B["bash bootstrap.sh vX.Y.Z"]
     Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
@@ -134,6 +136,31 @@ What install changed is recorded in `.git/security-audit-install.state`, and
 
 It keeps `.security-audit.conf`, `.security-exclusions.md`, the scan record, any skill you edited,
 and the vendored kit. Running `--uninstall` twice is safe.
+
+## Install the skills as a Claude Code plugin
+
+The repo is also a Claude Code plugin and its own marketplace. The plugin carries the **skills**.
+The scanner they drive stays vendored in your repo and pinned, so install both:
+
+```text
+/plugin marketplace add boraeresici/security-audit-kit          # or a local checkout: ./path/to/security-audit-kit
+/plugin install security-audit-kit@security-audit-kit
+```
+
+- **Pin a release:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. The
+  plugin's `version` follows the kit's releases. Updates are manual (`/plugin` → Installed → Update)
+  unless you turn on auto-update for this marketplace.
+- **Vendor the scanner:** `bash bootstrap.sh <tag>`, then `bash tools/security-audit-kit/install.sh
+  --no-skills`. That wires the hooks and the config without copying the skills a second time.
+- **Skill names:** plugin skills are namespaced: `/security-audit-kit:sec-triage`,
+  `/security-audit-kit:sec-audit`, and so on.
+- **What the plugin never does:** it never downloads the scanner, never edits hooks or
+  `.security-audit.conf`, and never runs its own copy of `scan.sh`. A skill that finds no vendored
+  scanner says so and tells you how to add it.
+
+The plugin ships no hooks. A plugin's hooks would run with your full permissions. The kit's git
+hooks come from `install.sh`, and its agent hook is opt-in (`--with-agent-hook`). The plugin
+channel is new: as of this version it is meant for your own projects, ahead of a public listing.
 
 ## Other ways to install
 

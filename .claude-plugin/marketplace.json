@@ -1,0 +1,15 @@
+{
+  "name": "security-audit-kit",
+  "owner": {
+    "name": "studiobinary.co",
+    "url": "https://studiobinary.co"
+  },
+  "description": "The security-audit-kit plugin: skills for a pinned, local security scan.",
+  "plugins": [
+    {
+      "name": "security-audit-kit",
+      "source": "./",
+      "description": "Triage, semantic SAST, AI/LLM review, threat modeling and a one-command audit over the repo's own vendored, pinned scanner."
+    }
+  ]
+}
