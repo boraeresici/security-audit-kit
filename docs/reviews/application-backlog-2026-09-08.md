@@ -190,6 +190,14 @@ Default, custom hooksPath and pre-commit framework fixtures must be prepared. Ex
 - **Older installs:** an install made before the record existed is recognised by the kit's hooksPath, or by a skill identical to the kit's template.
 - **Tests:** 15 e2e checks. Fixtures: `.git/hooks`, husky-style hooksPath, pre-commit framework, fresh install, legacy install.
 
+**Addendum — 2026-11-04 (found while testing R02 on the user's TMS repo):**
+- **What happened:** a repo with about 50 worktrees shares one git config, and its `core.hooksPath` was an absolute path into the main worktree's `tools/security-audit-kit/hooks`. That worktree's branch no longer had the kit (it lives only on an unmerged branch), so git ran **no hooks in any worktree**, the repo's own `post-merge` included, without a word.
+- **The fix:**
+  - With more than one worktree, install uses the shared-dir wrappers even when the repo has no hooks of its own.
+  - A wrapper in a worktree without the kit prints that the kit's check did not run, and stays fail-open.
+  - `doctor` and every closing summary name a hooksPath that points at a missing directory.
+- **Tests:** 4 e2e checks; the kit-less worktree case reproduces the bug first.
+
 ### F11 — Kit threat model
 
 Data/privilege flows must be mapped for config, scanned code, scanner output, AI instructions, cache, vendor and external registries. It must be stated explicitly that the config is executable. A read-only source + separate writable artifact mount must be tested with at least gitleaks and trivy fixtures. If compatibility breaks, the migration cost must be recorded; an unverified risk must not be presented as an exploit.

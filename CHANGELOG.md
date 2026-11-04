@@ -58,6 +58,13 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **Worktrees could run no hooks at all, silently.** Worktrees share one git config. A
+  `core.hooksPath` that points at a directory which does not exist (one worktree's copy of the kit,
+  in a branch that lacks it) makes git skip every hook without a word. Found on a real repo with
+  about 50 worktrees: no kit check and none of the repo's own hooks had been running. With more
+  than one worktree, install now uses the wrappers in the shared git dir (`.git/security-audit-hooks`),
+  and a worktree without the kit says on commit/push that the kit's check did not run.
+  `scan.sh doctor` and the closing summary name a hooksPath that points nowhere.
 - **Docker scanners could write into the repo they scan (F11).** gitleaks, trivy, syft and
   osv-scanner mounted the repo read-write and wrote their output into it. A scanner is handed
   attacker-controllable files and has no business writing into them. The repo is now mounted

@@ -245,7 +245,15 @@ pre-commit install --hook-type pre-push    # sec-all
 `.git/security-audit-hooks/` icinde uretilen sarmalayicilari gosterir; bunlar once kitin hook'unu,
 sonra repo'nun kendi hook'unu ayni argumanlar ve stdin ile calistirir. Senin hook'un basarisiz
 olursa commit yine bloklanir. Hic hook'u olmayan repo, soru sormadan dogrudan kitin hooks dizinini
-alir. Kurulumun degistirdikleri `.git/security-audit-install.state` dosyasina yazilir ve
+alir.
+
+**Worktree'ler** tek bir git config'i paylasir, yani bir `core.hooksPath` hepsine gecerlidir. Var
+olmayan bir dizini gosteren hooksPath, git'in **hicbir hook'u sessizce calistirmamasina** yol acar:
+ne kitinkileri ne de seninkileri. Bu, bir worktree'nin branch'inde kit olmadiginda ya da yol kiti
+kaldirmis bir worktree'ye gittiginde olur. Bu yuzden birden fazla worktree varsa install ortak git
+dizinindeki sarmalayicilari kullanir. Kitin olmadigi worktree her commit/push'ta kitin kontrolunun
+calismadigini soyler. `scan.sh doctor` ve her taramanin kapanis ozeti hicbir yeri gostermeyen bir
+hooksPath'i adiyla soyler. Kurulumun degistirdikleri `.git/security-audit-install.state` dosyasina yazilir ve
 **`install.sh --uninstall`** tam olarak bunlari geri alir:
 - `core.hooksPath` eski degerine doner (ya da kaldirilir);
 - sarmalayicilar silinir;

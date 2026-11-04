@@ -901,6 +901,8 @@ scan_doctor(){
         printf 'platform: WSL2 — full support (docker via Docker Desktop WSL integration).\n\n'
       fi ;;
   esac
+  local hp_warn; hp_warn="$(hookspath_check)"
+  if [ -n "$hp_warn" ]; then printf '!!  %s\n\n' "$hp_warn"; fi
   printf 'toolchain (a missing one only skips that dimension):\n'
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
   { have uvx || have pipx; } && echo "  ok  uvx/pipx      (semgrep/checkov/pip-audit/guarddog/zizmor)" || echo "  --  uvx/pipx      MISSING -> sast/iac/py-deps/guarddog/zizmor skipped"
@@ -1530,6 +1532,19 @@ scan_commands(){ awk -F'|' '{k=$1; gsub(/[[:space:]]/,"",k)} k!=""{print k}' <<<
 # <unit> -> "record entry gate needs"; exit 1 for an unknown unit.
 dim_unit(){ awk -v u="$1" '$1==u{print $2, $3, $4, $5; found=1; exit} END{exit !found}' <<<"$DIM_UNITS"; }
 
+# A core.hooksPath that points at a directory which does not exist makes git run NO hooks, with no
+# message. Seen on a repo with ~50 worktrees sharing one config: the path led into one worktree's
+# copy of the kit, whose branch had dropped it. Printed by doctor and in every closing summary.
+hookspath_check(){
+  local hp abs
+  hp="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null)" || return 0
+  [ -n "$hp" ] || return 0
+  case "$hp" in /*) abs="$hp" ;; \~/*) abs="$HOME/${hp#\~/}" ;; *) abs="$ROOT/$hp" ;; esac
+  [ -d "$abs" ] && return 0
+  printf 'core.hooksPath -> %s, which does not exist here: git runs NO hooks in this worktree (no kit checks, none of your own). Fix: bash %s/install.sh' \
+    "$hp" "${KIT_DIR#"$ROOT"/}"
+}
+
 # ---- config check (F24) ----------------------------------------------------------------------
 # .security-audit.conf is SOURCED: it is bash, and runs with your privileges on every scan and hook.
 # Nothing here refuses to load it (fail-open, as the gate is). It says out loud what the file does
@@ -1924,6 +1939,8 @@ awk -F'\t' '{ why=$6; if (length(why) > 72) why=substr(why,1,69) "..."
   printf "   %-10s %-14s %5.1fs  %s\n", $1, $3, $5/1000, why }' "$RESULTS_FILE"
 not_covered="$(scan_command_field "$CMD" 3 2>/dev/null)"
 [ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
+HP_WARN="$(hookspath_check)"
+[ -n "$HP_WARN" ] && printf '\033[33m── %s\033[0m\n' "$HP_WARN"
 if [ -n "$CONFIG_WARNINGS" ]; then
   printf '\033[33m── config: %s warning(s) in %s (it is bash, run on every scan) — scan.sh doctor lists them\033[0m\n' \
     "$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')" "${CONF#"$ROOT"/}"

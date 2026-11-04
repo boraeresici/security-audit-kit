@@ -127,6 +127,14 @@ as `.husky`, and the pre-commit framework. Install names what it found and chain
 `core.hooksPath` then points at generated wrappers in `.git/security-audit-hooks/`, which run the
 kit's hook and then the repo's own, with the same arguments and stdin. A failing hook of yours
 still blocks. A repo with no hooks gets the kit's hooks folder directly, without a question.
+
+**Worktrees** share one git config, so one `core.hooksPath` serves all of them. A hooksPath
+pointing at a directory that does not exist makes git run **no hooks at all, silently**: not the
+kit's, not yours. That happens when a worktree's branch lacks the kit, or when the path leads into
+a worktree that dropped it. With more than one worktree, install therefore uses the wrappers in
+the shared git dir, and a worktree without the kit says on each commit/push that the kit's check
+did not run. `scan.sh doctor` and every scan's closing summary name a hooksPath that points
+nowhere.
 What install changed is recorded in `.git/security-audit-install.state`, and
 **`install.sh --uninstall`** undoes exactly that:
 - `core.hooksPath` goes back to its previous value (or is unset);

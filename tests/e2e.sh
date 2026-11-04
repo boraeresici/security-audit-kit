@@ -1238,6 +1238,26 @@ I10="$(cd "$T10" && bash tools/security-audit-kit/install.sh </dev/null 2>&1)"; 
 [ -z "$(git -C "$T10" config core.hooksPath || true)" ] && [ ! -d "$T10/.claude/skills/sec-audit" ] \
   && ok "F10: uninstall of a fresh install leaves no hooksPath and no kit skills" || no "F10: fresh uninstall left state"
 rm -rf "$T10"
+# (f) worktrees (seen on a real repo with ~50 of them): a core.hooksPath that points at a missing
+#     directory makes git run NO hooks, silently. With several worktrees, install goes through the
+#     wrappers in the shared git dir, so a worktree without the kit says so instead.
+T10="$(mktemp -d)"; f10repo "$T10"
+git -C "$T10" worktree add -q --detach "$T10.wt" HEAD >/dev/null 2>&1
+(cd "$T10" && bash tools/security-audit-kit/install.sh) >/dev/null 2>&1
+case "$(git -C "$T10" config core.hooksPath)" in */security-audit-hooks) ok "F10: a repo with several worktrees gets the shared-dir wrappers" ;;
+  *) no "F10: worktrees -> hooksPath $(git -C "$T10" config core.hooksPath)" ;; esac
+W10="$(cd "$T10.wt" && echo x > wt.txt && git add wt.txt && git -c user.email=e2e@test -c user.name=e2e commit -qm wt 2>&1)"; W10RC=$?
+[ "$W10RC" -eq 0 ] && grep -q 'not in this worktree' <<<"$W10" \
+  && ok "F10: a worktree without the kit commits, and says the kit's check did not run" || no "F10: kit-less worktree (rc=$W10RC): $W10"
+git -C "$T10" worktree remove --force "$T10.wt" >/dev/null 2>&1; rm -rf "$T10.wt"
+# doctor + every scan name a hooksPath that points nowhere
+git -C "$T10" config core.hooksPath "$T10/nowhere/hooks"
+D10="$(cd "$T10" && bash tools/security-audit-kit/scan.sh doctor 2>&1)"
+grep -q 'does not exist' <<<"$D10" && grep -qi 'no hooks' <<<"$D10" \
+  && ok "F10: doctor says a hooksPath to a missing dir runs no hooks" || no "F10: doctor silent on a missing hooksPath dir"
+S10="$(cd "$T10" && bash tools/security-audit-kit/scan.sh iac 2>&1)"
+grep -q 'core.hooksPath' <<<"$S10" && ok "F10: the scan's closing summary names it too" || no "F10: scan silent on a missing hooksPath dir"
+rm -rf "$T10"
 # (e) an install made before F10 has no record: hooksPath = the kit's dir and unedited kit skills
 #     are recognisably the kit's, so they are undone; nothing else is touched
 T10="$(mktemp -d)"; f10repo "$T10"
