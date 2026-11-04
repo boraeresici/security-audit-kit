@@ -129,10 +129,21 @@ Bu repo ayni zamanda bir Claude Code plugin'i ve onun marketplace'i. Plugin **sk
 Onlarin calistirdigi tarayici senin repona vendor'lanmis ve pinli olarak kalir, bu yuzden ikisini
 de kur:
 
+Bir Claude Code oturumunun icinde (bunlar slash komutlari, shell komutu degil):
 ```text
-/plugin marketplace add boraeresici/security-audit-kit          # ya da yerel bir klon: ./path/to/security-audit-kit
+/plugin marketplace add boraeresici/security-audit-kit
 /plugin install security-audit-kit@security-audit-kit
 ```
+ya da terminalden:
+```bash
+claude plugin marketplace add boraeresici/security-audit-kit
+claude plugin install security-audit-kit@security-audit-kit
+```
+`boraeresici/security-audit-kit` yerine yerel bir klon da kullanilabilir. Mutlak yolunu ya da `./`
+ile baslayan goreli bir yol ver. Dosyalari oldugu yerden yukler, degisiklikler bir sonraki
+oturumda gorunur. Plugin'i iceren bir surum `main`'e ulasana kadar, onu iceren branch'in yerel
+klonunu kullan. Geri almak icin: `claude plugin uninstall security-audit-kit@security-audit-kit`,
+ardindan `claude plugin marketplace remove security-audit-kit`.
 
 - **Bir surume pinle:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. Plugin'in
   `version`'i kitin surumlerini izler. Guncellemeler, bu marketplace icin otomatik guncellemeyi

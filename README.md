@@ -142,10 +142,21 @@ and the vendored kit. Running `--uninstall` twice is safe.
 The repo is also a Claude Code plugin and its own marketplace. The plugin carries the **skills**.
 The scanner they drive stays vendored in your repo and pinned, so install both:
 
+Inside a Claude Code session (these are slash commands, not shell commands):
 ```text
-/plugin marketplace add boraeresici/security-audit-kit          # or a local checkout: ./path/to/security-audit-kit
+/plugin marketplace add boraeresici/security-audit-kit
 /plugin install security-audit-kit@security-audit-kit
 ```
+or from a terminal:
+```bash
+claude plugin marketplace add boraeresici/security-audit-kit
+claude plugin install security-audit-kit@security-audit-kit
+```
+A local checkout works in place of `boraeresici/security-audit-kit`. Give its absolute path, or a
+relative one starting with `./`. It loads the files where they are, so edits show up in the next
+session. Until a release that contains the plugin reaches `main`, use a local checkout of the
+branch that has it. Undo: `claude plugin uninstall security-audit-kit@security-audit-kit`, then
+`claude plugin marketplace remove security-audit-kit`.
 
 - **Pin a release:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. The
   plugin's `version` follows the kit's releases. Updates are manual (`/plugin` → Installed → Update)
