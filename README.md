@@ -180,6 +180,10 @@ conversation. In the VS Code extension, run **Developer: Reload Window** from th
 - **What the plugin never does:** it never downloads the scanner, never edits hooks or
   `.security-audit.conf`, and never runs its own copy of `scan.sh`. A skill that finds no vendored
   scanner says so and tells you how to add it.
+- **An older vendored scanner** is reported, not replaced. Each skill runs the repo's
+  `bootstrap.sh --check` first. If a newer release exists, the report names both versions and the
+  upgrade notes, and recommends `bootstrap.sh <tag>`. The pin is the team's decision, and their
+  hooks and CI run the same version.
 
 The plugin ships no hooks. A plugin's hooks would run with your full permissions. The kit's git
 hooks come from `install.sh`, and its agent hook is opt-in (`--with-agent-hook`). The plugin

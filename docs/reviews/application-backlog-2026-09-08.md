@@ -430,8 +430,13 @@ First write the contract for repos with/without a vendored scanner and for a dif
   - did not take a hand-written audit document as scanner output;
   - explained `bootstrap.sh <tag>` and left the decision to the user;
   - offered a judgment-only pass, stating that it does not replace the scan.
+- **Real session, vendored scanner (2026-11-04):** a temporary worktree of the user's TMS repo pinned to kit v1.17.0-rc.3, run headless with narrow permissions: Bash limited to `scan.sh` and git, writes limited to the findings dir.
+  - The plugin's `sec-triage` ran the repo's vendored `scan.sh all`, not the plugin copy.
+  - It did not force the allowlist write it was denied; it wrote the proposal into the findings file instead.
+  - It found three v1.17 kit bugs on its own: active VIRTUAL_ENV audited, skipped = pass, and the scan record scanned. F29, F02 and the scan-record exclusion fixed all three later.
+- **Decision — version skew:** the plugin does not update the vendored scanner, because the pin is the team's decision and hooks and CI run the same version. Every skill now runs `bootstrap.sh --check` first and reports an older pin, with the versions and upgrade notes.
 - **Open:**
-  - The same session on a repo **with** a vendored scanner (both copies of the skills side by side, then `install.sh --no-skills`).
+  - `install.sh --no-skills` on a repo that also has the plugin (both copies of the skills side by side today).
   - The listing icon and the public listing (F32 / public R02).
   - Branch protection needs `plugin` added as a required check, a GitHub setting.
 

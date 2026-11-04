@@ -31,6 +31,9 @@ All notable changes to this project are documented here. The format is based on
   - The plugin carries the five skills (namespaced, `/security-audit-kit:sec-triage`) and no
     hooks. Every skill gains one identical "Where the scanner is" section: use only the repo's
     vendored, pinned `scan.sh`, never the plugin's copy, and download nothing when it is missing.
+  - Each skill first runs the repo's `bootstrap.sh --check`, and reports an older vendored scanner
+    (versions plus upgrade notes) instead of replacing it. Found on a real repo pinned three
+    releases back, where the skill hit bugs that had already been fixed.
   - `install.sh --no-skills` wires hooks and config for repos whose skills come from the plugin.
   - CI runs `claude plugin validate --strict` on both manifests (pinned CLI).
   - `release.sh` refuses a release whose `plugin.json` version is not the release version.

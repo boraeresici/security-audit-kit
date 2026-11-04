@@ -159,6 +159,10 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
 - **Plugin'in asla yapmadiklari:** tarayiciyi indirmez, hook'lara ya da `.security-audit.conf`'a
   dokunmaz, `scan.sh`'in kendi kopyasini calistirmaz. Vendor'lanmis tarayici bulamayan bir skill
   bunu soyler ve nasil eklenecegini anlatir.
+- **Eski bir vendor'lanmis tarayici** degistirilmez, raporlanir. Her skill once repodaki
+  `bootstrap.sh --check`'i calistirir. Daha yeni bir surum varsa rapor iki surumu ve upgrade
+  notes'u yazar, `bootstrap.sh <tag>`'i onerir. Pin ekibin kararidir; hook'lari ve CI'lari ayni
+  surumu calistirir.
 
 Plugin hook tasimaz. Bir plugin'in hook'lari senin tum yetkilerinle calisirdi. Kitin git hook'lari
 `install.sh`'ten gelir; agent hook'u istege baglidir (`--with-agent-hook`). Plugin kanali yeni: bu

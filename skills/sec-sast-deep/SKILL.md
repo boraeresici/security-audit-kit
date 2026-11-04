@@ -20,8 +20,13 @@ The deterministic scanner is the repo's own vendored copy:
 `<repo root>/tools/security-audit-kit/scan.sh`, where `<repo root>` is
 `git rev-parse --show-toplevel`. Run it from there, whatever the current directory. Use only that
 copy, pinned by the repo's `tools/security-audit-kit/.kit-version`, even when this skill came from
-a plugin: a plugin ships the skills, not the scanner the repo pins. If it is missing, do not
-download, clone or install anything. Say that the scanner is not vendored in this repo and that
+a plugin: a plugin ships the skills, not the scanner the repo pins. Before you scan, check
+whether that copy is current: `bash <repo root>/tools/security-audit-kit/bootstrap.sh --check`
+(read-only; exit 1 means a newer release exists, and it prints that release's upgrade notes). If
+it is behind, say so in your report with the versions and the upgrade notes that matter here, and
+recommend `bash tools/security-audit-kit/bootstrap.sh <tag>`. Do not update it yourself: the
+pinned version is the team's decision, and their hooks and CI run that same version. If it is
+missing, do not download, clone or install anything. Say that the scanner is not vendored in this repo and that
 the repo owner adds it with `bash bootstrap.sh <tag>` (see the kit's README). Then continue with
 what does not need it (reading code, an existing findings file), and state that the deterministic
 scan did not run.

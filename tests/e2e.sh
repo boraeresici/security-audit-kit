@@ -1331,6 +1331,9 @@ R02N=0; for f in "$KIT_SRC"/skills/*/SKILL.md; do grep -qF "$R02S" "$f" && R02N=
 R02B="$(for f in "$KIT_SRC"/skills/*/SKILL.md; do awk -v h="$R02S" '$0==h{p=1;next} p&&/^## /{exit} p' "$f" | cksum; done | sort -u | wc -l | tr -d ' ')"
 [ "$R02N" = "$F35T" ] && [ "$R02B" = 1 ] && ok "R02: every skill states the same scanner contract (vendored copy only)" \
   || no "R02: scanner contract in $R02N of $F35T skills, $R02B variants"
+R02K="$(awk -v h="$R02S" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/skills/sec-triage/SKILL.md")"
+grep -q 'bootstrap.sh --check' <<<"$R02K" && grep -q 'Do not update it yourself' <<<"$R02K" \
+  && ok "R02: the contract checks the vendored version (--check) and never updates it itself" || no "R02: version-skew rule missing from the contract"
 grep -rhiE '(curl|wget|git clone|bootstrap\.sh v)[^`]*\| *(ba)?sh' "$KIT_SRC"/skills/*/SKILL.md >/dev/null \
   && no "R02: a skill pipes a download into a shell" || ok "R02: no skill pipes a download into a shell"
 if have claude; then
