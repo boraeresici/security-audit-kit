@@ -1299,7 +1299,7 @@ rm -rf "$T10"
 echo "-- F13: no absolute 'nothing leaves' claim on a user-facing surface; the data-flow table exists --"
 # Dependency lookups send package names, and the AI layer sends what the agent reads: an absolute
 # locality claim is false. docs/data-flow.md is the table the surfaces point to.
-F13HIT="$(cd "$KIT_SRC" && git grep -n -i -E 'nothing (leaves|left) (your|this) machine' -- README.md README-tr.md landing/index.html docs/compare/feature-comparison.md lib/report_html.py 2>/dev/null)"
+F13HIT="$(cd "$KIT_SRC" && git grep -n -i -E 'nothing (leaves|left) (your|this) machine|fully local' -- README.md README-tr.md landing/index.html docs/compare/feature-comparison.md lib/report_html.py 2>/dev/null)"
 [ -z "$F13HIT" ] && [ -f "$KIT_SRC/docs/data-flow.md" ] && grep -q 'docs/data-flow.md' "$KIT_SRC/README.md" && grep -q 'docs/data-flow.md' "$KIT_SRC/README-tr.md" \
   && ok "F13: no absolute locality claim; README en/tr link the data-flow table" || no "F13: ${F13HIT:-data-flow.md missing or unlinked}"
 echo "-- F24: every setting scan.sh reads is documented in security-audit.conf.example --"

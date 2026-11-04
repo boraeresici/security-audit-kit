@@ -7,6 +7,7 @@
 
 [![ci](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml)
 [![self-audit](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/boraeresici/security-audit-kit/badge)](https://scorecard.dev/viewer/?uri=github.com/boraeresici/security-audit-kit)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/boraeresici/security-audit-kit?sort=semver)](https://github.com/boraeresici/security-audit-kit/releases)
 
@@ -15,34 +16,34 @@
 > Yukaridaki **self-audit** badge'i dogfooding: kit kendi `secret` + `sast` taramasini bu
 > repo uzerinde [`.github/workflows/self-audit.yml`](.github/workflows/self-audit.yml) ile kosar.
 
-CI'a (ve faturasina) bagimli olmadan, **herhangi bir git repo'sunda** yerel
-guvenlik taramasi koşturan, hook'larla otomatik tetikleyen ve bulgu triyajini
-bir Claude skill'ine baglayan kendi-kendine yeten kit.
+**Sabitlenmis tarayicilar bulur, Claude degerlendirir, git hook'lariniz engeller.** Herhangi bir git
+reposuna vendor edilip bir surume pinlenen tek bir klasor; secret, SAST, bagimlilik CVE, IaC ve
+container taramalarini senin makinende, git hook'larindan, CI'siz ve hesapsiz kosar. Atlanan ya da
+coken bir tarayici asla temiz sayilmaz. Ardindan Claude Code skill'leri gercek bulguyu gurultuden,
+bir kanit cubuguyla ayirir.
 
-Kapsanan boyutlar: **sir** (gitleaks), **SAST** (semgrep), **bagimlilik CVE**
-(pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs**
-(trivy), **SBOM** (syft) ve opsiyonel boyutlar: **cok-ekosistem bagimlilik CVE**
-(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **kotu niyetli/typosquat bagimlilik**
-(`scan.sh guarddog` — GuardDog; bilinen-CVE kor noktasi) ve **GitHub Actions guvenligi**
-(`scan.sh zizmor` — template injection, poisoned pipeline, token asiri-izin), ayrica bir
-**kurulum-oncesi paket kontrolu** (`scan.sh pkgcheck` — `npm i` paketin kurulum script'ini
-calistirmadan *once* guarddog; ajan hook'u olarak da kullanilabilir). Eksik
-toolchain olan boyut otomatik atlanir.
+### Hizli baslangic
 
-Bunlarin ustune dort Claude skill'i yargi katmani ekler: **`sec-triage`** (ham tarama ->
-gercek/FP karari -> fix/allowlist; **sert kanit cubugu**: bir bulguya GERCEK demek icin sink
-`file:line`, guvenilmeyen kaynak ve kesintisiz yol adiyla belirtilmeli — varsayilan karar FP),
-**`sec-sast-deep`** (semgrep'in pattern'le goremedigi
-*semantik* kod aciklari: yatay authz/IDOR, dikey authz/eksik-rol, business-logic,
-semantik/stack-ozel injection — cagri-yolu izleyerek), **`sec-ai-review`** (OWASP LLM Top 10'a gore AI/LLM riskleri:
-prompt injection, guvensiz cikti islemesi, asiri yetki) ve **`sec-threat-model`** (STRIDE +
-data-flow ile saldiri yuzeyi tehdit modeli). Son ucu `scan.sh`'a girmez (yargi, script
-degil); periyodik/cutover-oncesi/yeni-endpoint, AI-yuzeyi veya yeni-subsystem sonrasi
-Claude'da kosulur.
+Reponun kokunden (calistirmadan once script'i oku):
+```bash
+curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh -o bootstrap.sh && less bootstrap.sh
+bash bootstrap.sh v1.20.0 --scan      # pinli kiti vendor et, hook'lari bagla, ilk taramayi kos
+```
+Sonra Claude Code'da: `/sec-triage`. git ve bash yeterli; Docker ve `uv` daha fazla boyut acar,
+eksik olan yuksek sesle atlanir ([Gereksinimler](#gereksinimler-hangisi-yoksa-o-boyut-atlanir)).
 
-Secmek istemiyor musun? **`sec-audit`** tek-komut orchestrator: scan + triage'i ve repoya
-*gercekten uyan* deep paslari (kor degil, sinyal-gated) kosar, hepsini tek findings dosyasinda
-toplar.
+<img alt="Demo: bootstrap.sh pinli kiti vendor eder; API anahtari iceren bir commit pre-commit secret taramasiyla engellenir; scan.sh all kapanis ozetini yazar (secret pass, sast findings, py-deps findings, js-deps not_applicable, container findings, iac not_applicable) ve sonraki adim olarak /sec-triage'i gosterir." src="docs/assets/demo.svg" width="100%">
+
+<sub>Gercek bir kosu; her surumde `scripts/make_demo.py` ile yeniden uretilir. Duz metin dokumu: [docs/assets/demo.txt](docs/assets/demo.txt).</sub>
+
+### Neler var
+
+| | |
+|---|---|
+| **Taramalar** (`scan.sh`) | secret (gitleaks), SAST (semgrep, stack'e gore), bagimlilik CVE (pip-audit, npm/pnpm/yarn), IaC (checkov), container/fs (trivy), SBOM (syft). Istege bagli: cok-ekosistem CVE (`osv`), kotu niyetli/typosquat paket (`guarddog`), GitHub Actions (`zizmor`) ve kurulum-oncesi paket kontrolu (`pkgcheck`, agent hook'u olarak da) |
+| **Kapi** | pre-commit ve pre-push hook'lari. Her kosu tek bir kapanis ozetiyle biter: boyut basina `pass`, `findings`, `error`, `skipped`, `indeterminate` ya da `not_applicable`, ayrica `summary.json` |
+| **Yargi** (Claude Code skill'leri) | `/sec-triage` (gercek mi FP mi, sonra fix ya da allowlist), `/sec-sast-deep` (authz/IDOR, is mantigi), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (hepsi, reponun sahip olduguna gore). [Claude Code plugin'i](#skillleri-claude-code-plugini-olarak-kur) olarak da |
+| **Guven** | araclar surum ve imaj digest'iyle pinli, her push'tan once kontrol edilen bir `CHECKSUMS` manifest'i, tarayicilar repoyu salt-okunur okur, telemetri yok. Makineden ne cikar: [docs/data-flow.md](docs/data-flow.md) |
 
 ## Yasam dongusu (kurulum → guncelleme → tarama)
 

@@ -7,6 +7,7 @@
 
 [![ci](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/ci.yml)
 [![self-audit](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml/badge.svg)](https://github.com/boraeresici/security-audit-kit/actions/workflows/self-audit.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/boraeresici/security-audit-kit/badge)](https://scorecard.dev/viewer/?uri=github.com/boraeresici/security-audit-kit)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/boraeresici/security-audit-kit?sort=semver)](https://github.com/boraeresici/security-audit-kit/releases)
 
@@ -15,34 +16,33 @@
 > The **self-audit** badge above is dogfooding: the kit runs its own `secret` + `sast`
 > scans on this repo via [`.github/workflows/self-audit.yml`](.github/workflows/self-audit.yml).
 
-A self-contained kit that runs local security scans in **any git repo** without
-depending on CI (or its billing), triggers automatically via git hooks, and wires
-finding triage into a Claude skill.
+**Pinned scanners find, Claude judges, your git hooks gate.** One folder, vendored into any git
+repo and pinned to a release, runs secrets, SAST, dependency-CVE, IaC and container scans on your
+machine, from git hooks, with no CI and no account. A skipped or failed scanner is never reported
+as clean. Claude Code skills then sort real findings from noise, at an evidence bar.
 
-Covered dimensions: **secrets** (gitleaks), **SAST** (semgrep), **dependency CVE**
-(pip-audit + pnpm/yarn/npm), **IaC misconfig** (checkov), **container/fs** (trivy),
-**SBOM** (syft), plus optional dimensions: **broad multi-ecosystem dependency CVE**
-(`scan.sh osv` — OSV-Scanner, py/js/go/rust/…), **malicious/typosquat dependencies**
-(`scan.sh guarddog` — GuardDog; the known-CVE blind spot), and **GitHub Actions security**
-(`scan.sh zizmor` — template injection, poisoned pipelines, token over-permissioning), plus a
-**pre-install package check** (`scan.sh pkgcheck` — guarddog on a package *before* `npm i` runs its
-install script; also available as an agent hook). Any
-dimension whose toolchain is missing is skipped automatically.
+### Quickstart
 
-On top of these, four Claude skills add a judgment layer: **`sec-triage`** (raw
-scan -> real/false-positive decision -> fix/allowlist, at a **hard-evidence bar**: calling a
-finding REAL requires naming the sink `file:line`, the untrusted source and an unbroken path —
-the default verdict is FP), **`sec-sast-deep`** (*semantic*
-code flaws semgrep's patterns miss: horizontal authz/IDOR, vertical authz/missing-role,
-business logic, semantic/stack-specific injection — by following the call path), **`sec-ai-review`** (AI/LLM risks per the
-OWASP LLM Top 10: prompt injection, insecure output handling, excessive agency), and
-**`sec-threat-model`** (STRIDE + data-flow threat modeling of the attack surface). The
-latter three don't run inside `scan.sh` (judgment, not a script); run them in Claude
-periodically / before a cutover / after a new endpoint, AI surface, or subsystem.
+From your repo's root (read the script before you run it):
+```bash
+curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh -o bootstrap.sh && less bootstrap.sh
+bash bootstrap.sh v1.20.0 --scan      # vendor the pinned kit, wire the hooks, run a first scan
+```
+Then, in Claude Code: `/sec-triage`. Needs git and bash; Docker and `uv` each enable more
+dimensions, and a missing one is skipped out loud ([Requirements](#requirements-a-missing-one-only-skips-that-dimension)).
 
-Don't want to pick? **`sec-audit`** is a one-command orchestrator: it runs the scan + triage
-and the deep passes that *actually apply* to the repo (signal-gated, not blindly), and
-consolidates everything into one findings file.
+<img alt="Demo: bootstrap.sh vendors the pinned kit; a commit with an API key is blocked by the pre-commit secret scan; scan.sh all prints its closing summary (secret pass, sast findings, py-deps findings, js-deps not_applicable, container findings, iac not_applicable) and names /sec-triage as the next step." src="docs/assets/demo.svg" width="100%">
+
+<sub>A real run, regenerated each release by `scripts/make_demo.py`; plain-text transcript: [docs/assets/demo.txt](docs/assets/demo.txt).</sub>
+
+### What you get
+
+| | |
+|---|---|
+| **Scans** (`scan.sh`) | secrets (gitleaks), SAST (semgrep, stack-aware), dependency CVE (pip-audit, npm/pnpm/yarn), IaC (checkov), container/fs (trivy), SBOM (syft). Optional: multi-ecosystem CVE (`osv`), malicious/typosquat packages (`guarddog`), GitHub Actions (`zizmor`), and a pre-install package check (`pkgcheck`, also as an agent hook) |
+| **Gate** | pre-commit and pre-push hooks. Each run ends with one closing summary: per dimension `pass`, `findings`, `error`, `skipped`, `indeterminate` or `not_applicable`, plus `summary.json` |
+| **Judgment** (Claude Code skills) | `/sec-triage` (real or false positive, then fix or allowlist), `/sec-sast-deep` (authz/IDOR, business logic), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (all of it, gated on what the repo has). Also as a [Claude Code plugin](#install-the-skills-as-a-claude-code-plugin) |
+| **Trust** | tools pinned by version and image digest, a `CHECKSUMS` manifest checked before every push, scanners read the repo read-only, no telemetry. What leaves the machine: [docs/data-flow.md](docs/data-flow.md) |
 
 ## Lifecycle (install → update → scan)
 

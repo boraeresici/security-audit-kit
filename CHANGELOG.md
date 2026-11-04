@@ -75,6 +75,15 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Changed
+- **The README opens with a quickstart and a real demo (F32).** The first screen (en and tr) is now:
+  - what the kit does, in two sentences;
+  - a Quickstart: read `bootstrap.sh`, then `bash bootstrap.sh <tag> --scan`;
+  - an animated terminal demo;
+  - a "What you get" table.
+
+  The demo is generated from a real run by `scripts/make_demo.py`, with a plain-text transcript in
+  `docs/assets/demo.txt`. The comparison's unmeasured default-backend row is removed until it is
+  measured. An OpenSSF Scorecard workflow and badge were added.
 - **`/sec-threat-model` checks that every element was looked at (F36).**
   - Phase 1 gives each external entity, process, data store and data flow an id.
   - Threat rows name their element.

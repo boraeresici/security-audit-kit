@@ -1,6 +1,6 @@
 # How security-audit-kit compares — all-in-one SaaS vs Semgrep vs security-audit-kit
 
-> **Last updated:** 2026-11-03 · kit **v1.20.0**
+> **Last updated:** 2026-11-04 · kit **v1.20.0**
 >
 > SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep
 > (retrieved 2026-07) plus public product docs. Semgrep is a trademark of its owner. This table is maintained as features ship — rows marked
@@ -59,7 +59,7 @@ These are three different product shapes, so some "missing" cells are deliberate
 | Runtime protection (in-app firewall) | ✓ in-app firewall | ✗ | — out of scope (scan kit, not a runtime agent) |
 | Compliance dashboards (SOC 2 / ISO) | ✓ | ✗ | — out of scope as a SaaS surface; the kit emits SARIF + `evidence.json` + a printable single-file HTML report you can attach to an audit |
 | IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers, including the judgment findings (`kit.sarif`) |
-| Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ fully local; network only in opt-in dimensions (e.g. GuardDog) |
+| Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ runs locally, no server; offline after `scan.sh warm` with `SCAN_OFFLINE=1`, except the dependency lookups, which send package names and versions ([data-flow](../data-flow.md)) |
 | Platform support | Any (SaaS); local scanner limited | Linux/macOS local (no Windows) | Linux + macOS native; Windows via **WSL2** — documented path + `doctor` platform detection, not yet verified by us on a real WSL2 machine; Git Bash partial (docker mounts mangle) |
 | Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest enforced by the pre-push hook (an edited vendored copy blocks the push), SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
 | Pricing | Freemium SaaS | Freemium | MIT, free |
@@ -98,13 +98,12 @@ default verdict is FP — a pattern match is not evidence of exploitability.
 
 | Backend | Split | Precision | Recall | F1 | Accuracy | Confusion |
 |---|---|---|---|---|---|---|
-| Anthropic Claude (default) | — | unpublished | unpublished | unpublished | unpublished | not yet measured — key authenticates but every inference call returns `credit balance is too low` (400) |
 | GLM-5.2 via NVIDIA NIM | dev (tuning, 31) | 100% | 100% | 100% | 100% | TP=15 FP=0 FN=0 TN=16 |
 | GLM-5.2 via NVIDIA NIM | **held-out (36)** | **100%** | **100%** | **100%** | **100%** | **TP=18 FP=0 FN=0 TN=18** |
 
 > **NIM run (2026-07-10):** `z-ai/glm-5.2` on `integrate.api.nvidia.com`, both splits, 0 errors.
-> The default backend is still the shipped one (Claude); it stays unmeasured until the account has
-> API credit.
+> The default backend (Claude) is not measured yet, so it has no row. It gets one when the
+> measurement (F12b) runs; until then, read the numbers above as GLM-5.2's, not the default's.
 >
 > **The held-out 100% is a Phase-A *before/after* result, read it as one.** Before the hard-evidence
 > bar, the same held-out cases scored **precision 83.3%** (3 false positives, recall already 100%):

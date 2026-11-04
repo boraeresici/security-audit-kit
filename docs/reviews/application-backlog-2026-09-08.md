@@ -686,6 +686,16 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - OpenSSF Scorecard must be added; a signed release remains tied to the R07 decision.
 - The SaaS/Semgrep comparison must be removed from the landing's main section; tools in the agent channel (Semgrep plugin, Trail of Bits `static-analysis`) must be taken as the competitors.
 
+**Status — 2026-11-04:** mostly implemented on `dev/plugin-readiness`.
+- **First screen (README en/tr, same structure):** a two-sentence statement, a Quickstart (download and read `bootstrap.sh`, then one `bash bootstrap.sh <tag> --scan`), a demo and a "What you get" table that replaces the long intro paragraphs.
+- **Demo:** `docs/assets/demo.svg` (animated terminal, about 25 s, no script and no external fetch) and `demo.txt` (the same transcript as text). Both are generated from a real run by `scripts/make_demo.py`: a throwaway repo, the released `bootstrap.sh`, a blocked commit with a secret, then `scan.sh all`. It is regenerated at release prep, so it cannot drift from the output format.
+- **Unmeasured row:** the default-backend row ("credit balance is too low") was removed from the comparison until F12b measures it.
+- **OpenSSF Scorecard:** `.github/workflows/scorecard.yml` (pinned by SHA, `main` only, results to code scanning and the public API) and a README badge. The badge fills in after the first run on `main`.
+- **Still open:**
+  - Moving the deep reference content out of the README into `docs/`. README-tr is the only Turkish file, so moving it would leave Turkish readers with English docs; the user decides.
+  - Re-framing the landing comparison around agent-channel tools. Needs a sourced feature check of those plugins first.
+  - The banner's terminal block from a real run (the demo does this now; the banner still uses fixed rows).
+
 ### F33 — Plugin hook set
 
 **Source — 2026-11-03:** Phoenix comparison (local note `docs/compare/phoenix-security-skills.local.md`). Phoenix uses all of the SessionStart, PreToolUse, PostToolUse and SessionEnd hooks; the kit has only the PreToolUse `pkgcheck`. Phoenix's hooks work with regex and with whatever is on PATH; the kit can fill the same surface with pinned tools. No new scanner is needed.
