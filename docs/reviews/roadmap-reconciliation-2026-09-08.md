@@ -4,6 +4,25 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-04 — path to the plugin, steps 1–4 implemented (`dev/plugin-readiness`, unreleased)
+
+Local-dev mode since v1.20.0: one branch, one commit per item, pushed. No PR, RC or version until the plugin-ready release. Status per item is in its backlog card.
+
+- **Step 1–2 (slot 3d):** the scan record is out of SAST/trivy scope (e6d1f7d); `scripts/dogfood.sh` runs the RC dogfood on clones and a fresh install (c118d92).
+- **Step 3 (slot 4–5):** F06 policy-aware pkgcheck cache (ee5a7ae), F08 update channels (d08308f), F07 stable CI gate (022ea0c), F10 hook chaining + `--uninstall` (f8d6f72), F24 config check (1329c85), F11 plugin part: read-only mounts + threat model (7b6bf38), F35 "content is evidence" rule (21dfff3). Docs caught up in f36da3a.
+- **Step 4 (R02, local/private channel):** plugin + marketplace manifests, skills only (d587fb8). Tried on two of the user's repos, one without a vendored scanner and one pinned three releases back. What that found, all fixed with tests:
+  - an older vendored scanner ran silently: skills now run `bootstrap.sh --check` and report it (b7c0921);
+  - `--no-skills` did not survive an upgrade (c22d3c6);
+  - ~50 worktrees ran no hooks at all through a hooksPath pointing nowhere (11cb974);
+  - a merge commit was blocked by secrets already in the merged branch (4867551);
+  - a scan on a branch far behind its upstream said nothing (4ebf697);
+  - `scan.sh changed` used a hardcoded `origin/main`, and crashed under bash 3.2 (23e531e).
+- **Maintainers:** requiring CI checks on `main` (including `plugin`) is documented as optional, the repo admin's choice; `RELEASE_REQUIRED_CHECKS` overrides `release.sh`'s list (fee2b33).
+- **Stale rows fixed:** F02, F03, F04 and F29 shipped in v1.20.0.
+- **Dropped at the user's request:** a kit check for a `.gitleaks.toml` without `[extend] useDefault = true`, plus triage rules for drafting gitleaks allowlists.
+
+**Next:** step 5, R02 public + F32. Then the plugin-ready release through RC → dogfood → final.
+
 ## 2026-11-03 — dimension registry (F17 slice 1), external tool review, R16
 
 **Implemented, out of order at the user's request:** F17 slice 1, the dimension registry and adapter contract (`scan.sh` `DIM_UNITS`/`SCAN_COMMANDS`, `docs/adapters.md`, two static e2e checks). The question behind it was whether SAK should get a core "engine" so that external security and pentest tools can plug in later. The answer was to define a contract instead of rewriting the code. Dispatch was the scattered part: the `case` table, the "not in 'all'" lists in help and in the closing summary, and the help tags all had to be kept in step by hand. They now read one registry. Behavior is unchanged: the old and new script gave 0 differences over 75 cases, and the offline e2e run gave 243 passed and 0 failed. F17's slot (13) did not move. The remaining slices stay there.

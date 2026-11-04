@@ -106,7 +106,7 @@ A dimension result must carry at least the distinction `pass`, `findings`, `erro
 - **Indistinguishable states:** pip-audit, gitleaks, npm/pnpm/yarn audit and guarddog use the same exit code for a finding and an error. These are recorded as `findings`; this limitation is written in the contract.
 - **Contract:** [docs/schema/summary.md](../schema/summary.md).
 
-**Status:** implemented on branch `feat/f02-status-policy`. 18 checks were added to e2e; they run offline and deterministically because the tools are shimmed. There is a unit test for the status labels in the report.
+**Status:** released in v1.20.0; implemented on branch `feat/f02-status-policy`. 18 checks were added to e2e; they run offline and deterministically because the tools are shimmed. There is a unit test for the status labels in the report.
 
 ### F03 — Artifact provenance and freshness
 
@@ -119,7 +119,7 @@ Evidence must consume only outputs in the same run manifest. Previous SARIF + a 
 - **Provenance:** computed in `summary.json` at the start of the run. Fields it covers: commit, dirty state, kit version and CHECKSUMS hash, config hash, rules, tool pins, scope. It contains no time or run id; it is copied as-is into evidence.json and the same content keeps producing the same output.
 - **`SARIF=0` runs:** runs such as pre-commit do not touch the `sarif/` directory or evidence.json. Which commit they describe is written in provenance.
 
-**Status:** implemented on branch `feat/f03-artifact-provenance`. 7 checks were added to e2e and 9 to the unit tests.
+**Status:** released in v1.20.0; implemented on branch `feat/f03-artifact-provenance`. 7 checks were added to e2e and 9 to the unit tests.
 
 ### F04 — Honest report
 
@@ -131,7 +131,7 @@ If there is no exit code or coverage is incomplete, the HTML must not say `clean
 - **Explicit commands:** `scan.sh evidence` / `scan.sh report` exit with 1 if they cannot produce their files.
 - **Post-scan error:** an error that occurs at the end of a scan with `SARIF=1` / `REPORT=html` is printed to the screen but does not change the gate. Rationale: the gate is the scanners' decision; a report that cannot be rendered does not change what they found.
 
-**Status:** implemented on branch `fix/f04-honest-report`.
+**Status:** released in v1.20.0; implemented on branch `fix/f04-honest-report`.
 - 15 unit tests were added: null/missing/3/1/0 for `verdict`, `scan_time` and the header.
 - 6 e2e checks were added. When run against the old code on `main`, all 6 came out red.
 
@@ -627,7 +627,7 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 
 **Decision — 2026-11-02:** Order is `PY_VENV` > repo `.venv` > active `VIRTUAL_ENV`. The active environment counts as the project environment only if it carries `pyvenv.cfg` and its physical path (symlinks resolved) is under `ROOT`. In other cases the reason is written and it falls back to the no-env path: static manifest or INDETERMINATE. There were two options for accepting a foreign environment: a flag that trusts `VIRTUAL_ENV`, or `PY_VENV` which takes a path. The path option was chosen. The user names the environment they are having audited; a flag would still depend on whatever the shell has activated at that moment. Because `PY_VENV` is an explicit choice, its result counts like a normal pip-audit result; the audit line writes the environment and the reason it was selected. A `PY_VENV` without `bin/python` is an error (rc=1); there is no silent fallback. No new status name was added: the produced results are the existing `pass`/`findings`/`indeterminate` and do not conflict with F02's naming. Since F25's guide was not yet written, the upgrade note is under "Upgrade notes" in the CHANGELOG.
 
-**Status:** implemented, on `main` via PR #38 (not released). 9 checks were added to e2e; the five fixtures in the acceptance criteria and two cases for `PY_VENV` are tested. The measured pyenv-global case is now rc=0 and INDETERMINATE.
+**Status:** released in v1.20.0; implemented, on `main` via PR #38 (not released). 9 checks were added to e2e; the five fixtures in the acceptance criteria and two cases for `PY_VENV` are tested. The measured pyenv-global case is now rc=0 and INDETERMINATE.
 
 ### F30 — Scanner database cache (trivy)
 
