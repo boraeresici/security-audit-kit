@@ -3,7 +3,7 @@
 Two comparisons. First, the tools a developer actually chooses between inside a coding agent:
 security plugins for Claude Code. Second, the wider platforms (all-in-one SaaS, Semgrep).
 
-> **Last updated:** 2026-11-04 · kit **v1.20.0**
+> **Last updated:** 2026-11-04 · kit **v1.21.0**
 >
 > Plugin data was checked on 2026-11-04 against the plugins' own repositories and docs (sources under
 > the table). SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep

@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.21.0] - 2026-11-04
 
 ### Upgrade notes
 - The skills moved inside the vendored kit: `skills/<name>.skill.md` is now
@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format is based on
   by the old install; now they are chained and run again. `install.sh --uninstall` is new.
 - The pkgcheck cache format changed (findings, not verdicts). Entries written by older kits are
   ignored, so each package is scanned once more on its next check (~15-20 s), and then cached again.
+- `scan.sh changed` now diffs against the remote's default branch (`origin/HEAD`, then
+  `origin/main`, `origin/master`) instead of a fixed `origin/main`. A repo whose default branch is
+  not `main` now gets a real diff instead of "no changed files"; set `BASE_REF` to keep a fixed base.
+- The English README's reference sections moved to `docs/` (`install`, `usage`, `rules`, `skills`,
+  `configuration`). A bookmark to a `README.md#section` anchor now lands on the README's
+  documentation index.
 - semgrep and trivy no longer scan `docs/security/scan-findings/`. If your repo committed scan
   artifacts there, findings that pointed into them (old raw logs, SARIF) disappear. They were
   about the scan's own output, not your code. gitleaks still scans full git history.

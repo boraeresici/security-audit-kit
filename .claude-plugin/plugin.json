@@ -1,7 +1,7 @@
 {
   "name": "security-audit-kit",
   "displayName": "Security Audit Kit",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "description": "Judgment layer for a pinned, local security scan: triage scanner findings real-vs-false-positive with an evidence bar, semantic SAST (authz/IDOR/logic), AI/LLM security review, STRIDE threat modeling, and a one-command audit. The skills drive the repo's own vendored, pinned scanner (tools/security-audit-kit/scan.sh); the plugin never downloads one.",
   "author": {
     "name": "studiobinary.co",
@@ -10,5 +10,5 @@
   "homepage": "https://github.com/boraeresici/security-audit-kit",
   "repository": "https://github.com/boraeresici/security-audit-kit",
   "license": "MIT",
-  "keywords": ["security", "sast", "secrets", "dependencies", "triage", "threat-model", "supply-chain", "offline"]
+  "keywords": ["security", "sast", "secrets", "dependencies", "triage", "threat-model", "supply-chain", "local"]
 }

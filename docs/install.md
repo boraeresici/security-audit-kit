@@ -68,7 +68,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.20.0          # pin a tag
+  rev: v1.21.0          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -117,9 +117,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
    # vendored version : v1.19.1
-   # latest tag       : v1.20.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.20.0
-   # upgrade notes v1.19.1 -> v1.20.0 (do these when you update):
+   # latest tag       : v1.21.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.21.0
+   # upgrade notes v1.21.0 -> v1.21.0 (do these when you update):
    #   [1.20.0]
    #     Read the first three before updating: they change what scripts that read the kit's output see.
    #     - **`summary.json` schema 2 (breaking for parsers of `status`).** The value "fail" is gone: ...
@@ -135,9 +135,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.20.0   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.21.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.20.0"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.21.0"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
