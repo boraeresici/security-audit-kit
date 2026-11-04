@@ -75,6 +75,11 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Changed
+- **`/sec-threat-model` checks that every element was looked at (F36).**
+  - Phase 1 gives each external entity, process, data store and data flow an id.
+  - Threat rows name their element.
+  - Before closing, a coverage grid (element × the STRIDE categories that apply to its type) must have no empty cell. Each cell holds a threat row, or a "not applicable" with a reason specific to that element.
+  - For processes and data stores, the T and R cells ask whether an attack would be detected (logging, alerting, integrity monitoring).
 - **"Nothing leaves your machine" was not true, and is gone (F13).** No scanner sends source code,
   and the kit has no server or telemetry. But dependency lookups send package names and versions to
   advisory services, semgrep fetches rule packs by name, and the AI layer sends what the agent reads

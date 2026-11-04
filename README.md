@@ -758,6 +758,10 @@ not defended* — using **STRIDE + a data-flow** view. Judgment-only, reusable i
   request. NOT per-push.
 - **Output:** a living `docs/security/threat-model-<DATE>.md` (data-flow + STRIDE tables); concrete
   gaps are promoted into the same `sec-triage` flow (findings file + follow-up registry).
+- **Completeness:** every inventoried element (entity, process, data store, data flow) is checked
+  against each STRIDE category that applies to its type. The model does not close while a cell is
+  empty. A cell holds a threat or a reason specific to that element. For processes and data stores
+  it also asks whether tampering would be detected.
 
 ## One command — `/sec-audit`
 

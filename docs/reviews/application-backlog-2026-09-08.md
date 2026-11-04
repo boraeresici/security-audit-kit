@@ -742,6 +742,14 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - The coverage record may later merge with F27; this card does not wait for F27.
 - **Addendum — 2026-11-03 (classic tool review: OSSEC/Snort):** For processes and data stores, the Repudiation and Tampering rows must ask whether an attack would be **detected**: is there security-relevant logging, alerting, and file-integrity or intrusion monitoring, and where is it evidenced? The answer is recorded as a threat row or a justified "not applicable" row. These are questions only. The kit does not run or recommend a specific HIDS/NIDS product.
 
+**Status — 2026-11-04:** implemented on `dev/plugin-readiness` (skill text only).
+- Phase 1 gives each element a short id.
+- The record gains an `element` column; the boundary walk and the old columns stay.
+- An applicable-category table by element type was added (R on a data store only when it holds an audit or event log).
+- A coverage grid must have no empty cell before the model closes; a "not applicable" reason must be specific to the element.
+- The "would anyone notice?" question goes into the T and R cells of processes and data stores, with no product recommendation.
+- Earlier dated models are not rewritten. Not merged with F27.
+
 ## Current delivery order — primary planning source
 
 The order below is the suggested default for a single team; items on the same row do not have to be a single PR. Conditional items that are not opened do not hold up the next independent item. The earlier Package A/B/C order was replaced by this table.

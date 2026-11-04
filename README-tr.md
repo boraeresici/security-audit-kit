@@ -746,6 +746,10 @@ diye sorar — **STRIDE + data-flow** ile. Yargi-only, her repoda yeniden kullan
   veya talep uzerine. Her push'ta degil.
 - **Cikti:** yasayan bir `docs/security/threat-model-<TARIH>.md` (data-flow + STRIDE tablolari);
   somut bosluklar ayni `sec-triage` akisina (findings + takip) terfi eder.
+- **Tamlik:** envanterdeki her oge (aktor, surec, veri deposu, veri akisi), tipine uyan her STRIDE
+  kategorisine karsi kontrol edilir. Bos bir hucre varken model kapanmaz. Her hucrede bir tehdit
+  ya da o ogeye ozgu bir gerekce olur. Surecler ve veri depolari icin, kurcalamanin fark edilip
+  edilmeyecegi de sorulur.
 
 ## Tek komut — `/sec-audit`
 
