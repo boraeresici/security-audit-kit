@@ -152,8 +152,13 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
 - **Bir surume pinle:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. Plugin'in
   `version`'i kitin surumlerini izler. Guncellemeler, bu marketplace icin otomatik guncellemeyi
   acmadikca elle yapilir (`/plugin` → Installed → Update).
-- **Tarayiciyi vendor'la:** `bash bootstrap.sh <tag>`, ardindan `bash tools/security-audit-kit/install.sh
-  --no-skills`. Bu, skill'leri ikinci kez kopyalamadan hook'lari ve config'i baglar.
+- **Tarayiciyi skill'lerin ikinci bir kopyasi olmadan vendor'la:** `bash bootstrap.sh <tag> --no-skills`
+  (kitin zaten kurulu oldugu bir repoda: `bash tools/security-audit-kit/install.sh --no-skills`).
+  Bu, hook'lari ve config'i baglar ve onceki bir kurulumun biraktigi skill kopyalarini kaldirir;
+  ama yalnizca kesin olarak kitin olanlari: kurulumda kaydedilmis ya da bu surumun veya yayimlanmis
+  herhangi bir surumun sablonuyla birebir ayni olanlari. Senin duzenledigin bir kopya kalir ve
+  nasil kaldirilacagi yazilir. Secim hatirlanir, sonraki yukseltmeler ona uyar; `--with-skills`
+  skill'leri yeniden kopyalar.
 - **Skill adlari:** plugin skill'leri ad alaniyla gelir: `/security-audit-kit:sec-triage`,
   `/security-audit-kit:sec-audit` ve digerleri.
 - **Plugin'in asla yapmadiklari:** tarayiciyi indirmez, hook'lara ya da `.security-audit.conf`'a

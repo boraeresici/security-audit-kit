@@ -39,6 +39,9 @@ Then, on that branch:
 ```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
 #    and set the same version in .claude-plugin/plugin.json (release.sh refuses a mismatch)
+#    then record the skill templates being released (install.sh uses them to recognise its own
+#    copies on upgrade; release.sh refuses if they are missing):
+bash scripts/skill-sums.sh
 # 2) regenerate + verify the integrity manifest (kit files changed)
 bash scan.sh checksums
 bash scan.sh verify

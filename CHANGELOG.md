@@ -34,7 +34,14 @@ All notable changes to this project are documented here. The format is based on
   - Each skill first runs the repo's `bootstrap.sh --check`, and reports an older vendored scanner
     (versions plus upgrade notes) instead of replacing it. Found on a real repo pinned three
     releases back, where the skill hit bugs that had already been fixed.
-  - `install.sh --no-skills` wires hooks and config for repos whose skills come from the plugin.
+  - `install.sh --no-skills` (and `bootstrap.sh <tag> --no-skills`) wires hooks and config for
+    repos whose skills come from the plugin. It removes the skill copies an earlier install left,
+    but only those provably the kit's: recorded at install, or identical to the current or any
+    released template (`lib/released-skills.sums`, generated from the release tags by
+    `scripts/skill-sums.sh`). Edited copies are kept, with a removal hint. The choice is recorded
+    and kept on later installs; `--with-skills` reverts it. `bootstrap.sh` passes
+    `--no-skills`, `--with-skills`, `--skills-only` and `--with-agent-hook` through to `install.sh`.
+    `release.sh` refuses a release whose templates are not in the sums file.
   - CI runs `claude plugin validate --strict` on both manifests (pinned CLI).
   - `release.sh` refuses a release whose `plugin.json` version is not the release version.
   - e2e checks that the manifest and the disk agree.

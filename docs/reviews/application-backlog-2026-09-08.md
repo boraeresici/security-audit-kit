@@ -435,8 +435,18 @@ First write the contract for repos with/without a vendored scanner and for a dif
   - It did not force the allowlist write it was denied; it wrote the proposal into the findings file instead.
   - It found three v1.17 kit bugs on its own: active VIRTUAL_ENV audited, skipped = pass, and the scan record scanned. F29, F02 and the scan-record exclusion fixed all three later.
 - **Decision — version skew:** the plugin does not update the vendored scanner, because the pin is the team's decision and hooks and CI run the same version. Every skill now runs `bootstrap.sh --check` first and reports an older pin, with the versions and upgrade notes.
-- **Open:**
-  - `install.sh --no-skills` on a repo that also has the plugin (both copies of the skills side by side today).
+- **`--no-skills` lifecycle (2026-11-04):** testing it showed the documented flow did not work, for three reasons:
+  - `bootstrap.sh` ran `install.sh` with no flags, so `--no-skills` could not reach it.
+  - The choice was not remembered, so the next upgrade copied the skills back.
+  - Copies installed by an older kit looked "edited", so they were never removed.
+
+  Fixed:
+  - `bootstrap.sh` passes install flags through.
+  - `skills_mode` is recorded and kept, with `--with-skills` to revert.
+  - Kit copies are recognised by the record, the current template, or any released template in `lib/released-skills.sums` (generated from all 54 tags by `scripts/skill-sums.sh`). An old bootstrap.sh still works, because the file ships with the new kit.
+  - Edited copies are kept, with a removal hint.
+  - `release.sh` refuses missing sums.
+  - 7 e2e checks.
   - The listing icon and the public listing (F32 / public R02).
   - Branch protection needs `plugin` added as a required check, a GitHub setting.
 

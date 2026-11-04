@@ -69,6 +69,18 @@ require_plugin_version(){
   [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
 }
 
+# install.sh removes a skill copy only if it is provably the kit's, and a RELEASED template is one of
+# the proofs: the templates being released must be on record, or upgrading users keep stale copies.
+require_skill_sums(){
+  local f n s
+  for f in skills/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    n="${f#skills/}"; n="${n%/SKILL.md}"; s="$(cksum < "$f" | awk '{print $1"-"$2}')"
+    grep -qx "$n $s" lib/released-skills.sums 2>/dev/null \
+      || die "lib/released-skills.sums lacks the current $n template — run scripts/skill-sums.sh and commit"
+  done
+}
+
 # Every release says what a consumer must do on upgrade, even if that is nothing (F25):
 # bootstrap.sh --check shows these sections to someone about to update. "- None." is a valid body;
 # a missing section is not, because then nobody decided.
@@ -162,6 +174,7 @@ cmd_rc(){
   require_changelog_version "$ver"
   require_upgrade_notes "$ver"
   require_plugin_version "$ver"
+  require_skill_sums
   preflight
   local n=1 t
   while git rev-parse -q --verify "refs/tags/v${ver}-rc.$n" >/dev/null; do n=$((n+1)); done
@@ -188,6 +201,7 @@ cmd_final(){
   git rev-parse -q --verify "refs/tags/v$ver" >/dev/null && die "tag v$ver already exists"
   require_changelog_version "$ver"
   require_plugin_version "$ver"
+  require_skill_sums
   local last_rc; last_rc="$(git tag -l "v${ver}-rc.*" | sort -V | tail -1)"
   [ -n "$last_rc" ] || die "no RC for v$ver — cut & test one first:  scripts/release.sh rc $ver"
   preflight

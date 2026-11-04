@@ -35,14 +35,16 @@ UNINSTALL=0
 # --no-skills: hooks + config only. For a repo whose skills come from the Claude Code plugin
 # (security-audit-kit@security-audit-kit): copying them too would load each skill twice.
 NO_SKILLS=0
+WITH_SKILLS=0
 for arg in "$@"; do
   case "$arg" in
     --skills-only)     SKILLS_ONLY=1 ;;
     --with-agent-hook) AGENT_HOOK=1 ;;
     --uninstall)       UNINSTALL=1 ;;
     --no-skills)       NO_SKILLS=1 ;;
+    --with-skills)     WITH_SKILLS=1 ;;
     "") ;;
-    *) echo "unknown option: $arg (usage: install.sh [--skills-only | --no-skills] [--with-agent-hook] | --uninstall)"; exit 2 ;;
+    *) echo "unknown option: $arg (usage: install.sh [--skills-only | --no-skills | --with-skills] [--with-agent-hook] | --uninstall)"; exit 2 ;;
   esac
 done
 
@@ -54,26 +56,36 @@ KIT_HOOKS="$KIT_REL/hooks"
 SKILLS="sec-triage sec-sast-deep sec-ai-review sec-threat-model sec-audit"
 state_get(){ [ -f "$STATE" ] || return 0; sed -n "s/^$1=//p" "$STATE" | tail -1; }   # no record = empty, never a failure (set -e)
 state_set(){ local tmp; tmp="$(mktemp)"; { [ -f "$STATE" ] && grep -v "^$1=" "$STATE"; printf '%s=%s\n' "$1" "$2"; } > "$tmp"; mv -f "$tmp" "$STATE"; }
+state_del(){ [ -f "$STATE" ] || return 0; local tmp; tmp="$(mktemp)"; grep -v "^$1=" "$STATE" > "$tmp" || true; mv -f "$tmp" "$STATE"; }
 fsum(){ cksum < "$1" | awk '{print $1"-"$2}'; }
+# Is .claude/skills/<s>/SKILL.md provably a copy the kit installed (and nobody edited)? Recorded at
+# install, identical to this kit's template, or identical to a RELEASED template: a copy an older kit
+# put there is recognised although this kit's template changed since (lib/released-skills.sums,
+# generated from the release tags by scripts/skill-sums.sh). Anything else is someone's edit: kept.
+kit_copy(){
+  local s="$1" f="$ROOT/.claude/skills/$1/SKILL.md" sum
+  [ -f "$f" ] || return 1
+  sum="$(fsum "$f")"
+  [ "$sum" = "$(state_get "skill_$s")" ] && return 0
+  [ -f "$KIT/skills/$s/SKILL.md" ] && [ "$sum" = "$(fsum "$KIT/skills/$s/SKILL.md")" ] && return 0
+  grep -qx "$s $sum" "$KIT/lib/released-skills.sums" 2>/dev/null
+}
 HOOK_CMD="bash \"\$CLAUDE_PROJECT_DIR/$KIT_REL/hooks/pre-tool-install.sh\""
 
 # Remove only what install added, as recorded; keep the team's config and anything edited since.
 uninstall(){
   echo "== uninstall =="
-  local legacy=0 cur prev s f sum
+  local cur prev s f sum
   if [ ! -f "$STATE" ]; then
     # Without a record, only what is recognisably the kit's counts: its hooks dir as hooksPath, or a
     # skill identical to the kit's template. A skill kept because it was edited is the user's now.
     cur="$(git config --get core.hooksPath 2>/dev/null || true)"
     local kits=0
-    for s in $SKILLS; do
-      f="$ROOT/.claude/skills/$s/SKILL.md"
-      [ -f "$f" ] && [ "$(fsum "$f")" = "$(fsum "$KIT/skills/$s/SKILL.md")" ] && kits=1
-    done
+    for s in $SKILLS; do kit_copy "$s" && kits=1; done
     if [ "$cur" != "$KIT_HOOKS" ] && [ "$kits" = 0 ]; then
       ok "nothing to undo (no install record in .git, no kit hooks or unedited kit skills)"; return 0
     fi
-    legacy=1; miss "no install record (installed by a kit older than this one) -> undoing what can be told apart safely"
+    miss "no install record (installed by a kit older than this one) -> undoing what can be told apart safely"
   fi
   cur="$(git config --get core.hooksPath 2>/dev/null || true)"
   if [ "$cur" = "$KIT_HOOKS" ] || [ "$cur" = "$CHAIN_DIR" ]; then
@@ -86,8 +98,7 @@ uninstall(){
   [ -d "$CHAIN_DIR" ] && rm -rf "$CHAIN_DIR" && ok "removed the hook wrappers (.git/security-audit-hooks)"
   for s in $SKILLS; do
     f="$ROOT/.claude/skills/$s/SKILL.md"; [ -f "$f" ] || continue
-    if [ "$legacy" = 1 ]; then sum="$(fsum "$KIT/skills/$s/SKILL.md")"; else sum="$(state_get "skill_$s")"; fi
-    if [ -n "$sum" ] && [ "$(fsum "$f")" = "$sum" ]; then
+    if kit_copy "$s"; then
       rm -f "$f"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true; ok "removed .claude/skills/$s"
     else
       miss "kept .claude/skills/$s/SKILL.md — it was edited after install (delete it yourself if you want)"
@@ -221,10 +232,28 @@ else
 fi
 
 echo "== Claude skills =="
+# The choice is remembered: a later install (bootstrap.sh runs one on every upgrade) keeps it.
+if [ "$WITH_SKILLS" = "1" ]; then NO_SKILLS=0
+elif [ "$NO_SKILLS" = "0" ] && [ "$(state_get skills_mode)" = "plugin" ]; then
+  NO_SKILLS=1; ok "skills come from the plugin (recorded at an earlier install; --with-skills copies them again)"
+fi
 if [ "$NO_SKILLS" = "1" ]; then
+  state_set skills_mode plugin
   miss "skipped (--no-skills): the skills come from the Claude Code plugin (/plugin install security-audit-kit@security-audit-kit)"
+  # Copies a previous install left would load next to the plugin's: remove the kit's own, keep edits.
+  for s in $SKILLS; do
+    [ -f "$ROOT/.claude/skills/$s/SKILL.md" ] || continue
+    if kit_copy "$s"; then
+      rm -f "$ROOT/.claude/skills/$s/SKILL.md"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true
+      state_del "skill_$s"; ok "removed .claude/skills/$s (the kit's copy; the plugin provides it)"
+    else
+      miss "kept .claude/skills/$s — edited after install, so it is not removed. With the plugin it loads twice; remove it with: rm -r .claude/skills/$s"
+    fi
+  done
+  rmdir "$ROOT/.claude/skills" "$ROOT/.claude" 2>/dev/null || true
   mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
 else
+  state_set skills_mode copy
   # Source templates live in the kit under skills/; they are installed into the TARGET
   # repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
   mkdir -p "$ROOT/.claude/skills/sec-triage"

@@ -53,7 +53,8 @@ bash tests/e2e.sh
 Follow [RELEASING.md](RELEASING.md). Do not tag by hand. In short:
 1. A release-prep PR turns `[Unreleased]` into `[X.Y.Z]` with an `### Upgrade notes` section
    (`- None.` if nothing changes for consumers), sets the same version in
-   `.claude-plugin/plugin.json`, and sweeps the README pins, docs/compare and the landing page.
+   `.claude-plugin/plugin.json`, runs `scripts/skill-sums.sh`, and sweeps the README pins,
+   docs/compare and the landing page.
 2. `scripts/release.sh rc X.Y.Z` cuts a release candidate. It checks the CHANGELOG, the
    CHECKSUMS, e2e and CI.
 3. `scripts/dogfood.sh vX.Y.Z-rc.N <consumer repos...>` tries it on clones of real repos and on a

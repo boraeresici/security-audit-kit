@@ -12,6 +12,7 @@
 #   bash bootstrap.sh v1.0.0
 #   bash bootstrap.sh v1.0.0 --scan          # also run a full scan after install
 #   bash bootstrap.sh v1.0.0 --expect=<sha>  # REFUSE unless the ref resolves to <sha> (enforce the pin)
+#   bash bootstrap.sh v1.0.0 --no-skills     # skills come from the Claude Code plugin: hooks + config only
 #   bash bootstrap.sh --check                # IS THERE AN UPDATE? (no clone, read-only)
 #   bash bootstrap.sh --check --channel=rc   # ...including release candidates (opt-in)
 #     exit: 0 = up to date, 1 = update available, 2 = cannot tell (repo unreachable, no tags)
@@ -30,6 +31,7 @@ DO_CHECK=0
 ALLOW_REF_CHANGE=0
 EXPECT_SHA=""
 REF_ARG=""
+INSTALL_ARGS=()   # passed through to install.sh
 CHANNEL="${KIT_CHANNEL:-stable}"
 for a in "$@"; do
   case "$a" in
@@ -38,7 +40,8 @@ for a in "$@"; do
     --allow-ref-change) ALLOW_REF_CHANGE=1 ;;
     --expect=*) EXPECT_SHA="${a#--expect=}" ;;
     --channel=*) CHANNEL="${a#--channel=}" ;;
-    -*) echo "unknown flag: $a (--scan | --check [--channel=stable|rc] | --expect=<sha> | --allow-ref-change)"; exit 2 ;;
+    --no-skills|--with-skills|--skills-only|--with-agent-hook) INSTALL_ARGS+=("$a") ;;
+    -*) echo "unknown flag: $a (--scan | --check [--channel=stable|rc] | --expect=<sha> | --allow-ref-change | install: --no-skills --with-skills --skills-only --with-agent-hook)"; exit 2 ;;
     *) REF_ARG="$a" ;;
   esac
 done
@@ -223,7 +226,7 @@ if [ -z "$CK_DIGEST" ]; then
 fi
 
 echo "== delegating to install.sh =="
-bash "$ROOT/$DEST_REL/install.sh"
+bash "$ROOT/$DEST_REL/install.sh" "${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}"
 
 if [ "$RUN_SCAN" = "1" ]; then
   echo "== first scan (--scan) =="

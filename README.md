@@ -173,8 +173,12 @@ conversation. In the VS Code extension, run **Developer: Reload Window** from th
 - **Pin a release:** `/plugin marketplace add boraeresici/security-audit-kit#v1.20.0`. The
   plugin's `version` follows the kit's releases. Updates are manual (`/plugin` → Installed → Update)
   unless you turn on auto-update for this marketplace.
-- **Vendor the scanner:** `bash bootstrap.sh <tag>`, then `bash tools/security-audit-kit/install.sh
-  --no-skills`. That wires the hooks and the config without copying the skills a second time.
+- **Vendor the scanner without a second copy of the skills:** `bash bootstrap.sh <tag> --no-skills`
+  (or `bash tools/security-audit-kit/install.sh --no-skills` on a repo that has the kit). This
+  wires the hooks and the config, and removes the skill copies an earlier install left, but only
+  the ones that are provably the kit's: recorded at install, or identical to this or any released
+  template. A copy you edited stays, and the command shows how to remove it. The choice is
+  remembered, so later upgrades keep it; `--with-skills` copies the skills again.
 - **Skill names:** plugin skills are namespaced: `/security-audit-kit:sec-triage`,
   `/security-audit-kit:sec-audit`, and so on.
 - **What the plugin never does:** it never downloads the scanner, never edits hooks or

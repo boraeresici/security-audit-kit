@@ -501,6 +501,12 @@ if [ -f "$T2/tools/security-audit-kit/.kit-version" ]; then
     no "bootstrap: legacy two-field RC pin rejected the matching released files"
   fi
 fi
+T3="$(mktemp -d)"; ( cd "$T3" && git init -q )
+( cd "$T3" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v99.0.0-rc.99 --expect="$GOOD" --no-skills ) >/dev/null 2>&1
+[ -f "$T3/tools/security-audit-kit/.kit-version" ] && [ ! -d "$T3/.claude/skills" ] \
+  && ok "R02: bootstrap.sh --no-skills passes it to install.sh (vendors, copies no skills)" || no "R02: bootstrap --no-skills"
+rm -rf "$T3"
+
 echo "-- dogfood.sh: an RC tried on a consumer clone + a fresh install, one verdict --"
 if [ -f "$T2/tools/security-audit-kit/.kit-version" ]; then
   ( cd "$T2" && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1 \
@@ -1341,13 +1347,34 @@ if have claude; then
   R02O="$(claude plugin validate --strict "$KIT_SRC/.claude-plugin/marketplace.json" 2>&1)" && ok "R02: claude plugin validate --strict (marketplace)" \
     || no "R02: validate marketplace: $(tail -5 <<<"$R02O")"
 else skip "R02: claude plugin validate (no claude CLI; CI runs it)"; fi
-# install.sh --no-skills: a plugin user who vendors the scanner gets no second copy of the skills
+# install.sh --no-skills: a plugin user who vendors the scanner gets no second copy of the skills,
+# and the copies an install left behind go too, but only the ones provably the kit's: recorded at
+# install, identical to this kit's template, or identical to a RELEASED template (lib/released-skills.sums,
+# so a copy from an older kit is recognised even though this kit's template changed since).
 TNS="$(mktemp -d)"; mkdir -p "$TNS/tools/security-audit-kit"
 if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TNS/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TNS/tools/security-audit-kit"/; fi
-( cd "$TNS" && git init -q && bash tools/security-audit-kit/install.sh --no-skills ) >/dev/null 2>&1
-[ ! -d "$TNS/.claude/skills" ] && [ -n "$(git -C "$TNS" config core.hooksPath)" ] && [ -f "$TNS/.security-audit.conf" ] \
-  && ok "R02: install.sh --no-skills wires hooks + config, copies no skills" || no "R02: --no-skills"
+( cd "$TNS" && git init -q && bash tools/security-audit-kit/install.sh ) >/dev/null 2>&1
+rm -f "$TNS/.git/security-audit-install.state"                       # an install from before the record
+# sec-audit: a copy an OLDER kit installed (its template is in RELEASED.sums, not this kit's)
+printf '\nold kit text\n' >> "$TNS/.claude/skills/sec-audit/SKILL.md"
+printf 'sec-audit %s\n' "$(cksum < "$TNS/.claude/skills/sec-audit/SKILL.md" | awk '{print $1"-"$2}')" >> "$TNS/tools/security-audit-kit/lib/released-skills.sums"
+printf '\nmy own note\n' >> "$TNS/.claude/skills/sec-triage/SKILL.md"   # sec-triage: edited by a person
+NSO="$(cd "$TNS" && bash tools/security-audit-kit/install.sh --no-skills 2>&1)"
+[ ! -e "$TNS/.claude/skills/sec-audit" ] && [ ! -e "$TNS/.claude/skills/sec-sast-deep" ] \
+  && ok "R02: --no-skills removes the kit's own copies (current and older-release ones)" || no "R02: --no-skills left kit copies: $(find "$TNS/.claude/skills" -mindepth 1 -maxdepth 1 2>/dev/null | tr '\n' ' ')"
+[ -f "$TNS/.claude/skills/sec-triage/SKILL.md" ] && grep -q 'rm -r .claude/skills/sec-triage' <<<"$NSO" \
+  && ok "R02: --no-skills keeps an edited copy and says how to remove it" || no "R02: edited copy: $(grep -i sec-triage <<<"$NSO")"
+[ -n "$(git -C "$TNS" config core.hooksPath)" ] && [ -f "$TNS/.security-audit.conf" ] \
+  && ok "R02: --no-skills still wires hooks + config" || no "R02: --no-skills hooks/config"
+rm -rf "$TNS/.claude/skills/sec-triage"
+(cd "$TNS" && bash tools/security-audit-kit/install.sh) >/dev/null 2>&1
+[ ! -d "$TNS/.claude/skills/sec-audit" ] && ok "R02: a later plain install keeps the recorded plugin mode (no copies)" || no "R02: plain re-install copied the skills back"
+(cd "$TNS" && bash tools/security-audit-kit/install.sh --with-skills) >/dev/null 2>&1
+[ -f "$TNS/.claude/skills/sec-audit/SKILL.md" ] && ok "R02: --with-skills copies them again" || no "R02: --with-skills"
 rm -rf "$TNS"
+# every skill has at least one released template on record (else an old copy could not be told apart)
+R02R=""; for d in $R02D; do grep -q "^$d " "$KIT_SRC/lib/released-skills.sums" 2>/dev/null || R02R="$R02R $d"; done
+[ -z "$R02R" ] && ok "R02: lib/released-skills.sums covers every skill" || no "R02: RELEASED.sums lacks:$R02R"
 
 echo "-- gate honesty: no file listing piped into 'grep -q' (SIGPIPE -> silent false negative) --"
 # `git ls-files | grep -q` exits at the first match, git takes SIGPIPE, and pipefail turns the
