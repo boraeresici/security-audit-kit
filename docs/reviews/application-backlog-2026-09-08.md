@@ -692,7 +692,7 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - **Unmeasured row:** the default-backend row ("credit balance is too low") was removed from the comparison until F12b measures it.
 - **OpenSSF Scorecard:** `.github/workflows/scorecard.yml` (pinned by SHA, `main` only, results to code scanning and the public API) and a README badge. The badge fills in after the first run on `main`.
 - **Still open:**
-  - Moving the deep reference content out of the README into `docs/`. README-tr is the only Turkish file, so moving it would leave Turkish readers with English docs; the user decides.
+  - ~~Moving the deep reference content out of the README.~~ **Done — 2026-11-04 (user's choice b):** the English reference moved into `docs/install.md`, `usage.md`, `rules.md`, `skills.md`, `configuration.md` (README 918 → about 260 lines). README-tr keeps the full Turkish reference, since it is the only Turkish file. A link and anchor check runs in e2e.
   - Re-framing the landing comparison around agent-channel tools. Needs a sourced feature check of those plugins first.
   - The banner's terminal block from a real run (the demo does this now; the banner still uses fixed rows).
 

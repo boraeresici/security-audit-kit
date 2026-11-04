@@ -1028,7 +1028,7 @@ scan_doctor(){
   if [ "${SEMGREP_LOCAL_RULES:-}" = "off" ]; then
     printf '  --  DISABLED by SEMGREP_LOCAL_RULES=off (.security-audit.conf or env)\n'
   elif [ -z "$(local_rules_paths)" ]; then
-    printf '  --  none found (looked for: %s) — see README "repo-local rules"\n' "$LOCAL_RULES_ANCHORS"
+    printf '  --  none found (looked for: %s) — see docs/rules.md in the kit\n' "$LOCAL_RULES_ANCHORS"
   else
     local idx total gating nogate names
     idx="$(local_rules_index)"

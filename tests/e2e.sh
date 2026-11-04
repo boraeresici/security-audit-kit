@@ -1302,6 +1302,11 @@ echo "-- F13: no absolute 'nothing leaves' claim on a user-facing surface; the d
 F13HIT="$(cd "$KIT_SRC" && git grep -n -i -E 'nothing (leaves|left) (your|this) machine|fully local' -- README.md README-tr.md landing/index.html docs/compare/feature-comparison.md lib/report_html.py 2>/dev/null)"
 [ -z "$F13HIT" ] && [ -f "$KIT_SRC/docs/data-flow.md" ] && grep -q 'docs/data-flow.md' "$KIT_SRC/README.md" && grep -q 'docs/data-flow.md' "$KIT_SRC/README-tr.md" \
   && ok "F13: no absolute locality claim; README en/tr link the data-flow table" || no "F13: ${F13HIT:-data-flow.md missing or unlinked}"
+echo "-- F32: README and docs/ links resolve (the reference moved out of the README) --"
+if [ -x /usr/bin/python3 ]; then
+  F32L="$(cd "$KIT_SRC" && /usr/bin/python3 -I tests/linkcheck.py README.md README-tr.md docs/*.md)"
+  [ -z "$F32L" ] && ok "F32: every README/docs link and anchor resolves" || no "F32: broken links: $F32L"
+else skip "F32 link check (no /usr/bin/python3)"; fi
 echo "-- F24: every setting scan.sh reads is documented in security-audit.conf.example --"
 # A new knob added to scan.sh but not to the example is one nobody can find, and the config check
 # would call it "unknown". Env-only / internal names are listed here on purpose.

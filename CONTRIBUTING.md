@@ -39,8 +39,10 @@ bash tests/e2e.sh
 3. Note the change in `CHANGELOG.md`.
 
 ## Pull requests
-- Keep changes focused. Update `README.md` **and** `README-tr.md` when behavior changes, including
-  the lifecycle diagram and the finding loop if the flow changed.
+- Keep changes focused. When behavior changes, update the English reference and the Turkish README:
+  `README.md` (first screen, lifecycle diagram, finding loop) plus the page in `docs/` that covers
+  it (`install`, `usage`, `rules`, `skills`, `configuration`), and `README-tr.md`, which keeps the
+  full reference in Turkish. e2e checks that README and docs links resolve.
 - Add a `CHANGELOG.md` entry under `## [Unreleased]`. If consumers must know or do something, add
   it under `### Upgrade notes`; `bootstrap.sh --check` shows that section to them.
 - A new setting in `scan.sh` goes into `security-audit.conf.example` too (e2e checks it).

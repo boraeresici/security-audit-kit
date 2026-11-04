@@ -81,6 +81,10 @@ All notable changes to this project are documented here. The format is based on
   - an animated terminal demo;
   - a "What you get" table.
 
+  The English reference moved out of the README into `docs/install.md`, `usage.md`, `rules.md`,
+  `skills.md` and `configuration.md`; the README keeps the first screen, install, the plugin, the
+  lifecycle and finding loop, and trust. `README-tr.md` keeps the full reference in Turkish. e2e
+  checks that every README/docs link and anchor resolves (`tests/linkcheck.py`).
   The demo is generated from a real run by `scripts/make_demo.py`, with a plain-text transcript in
   `docs/assets/demo.txt`. The comparison's unmeasured default-backend row is removed until it is
   measured. An OpenSSF Scorecard workflow and badge were added.

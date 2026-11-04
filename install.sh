@@ -308,7 +308,7 @@ PYEOF
       state_set agent_hook 1
       ok ".claude/settings.json -> PreToolUse(Bash) runs hooks/pre-tool-install.sh"
     else
-      miss ".claude/settings.json NOT modified — add this hook by hand (see README)"
+      miss ".claude/settings.json NOT modified — add this hook by hand (see the kit's docs/usage.md, the agent hook)"
     fi
   else
     miss "python3 MISSING -> cannot edit .claude/settings.json; add the PreToolUse entry by hand"
