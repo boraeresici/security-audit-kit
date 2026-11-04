@@ -590,8 +590,9 @@ printf '#!/bin/sh\n[ -n "$GH_OUT" ] && printf "%%b" "$GH_OUT"\nexit "${GH_RC:-0}
 f07ok(){ printf 'shellcheck\tcompleted\tsuccess\t11\npytest\tcompleted\tsuccess\t12\ne2e\tcompleted\tsuccess\t13\nchecksums\tcompleted\tsuccess\t14\nself-audit\tcompleted\tsuccess\t15\nplugin\tcompleted\tsuccess\t16\n'; }
 # f07 <with-gh:1|0> [VAR=val ...] -- [release.sh args]: runs preflight, F07RC + "$F07/out"
 f07(){ local g="$1"; shift; local envs=(); while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do envs+=("$1"); shift; done; shift
-  local path="$F02SYS"; [ "$g" = 1 ] && path="$F07S:$F02SYS"
-  (cd "$F07/kit" && env PATH="$path" "${envs[@]+"${envs[@]}"}" "$BASH" scripts/release.sh preflight --skip-e2e "$@" >"$F07/out" 2>&1); F07RC=$?; }
+  # "no gh" is RELEASE_GH pointing nowhere: a CI runner has gh in /usr/bin, so PATH cannot hide it
+  local path="$F02SYS" nogh="RELEASE_GH=$F07/no-such-gh"; [ "$g" = 1 ] && { path="$F07S:$F02SYS"; nogh="RELEASE_GH=gh"; }
+  (cd "$F07/kit" && env PATH="$path" "$nogh" "${envs[@]+"${envs[@]}"}" "$BASH" scripts/release.sh preflight --skip-e2e "$@" >"$F07/out" 2>&1); F07RC=$?; }
 F02SYS="${F02SYS:-/usr/bin:/bin:/usr/sbin:/sbin}"
 f07 1 GH_OUT="$(f07ok)" -- --stable
 [ "$F07RC" -eq 0 ] && ok "F07: all required checks green -> stable preflight passes" || no "F07: green CI refused (rc=$F07RC): $(tail -3 "$F07/out")"
@@ -1969,7 +1970,7 @@ assert 0.5 <= t.get("age_hours", -1) <= 1.5, t' "$F02SUM" 2>/dev/null \
   GF="$F02/gf"; git init -q --bare "$GF.git"
   git -C "$F02/repo" remote add origin "$GF.git" 2>/dev/null; git -C "$F02/repo" push -q -u origin HEAD:refs/heads/main >/dev/null 2>&1
   git -C "$F02/repo" branch -q --set-upstream-to=origin/main >/dev/null 2>&1
-  git clone -q "$GF.git" "$GF.other" >/dev/null 2>&1
+  git clone -q -b main "$GF.git" "$GF.other" >/dev/null 2>&1   # -b: a runner's git may default to master
   ( cd "$GF.other" && echo n > newer.txt && git add newer.txt && git -c user.email=e2e@test -c user.name=e2e commit -qm newer && git push -q ) >/dev/null 2>&1
   f02 iac; grep -q 'behind' "$F02/out" && no "freshness: warned while up to date" || ok "freshness: an up-to-date branch gets no warning"
   git -C "$F02/repo" fetch -q origin >/dev/null 2>&1

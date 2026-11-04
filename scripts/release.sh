@@ -27,6 +27,7 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 cd "$KIT_DIR"
 
 # Our CI jobs (ci.yml + self-audit.yml). A fork that drops one (say `plugin`) sets its own list.
+GH="${RELEASE_GH:-gh}"   # the gh binary; tests point it at a missing path to simulate "no gh"
 REQUIRED_CHECKS="${RELEASE_REQUIRED_CHECKS:-shellcheck pytest e2e plugin checksums self-audit}"
 MAIN_BRANCH="main"
 
@@ -119,11 +120,11 @@ unverified(){
 
 check_ci(){
   local sha="$1" runs req row status concl
-  if ! have gh; then unverified "gh not installed — cannot verify CI for ${sha:0:12}"; return 0; fi
+  if ! have "$GH"; then unverified "gh not installed — cannot verify CI for ${sha:0:12}"; return 0; fi
   say "checking CI status for ${sha:0:12} …"
   # One row per run: name, status, conclusion, id. A check re-run after a failure has several rows;
   # the NEWEST (highest id) decides, whatever order the API lists them in.
-  if ! runs="$(gh api "repos/{owner}/{repo}/commits/$sha/check-runs" --paginate \
+  if ! runs="$("$GH" api "repos/{owner}/{repo}/commits/$sha/check-runs" --paginate \
                  --jq '.check_runs[] | [.name, .status, (.conclusion // ""), (.id|tostring)] | @tsv' 2>/dev/null)"; then
     unverified "GitHub API call for check-runs failed"; return 0
   fi
@@ -186,8 +187,8 @@ cmd_rc(){
   git tag -a "$t" -m "$t"
   git push origin "$t"
   ok "pushed tag $t"
-  if [ "$NO_GH" = 0 ] && have gh; then
-    gh release create "$t" --prerelease --title "$t" \
+  if [ "$NO_GH" = 0 ] && have "$GH"; then
+    "$GH" release create "$t" --prerelease --title "$t" \
       --notes "Release candidate for v${ver}. Testing in real projects before promotion (see RELEASING.md)." \
       && ok "created pre-release $t" || warn "gh release create failed — tag is pushed, create the release manually"
   fi
@@ -218,10 +219,10 @@ cmd_final(){
   fi
   git push origin "v$ver"
   ok "pushed tag v$ver"
-  if [ "$NO_GH" = 0 ] && have gh; then
+  if [ "$NO_GH" = 0 ] && have "$GH"; then
     local notes; notes="$(release_notes "$ver")"
     [ -n "$notes" ] || notes="Release v$ver. See CHANGELOG.md."
-    printf '%s\n' "$notes" | gh release create "v$ver" --latest --title "v$ver" --notes-file - \
+    printf '%s\n' "$notes" | "$GH" release create "v$ver" --latest --title "v$ver" --notes-file - \
       && ok "created release v$ver (latest)" || warn "gh release create failed — tag is pushed, create the release manually"
   fi
   ok "v$ver released."
