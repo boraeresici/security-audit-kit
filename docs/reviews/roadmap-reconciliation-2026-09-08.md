@@ -21,7 +21,14 @@ Local-dev mode since v1.20.0: one branch, one commit per item, pushed. No PR, RC
 - **Stale rows fixed:** F02, F03, F04 and F29 shipped in v1.20.0.
 - **Dropped at the user's request:** a kit check for a `.gitleaks.toml` without `[extend] useDefault = true`, plus triage rules for drafting gitleaks allowlists.
 
-**Next:** step 5, R02 public + F32. Then the plugin-ready release through RC → dogfood → final.
+**Same day, before step 5:** F13 data-flow disclosure (`docs/data-flow.md`; the "nothing leaves" claims are gone from the landing, comparison and report footer), F36 STRIDE completeness grid in `/sec-threat-model`.
+
+**Step 5, started:** F32 first screen (quickstart, a demo generated from a real run by `scripts/make_demo.py`, "What you get"), the unmeasured comparison row removed, OpenSSF Scorecard. Open, waiting on a decision or research:
+- moving the README's deep reference content into `docs/`: what README-tr keeps;
+- the landing comparison re-framed around agent-channel tools: needs a sourced feature check;
+- the public plugin listing: after the plugin-ready release reaches `main`.
+
+**Next:** the plugin-ready release through RC → dogfood → final (needs the user's approval for the PR, tags and release).
 
 ## 2026-11-03 — dimension registry (F17 slice 1), external tool review, R16
 
