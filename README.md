@@ -893,7 +893,9 @@ early.
 Public and [MIT](LICENSE)-licensed, so **anyone can fork and modify it** (including the
 skills — they're AI instructions). The **only official repo** is
 `github.com/boraeresici/security-audit-kit`; `bootstrap.sh` defaults there, and you must
-deliberately override `KIT_REPO` to install from a fork. The kit produces **internal evidence
+deliberately override `KIT_REPO` to install from a fork. Maintaining a fork: which CI checks
+`main` requires is the repo admin's choice, and `plugin` is optional (RELEASING.md → *Branch
+protection*). The kit produces **internal evidence
 with no warranty**. Pin a tag/SHA, **review skills before running**, and review diffs on
 update. Full trust model, supply-chain guidance, and vulnerability reporting:
 [SECURITY.md](SECURITY.md). What the kit itself reads, writes and runs, and with which

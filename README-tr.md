@@ -882,7 +882,8 @@ sizmis sorunlari erken yakalar.
 Public ve [MIT](LICENSE) lisansli, yani **herkes forklayip degistirebilir** (skill'ler dahil —
 onlar AI talimatidir). **Tek resmi repo** `github.com/boraeresici/security-audit-kit`;
 `bootstrap.sh` varsayilan olarak oraya bakar, bir fork'tan kurmak icin `KIT_REPO`'yu *bilerek*
-override etmen gerekir. Kit **ic kanit uretir, garanti yok**. Bir tag/SHA pinle, **skill'leri
+override etmen gerekir. Fork'u sen yonetiyorsan: `main`'in hangi CI kontrollerini zorunlu tuttugu
+repo admin'inin secimidir, `plugin` istege baglidir (RELEASING.md → *Branch protection*). Kit **ic kanit uretir, garanti yok**. Bir tag/SHA pinle, **skill'leri
 calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, tedarik-zinciri
 rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md). Kitin kendisinin neyi okudugu, yazdigi ve calistirdigi, hangi
 yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kisaca:

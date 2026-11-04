@@ -60,7 +60,8 @@ invalidates — then regenerate `CHECKSUMS`, because docs are inside the manifes
 
 ### The CI gate
 `scripts/release.sh final` (and `preflight --stable`) stops unless the newest run of every required
-check (`shellcheck pytest e2e checksums self-audit`) is completed and green on the exact commit,
+check (`shellcheck pytest e2e plugin checksums self-audit`; a fork sets its own list with
+`RELEASE_REQUIRED_CHECKS="…"`) is completed and green on the exact commit,
 and `origin/main` is that commit. It stops when any of these happens:
 - `gh` is missing;
 - the API call fails;
@@ -155,11 +156,26 @@ when they choose. Nothing is forced on them.
 
 ---
 
-## Branch protection (recommended, one-time)
-On GitHub → Settings → Rules/Branch protection for `main`:
+## Branch protection (recommended, one-time, optional)
+Only a repo admin can set this, so on a fork it is that fork owner's choice. The kit does not
+require it: `release.sh`'s CI gate reads check runs, not the protection settings. On GitHub →
+Settings → Rules → Rulesets (or Branch protection) for `main`:
 - Require a pull request before merging.
-- Require status checks to pass (shellcheck, pytest, e2e, self-audit, checksums).
+- Require status checks to pass: `shellcheck`, `pytest`, `e2e`, `checksums`, `self-audit`.
+- Optionally also `plugin` (the `claude plugin validate --strict` job). Add it only once `main`'s
+  own `ci.yml` has that job: a required check that a branch's workflow never runs leaves every
+  PR from that branch waiting. Leave it out if you do not ship the plugin.
 - Disallow direct pushes / force-pushes to `main`.
+
+From the CLI, add one check to an existing ruleset without touching its other rules:
+```sh
+ID=$(gh api repos/OWNER/REPO/rulesets --jq '.[] | select(.name=="main-protection") | .id')
+gh api repos/OWNER/REPO/rulesets/$ID \
+  | jq '{name,target,enforcement,conditions,bypass_actors,rules}
+        | (.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks) += [{"context":"plugin"}]' \
+  | gh api -X PUT repos/OWNER/REPO/rulesets/$ID --input -
+```
+If you drop a job instead, also drop it from `release.sh`'s gate: `RELEASE_REQUIRED_CHECKS`.
 Tags are not protected by default; only maintainers should push `v*` tags.
 
 ## Hotfix

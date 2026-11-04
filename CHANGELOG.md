@@ -74,6 +74,11 @@ All notable changes to this project are documented here. The format is based on
   error on the consumer and on the fresh install), and against v1.20.0 it passes. RELEASING.md step
   4 starts with it; CI shellchecks it.
 
+### Changed
+- `scripts/release.sh` (maintainers): the CI gate's required checks can be set with
+  `RELEASE_REQUIRED_CHECKS`, for a fork that does not run every job (e.g. no `plugin`). RELEASING.md
+  documents requiring checks on `main` as optional, the repo admin's choice, with the CLI command.
+
 ### Fixed
 - **`scan.sh changed` used a hardcoded `origin/main` as its base.** On a remote whose default branch
   is `master` (or anything else) it found no base, fell back to uncommitted changes only, and
