@@ -245,9 +245,6 @@ docker_ok(){ have docker && docker info >/dev/null 2>&1; }
 # args: <image> <tag> <digest>
 img(){ if [ -n "${3:-}" ]; then printf '%s@%s' "$1" "$3"; else printf '%s:%s' "$1" "$2"; fi; }
 
-# SARIF (opt-in): repo-relative path of a SARIF file under the findings dir.
-sarif_rel(){ printf '%s/%s' "${SARIF_DIR#"$ROOT"/}" "$1"; }
-
 # ---- tracked-file matching: never `git ls-files | grep -q` --------------------------------------
 # That pipeline is a SILENT FALSE NEGATIVE on a large repo, and it silences whole dimensions.
 # `grep -q` exits at the FIRST match; git is still writing, gets SIGPIPE, and `set -o pipefail`
@@ -349,7 +346,7 @@ scan_py_deps_no_env(){
   # shellcheck disable=SC2086
   say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed):$(printf ' %s' $man)"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
     scan source $targets
   local rc=$?
   case "$rc" in
@@ -425,17 +422,25 @@ git_extra_mounts(){
   [ -f "$ROOT/.git" ] || return 0
   local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
   case "$common" in /*) ;; *) common="$ROOT/$common" ;; esac
-  [ -n "$common" ] && [ -d "$common" ] && printf -- '-v %s:%s' "$common" "$common"
+  [ -n "$common" ] && [ -d "$common" ] && printf -- '-v %s:%s:ro' "$common" "$common"
 }
+
+# Docker scanners read the repo READ-ONLY (F11): a scanner is handed attacker-controllable files
+# and has no business writing into the tree it reads. Output goes to a separate writable mount, this
+# run's own dir, mounted at /out. (Docker is isolation from the host's processes, not a sandbox
+# claim: the container still has the network, and runs as root, so files it writes to /out are
+# owned by root on Linux.) out_mount <dir> -> fills OUTM, an argument array for `docker run`.
+out_mount(){ OUTM=(); [ -n "${1:-}" ] || return 0; mkdir -p "$1" && OUTM=(-v "$1:/out"); }
 
 # ---- secret, full history (gitleaks detect) ----
 scan_secret(){
   docker_ok || { dim_skip secret "no docker -> gitleaks skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
-  local rep=""; [ "$SARIF" = "1" ] && rep="--report-format sarif --report-path /repo/$(sarif_rel gitleaks.sarif)"
+  local rep="" OUTM=()
+  if [ "$SARIF" = "1" ]; then rep="--report-format sarif --report-path /out/gitleaks.sarif"; out_mount "$SARIF_DIR"; fi
   say secret "gitleaks detect (full history)"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     detect --source /repo $cfg $rep --redact --exit-code 1 --verbose
 }
 
@@ -443,11 +448,72 @@ scan_secret(){
 scan_secret_staged(){
   docker_ok || { dim_skip secret "no docker -> staged secret scan skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
+  # A merge stages the whole other branch. Blocking the merger on content already committed there
+  # protects nothing (it is upstream already) and teaches SKIP_SECURITY=1. Seen on a real repo: a
+  # 1389-commit merge blocked on QA digests and test data that dev had carried for months.
+  if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    if have python3; then scan_secret_merge "$cfg"; return $?; fi
+    warn secret "merge in progress, but no python3 to tell incoming lines from yours -> every staged finding blocks"
+  fi
   say secret "gitleaks protect --staged"
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     protect --staged --source /repo $cfg --redact --exit-code 1 --verbose
 }
+
+# During a merge: a finding whose line exists verbatim in the merged branch's version of that file
+# came in with the merge. It is reported (triage it on that branch), but does not block. A finding
+# in a line neither side had (a conflict resolution, an edit made during the merge) is the merger's
+# own, and blocks as any commit would.
+scan_secret_merge(){
+  local cfg="$1" od="$RUN_DIR/merge-scan" OUTM=() rc from
+  from="$(git name-rev --name-only --exclude='tags/*' MERGE_HEAD 2>/dev/null || git rev-parse --short MERGE_HEAD)"
+  out_mount "$od"
+  say secret "gitleaks protect --staged (merge of $from in progress: what it brings in vs. what you add)"
+  # shellcheck disable=SC2086
+  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) "${OUTM[@]}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+    protect --staged --source /repo $cfg --redact --exit-code 0 --report-format json --report-path /out/staged.json >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$od/staged.json" ] || { rm -rf "$od"; dim_error secret "gitleaks exit $rc (staged scan of a merge failed)"; return 1; }
+  local lines own=0 inc=0
+  lines="$(python3 - "$od/staged.json" <<'PY'
+import json, subprocess, sys
+def lines(spec):
+    r = subprocess.run(["git", "show", spec], capture_output=True)
+    return r.stdout.decode("utf-8", "replace").splitlines() if r.returncode == 0 else []
+seen = {}
+for f in json.load(open(sys.argv[1])) or []:
+    path = f.get("File") or ""
+    path = path[len("/repo/"):] if path.startswith("/repo/") else path
+    n = int(f.get("StartLine") or 0)
+    if path not in seen:
+        seen[path] = (lines(":" + path), set(lines("MERGE_HEAD:" + path)))
+    staged, theirs = seen[path]
+    line = staged[n - 1] if 0 < n <= len(staged) else None
+    kind = "in" if line is not None and line in theirs else "own"
+    print(f"{kind}\t{path}:{n}\t{f.get('RuleID')}")
+PY
+)"
+  rm -rf "$od"
+  own="$(grep -c '^own' <<<"$lines" || true)"; inc="$(grep -c '^in' <<<"$lines" || true)"
+  if [ "$inc" -gt 0 ]; then
+    note secret "$inc finding(s) came in with the merge of $from — already in that branch, so not blocking here; triage them there (scan.sh secret on $from):"
+    grep '^in' <<<"$lines" | cut -f2,3 | sed 's/\t/  /; s/^/        /'
+  fi
+  if [ "$own" -gt 0 ]; then
+    printf '\033[31m[scan:secret] BLOCK: %s finding(s) in lines this merge adds (in neither branch before):\033[0m\n' "$own"
+    grep '^own' <<<"$lines" | cut -f2,3 | sed 's/\t/  /; s/^/        /'
+    dim_mark findings "$own in lines this merge adds; $inc came in with $from (reported only)"
+    return 1
+  fi
+  [ "$inc" -gt 0 ] && dim_mark findings "$inc came in with the merge of $from (already there; reported, not blocking)"
+  return 0
+}
+
+# The kit's own record (raw logs, SARIF, reports under docs/security/scan-findings) is output, not
+# source. A repo that once committed it had semgrep scan its logs (a timeout in the v1.20.0 dogfood),
+# and trivy fs reads it even untracked; findings "in" a raw log are noise about the scan itself.
+record_rel(){ printf '%s' "${LOG_DIR#"$ROOT"/}"; }
 
 # ---- sast (semgrep) ----
 scan_sast(){
@@ -471,7 +537,7 @@ scan_sast(){
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
   say sast "semgrep ($paths, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $paths
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $paths
   semgrep_rc $?
 }
 
@@ -487,12 +553,20 @@ semgrep_rc(){
 }
 
 # ---- sast on changed files only (diff-aware, fast) ----
-# Base ref: $BASE_REF, else merge-base with origin/main, else staged + unstaged changes.
-changed_files(){
-  local base="${BASE_REF:-}"
-  if [ -z "$base" ] && git rev-parse --verify -q origin/main >/dev/null 2>&1; then
-    base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
-  fi
+# Base: $BASE_REF as given, else the merge-base with the remote's default branch (origin/HEAD, then
+# origin/main, origin/master). It was hardcoded origin/main: on a master remote it found no base and
+# fell back to uncommitted changes, calling a branch full of commits "no changed files".
+default_base_ref(){
+  local r
+  r="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)" && [ -n "$r" ] && { echo "$r"; return 0; }
+  for r in origin/main origin/master; do
+    git rev-parse --verify -q "$r" >/dev/null 2>&1 && { echo "$r"; return 0; }
+  done
+  return 0
+}
+changed_files(){   # <ref, or empty: staged + unstaged changes>
+  local base="${1:-}"
+  if [ -n "$base" ] && [ -z "${BASE_REF:-}" ]; then base="$(git merge-base HEAD "$base" 2>/dev/null || true)"; fi
   if [ -n "$base" ]; then
     git diff --name-only --diff-filter=ACMR "$base"
   else
@@ -500,13 +574,23 @@ changed_files(){
     git diff --name-only --diff-filter=ACMR
   fi
 }
+changed_targets(){   # changed files that exist, minus the scan record (explicit targets bypass --exclude)
+  local rec f; rec="$(record_rel)/"
+  changed_files "${1:-}" | sort -u | while IFS= read -r f; do
+    case "$f" in "$rec"*) continue ;; esac
+    [ -f "$f" ] && printf '%s\n' "$f"
+  done
+}
 scan_sast_changed(){
-  local files; files="$(changed_files | sort -u | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done)"
-  [ -z "$files" ] && { dim_na sast "no changed files vs base -> semgrep skipped"; return 0; }
+  local files ref vs
+  ref="${BASE_REF:-$(default_base_ref)}"
+  vs="vs ${ref:-uncommitted changes only (no base: no origin default branch; set BASE_REF)}"
+  files="$(changed_targets "$ref")"
+  [ -z "$files" ] && { dim_na sast "no changed files $vs -> semgrep skipped"; return 0; }
   local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
-  say sast "semgrep (changed files, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
+  say sast "semgrep (changed files $vs, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR $out $files
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $files
   semgrep_rc $?
 }
 
@@ -583,13 +667,13 @@ scan_container(){
   # .trivyignore.yaml auto-detect does not work in this docker setup -> pass it explicitly
   # (only if present; for deliberately accepted findings, committed to the repo).
   local ign=""; [ -f "$ROOT/.trivyignore.yaml" ] && ign="--ignorefile /repo/.trivyignore.yaml"
-  local skip=""; [ -n "$TRIVY_SKIP_DIRS" ] && skip="--skip-dirs $TRIVY_SKIP_DIRS"
+  local skip; skip="--skip-dirs ${TRIVY_SKIP_DIRS:+$TRIVY_SKIP_DIRS,}$(record_rel)"
   # Soft: findings must not block, but they must be told apart from a clean run — so trivy exits
   # TRIVY_FINDINGS_RC on findings and that code is recorded as findings, then mapped back to 0.
-  local out="--exit-code $TRIVY_FINDINGS_RC"
-  [ "$SARIF" = "1" ] && out="$out --format sarif --output /repo/$(sarif_rel trivy.sarif)"
+  local out="--exit-code $TRIVY_FINDINGS_RC" OUTM=()
+  if [ "$SARIF" = "1" ]; then out="$out --format sarif --output /out/trivy.sarif"; out_mount "$SARIF_DIR"; fi
   # shellcheck disable=SC2086,SC2046
-  docker run --rm -v "$ROOT:/repo" $(trivy_cache_mount) -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
+  docker run --rm -v "$ROOT:/repo:ro" $(trivy_cache_mount) "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
     --no-progress $upd --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
   local rc=$?
   # Which DB this result came from: identity -> provenance, age -> summary.json (see the summary).
@@ -612,9 +696,13 @@ scan_container(){
 scan_sbom(){
   docker_ok || { dim_skip sbom "no docker -> syft skipped"; return 0; }
   say sbom "syft -> sbom.cyclonedx.json + sbom.spdx.json"
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img anchore/syft "$SYFT_VER" "$SYFT_DIGEST")" dir:/repo \
-    -o cyclonedx-json=/repo/sbom.cyclonedx.json -o spdx-json=/repo/sbom.spdx.json
-  local rc=$?
+  # Written to this run's dir, then moved to the repo root where it always landed.
+  local OUTM=() sb="$RUN_DIR/sbom"; out_mount "$sb"
+  docker run --rm -v "$ROOT:/repo:ro" "${OUTM[@]}" -w /repo "$(img anchore/syft "$SYFT_VER" "$SYFT_DIGEST")" dir:/repo \
+    -o cyclonedx-json=/out/sbom.cyclonedx.json -o spdx-json=/out/sbom.spdx.json
+  local rc=$? f
+  for f in sbom.cyclonedx.json sbom.spdx.json; do [ -f "$sb/$f" ] && mv -f "$sb/$f" "$ROOT/$f"; done
+  rmdir "$sb" 2>/dev/null || true
   # syft produces an inventory, not findings: any non-zero is a failure (it blocks, as before).
   [ "$rc" -eq 0 ] || dim_error sbom "syft exit $rc (SBOM not produced)"
   return "$rc"
@@ -650,9 +738,13 @@ scan_osv(){
     esac
   fi
   say osv "osv-scanner scan source (all lockfile ecosystems)${call:+ [reachability: $OSV_CALL_ANALYSIS, gate unchanged]}"
-  local out=""; [ "$SARIF" = "1" ] && out="--format sarif --output /repo/$(sarif_rel osv.sarif)"
+  local out="" OUTM=()
+  if [ "$SARIF" = "1" ]; then out="--format sarif --output /out/osv.sarif"; out_mount "$SARIF_DIR"; fi
+  # Read-only, except when the user accepted rust call analysis: that RUNS the dependency tree's build
+  # scripts, which write into the tree (cargo's target/). That mode already warns it executes code.
+  local ro=":ro"; case "${OSV_CALL_ANALYSIS:-}" in *rust*) ro="" ;; esac
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo$ro" "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
     scan source --recursive $call $out /repo
   local rc=$?
   case "$rc" in
@@ -707,34 +799,52 @@ pkgcheck_cache_dir(){
   printf '%s/security-audit-cache/pkgcheck' "$common"
 }
 
-# One target -> a verdict line on stdout ("BLOCK\t<rules>"), exit 1 when it blocks.
+# guarddog's JSON -> a verdict line under the CURRENT policy (BLOCK_EXTRA / REPORT_EXTRA).
+pkgcheck_classify(){
+  python3 "$KIT_DIR/lib/pkgcheck.py" --classify \
+    --block-extra "${PKGCHECK_BLOCK_EXTRA:-}" --report-extra "${PKGCHECK_REPORT_EXTRA:-}"
+}
+
+# One target -> a verdict line on stdout ("BLOCK\t<rules>"), exit 1 when it blocks. stdout is the
+# verdict and nothing else: the caller reads it whole (a progress line here once made every
+# first-time check print "clean", BLOCK included).
+#
+# The cache (F06) keeps what guarddog FOUND, not what the policy said about it: the network scan is
+# the slow part (15-20 s), judging it is not. A stored verdict outlived the policy that made it — a
+# package allowed once stayed allowed after PKGCHECK_BLOCK_EXTRA named its rule. Now every read is
+# re-judged by today's policy, and an entry that is not a whole guarddog document is a miss.
 pkgcheck_one(){
-  local eco="$1" name="$2" ver="$3" out verdict rc dir key f
-  # The key carries the pinned tool version: bumping guarddog must not read old verdicts.
+  local eco="$1" name="$2" ver="$3" out verdict dir key f="" raw
   if dir="$(pkgcheck_cache_dir)"; then
-    key="$(printf '%s__%s__%s__%s' "$eco" "$name" "${ver:-latest}" "$GUARDDOG_VER" | tr -c 'A-Za-z0-9_.@-' '_')"
+    # findings-v2: the key also carries the pinned guarddog version (its rules decide the findings).
+    key="$(printf 'findings-v2__%s__%s__%s__%s' "$eco" "$name" "${ver:-latest}" "$GUARDDOG_VER" | tr -c 'A-Za-z0-9_.@-' '_')"
     f="$dir/$key"
     # An unversioned request means "whatever the registry serves now", which changes under us —
     # those entries expire; an exact version is immutable on both registries, so it does not.
-    if [ -f "$f" ] && { [ -n "$ver" ] || [ -z "$(find "$f" -mmin "+$PKGCHECK_CACHE_TTL_MIN" 2>/dev/null)" ]; }; then
-      out="$(cat "$f")"
-      printf '%s (cached)\n' "$out"
-      case "$out" in BLOCK*) return 1 ;; *) return 0 ;; esac
+    if [ "${PKGCHECK_CACHE:-on}" != "refresh" ] && [ -f "$f" ] \
+       && { [ -n "$ver" ] || [ -z "$(find "$f" -mmin "+$PKGCHECK_CACHE_TTL_MIN" 2>/dev/null)" ]; }; then
+      out="$(pkgcheck_classify < "$f")"
+      verdict="${out%%	*}"
+      if [ -n "$out" ] && [ "$verdict" != "INDETERMINATE" ]; then
+        printf '%s (cached findings)\n' "$out"
+        [ "$verdict" = "BLOCK" ] && return 1
+        return 0
+      fi
+      rm -f "$f"   # half-written or unreadable: not an answer, ask again
     fi
   fi
-  say pkgcheck "guarddog ==$GUARDDOG_VER scan (needs network)"
+  say pkgcheck "guarddog ==$GUARDDOG_VER scan (needs network)" >&2
   local gargs="scan $name"
   [ -n "$ver" ] && gargs="$gargs -v $ver"
   # shellcheck disable=SC2086
-  out="$(pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" $gargs --output-format json 2>/dev/null \
-        | python3 "$KIT_DIR/lib/pkgcheck.py" --classify \
-            --block-extra "${PKGCHECK_BLOCK_EXTRA:-}" --report-extra "${PKGCHECK_REPORT_EXTRA:-}")"
-  rc=$?
-  [ -z "$out" ] && { out="INDETERMINATE	guarddog produced no output"; rc=2; }
+  raw="$(pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" $gargs --output-format json 2>/dev/null)"
+  out="$(printf '%s' "$raw" | pkgcheck_classify)"
+  [ -z "$out" ] && out="INDETERMINATE	guarddog produced no output"
   verdict="${out%%	*}"
-  # Only a real verdict is worth remembering; INDETERMINATE is a failure to look, not an answer.
-  if [ -n "${f:-}" ] && [ "$verdict" != "INDETERMINATE" ]; then
-    mkdir -p "$dir" 2>/dev/null && printf '%s' "$out" > "$f" 2>/dev/null || true
+  # Only a real answer is worth remembering; INDETERMINATE is a failure to look. Written to a temp
+  # file and renamed: a reader never sees half a document, and two writers each leave a whole one.
+  if [ -n "$f" ] && [ "$verdict" != "INDETERMINATE" ] && mkdir -p "$dir" 2>/dev/null; then
+    printf '%s\n' "$raw" > "$f.tmp.$$" 2>/dev/null && mv -f "$f.tmp.$$" "$f" 2>/dev/null || rm -f "$f.tmp.$$"
   fi
   printf '%s\n' "$out"
   [ "$verdict" = "BLOCK" ] && return 1
@@ -862,6 +972,9 @@ scan_doctor(){
         printf 'platform: WSL2 — full support (docker via Docker Desktop WSL integration).\n\n'
       fi ;;
   esac
+  local hp_warn gf; hp_warn="$(hookspath_check)"
+  gf="$(git_freshness_line "$(git_freshness)" doctor)"; [ -n "$gf" ] && printf '!!  %s\n\n' "$gf"
+  if [ -n "$hp_warn" ]; then printf '!!  %s\n\n' "$hp_warn"; fi
   printf 'toolchain (a missing one only skips that dimension):\n'
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
   { have uvx || have pipx; } && echo "  ok  uvx/pipx      (semgrep/checkov/pip-audit/guarddog/zizmor)" || echo "  --  uvx/pipx      MISSING -> sast/iac/py-deps/guarddog/zizmor skipped"
@@ -915,7 +1028,7 @@ scan_doctor(){
   if [ "${SEMGREP_LOCAL_RULES:-}" = "off" ]; then
     printf '  --  DISABLED by SEMGREP_LOCAL_RULES=off (.security-audit.conf or env)\n'
   elif [ -z "$(local_rules_paths)" ]; then
-    printf '  --  none found (looked for: %s) — see README "repo-local rules"\n' "$LOCAL_RULES_ANCHORS"
+    printf '  --  none found (looked for: %s) — see docs/rules.md in the kit\n' "$LOCAL_RULES_ANCHORS"
   else
     local idx total gating nogate names
     idx="$(local_rules_index)"
@@ -975,10 +1088,10 @@ scan_doctor(){
   printf '      guards the AGENT tool call only; a human typing npm i is not covered\n'
   local pcd
   if pcd="$(pkgcheck_cache_dir)"; then
-    printf '  ok  verdict cache: %s (unversioned entries expire after %s min)\n' \
+    printf '  ok  findings cache (re-judged by the current policy): %s (unversioned entries expire after %s min)\n' \
       "${pcd#"$ROOT"/}" "$PKGCHECK_CACHE_TTL_MIN"
   else
-    printf '  --  verdict cache off (PKGCHECK_CACHE=off or not a git repo) — every check re-scans\n'
+    printf '  --  findings cache off (PKGCHECK_CACHE=off or not a git repo) — every check re-scans\n'
   fi
   printf '      blocks on %s malice-specific guarddog rules; everything else prints as a note\n' \
     "$(PYTHONDONTWRITEBYTECODE=1 python3 -B -c 'import sys;sys.path.insert(0,"'"$KIT_DIR"'/lib");import pkgcheck;print(len(pkgcheck.BLOCK_RULES))' 2>/dev/null || echo '?')"
@@ -1441,11 +1554,148 @@ scan_lock_release(){
 
 REPORT="${REPORT:-}"
 
+# ---- dimension registry: the adapter contract (docs/adapters.md) ----
+# What runs is data, not a case statement: dispatch, the help text and the closing summary all read
+# these two tables, so adding a dimension is one adapter function + one line in each — not five
+# edits that drift apart. bash 3.2 (macOS) has no associative arrays, hence plain text tables.
+#
+# DIM_UNITS — one adapter per line:
+#   unit     the registry key (unique)
+#   record   the name summary.json gives it; two units may share one (`changed` is sast on a diff)
+#   entry    the adapter function: scan_<x>, no arguments, return 0/1/RC_INDETERMINATE/other
+#   gate     hard (findings block) · soft (findings reported, never block) · artifact (writes a file)
+#   needs    docker · pyrun (uvx or pipx) · - (finds its own toolchain)
+DIM_UNITS='
+secret        secret     scan_secret          hard      docker
+staged        staged     scan_secret_staged   hard      docker
+sast          sast       scan_sast            hard      pyrun
+sast-changed  sast       scan_sast_changed    hard      pyrun
+py-deps       py-deps    scan_py_deps         hard      pyrun
+js-deps       js-deps    scan_js_deps         hard      -
+iac           iac        scan_iac             soft      pyrun
+container     container  scan_container       soft      docker
+sbom          sbom       scan_sbom            artifact  docker
+osv           osv        scan_osv             hard      docker
+guarddog      guarddog   scan_guarddog        hard      pyrun
+zizmor        zizmor     scan_zizmor          hard      pyrun
+'
+# SCAN_COMMANDS — command | the units it runs, in order | what it leaves out (closing summary).
+SCAN_COMMANDS='
+deps      | py-deps js-deps |
+secret    | secret |
+staged    | staged |
+sast      | sast |
+changed   | sast-changed |
+iac       | iac |
+container | container |
+sbom      | sbom |
+osv       | osv |
+guarddog  | guarddog |
+zizmor    | zizmor |
+fast      | staged py-deps js-deps | secret (full history) sast container iac osv guarddog zizmor sbom
+all       | secret sast py-deps js-deps container iac | osv guarddog zizmor sbom
+'
+# <command> <field 2|3> -> that field, trimmed; exit 1 for a command the table does not know.
+scan_command_field(){
+  awk -F'|' -v c="$1" -v f="$2" '{k=$1; gsub(/[[:space:]]/,"",k)} k==c && k!="" {
+    v=$f; gsub(/^[[:space:]]+|[[:space:]]+$/,"",v); print v; found=1; exit } END{exit !found}' <<<"$SCAN_COMMANDS"
+}
+scan_commands(){ awk -F'|' '{k=$1; gsub(/[[:space:]]/,"",k)} k!=""{print k}' <<<"$SCAN_COMMANDS"; }
+# <unit> -> "record entry gate needs"; exit 1 for an unknown unit.
+dim_unit(){ awk -v u="$1" '$1==u{print $2, $3, $4, $5; found=1; exit} END{exit !found}' <<<"$DIM_UNITS"; }
+
+# A core.hooksPath that points at a directory which does not exist makes git run NO hooks, with no
+# message. Seen on a repo with ~50 worktrees sharing one config: the path led into one worktree's
+# copy of the kit, whose branch had dropped it. Printed by doctor and in every closing summary.
+hookspath_check(){
+  local hp abs
+  hp="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null)" || return 0
+  [ -n "$hp" ] || return 0
+  case "$hp" in /*) abs="$hp" ;; \~/*) abs="$HOME/${hp#\~/}" ;; *) abs="$ROOT/$hp" ;; esac
+  [ -d "$abs" ] && return 0
+  printf 'core.hooksPath -> %s, which does not exist here: git runs NO hooks in this worktree (no kit checks, none of your own). Fix: bash %s/install.sh' \
+    "$hp" "${KIT_DIR#"$ROOT"/}"
+}
+
+# Is the scanned branch behind its upstream? Then the scan judged older code than the remote has:
+# things fixed upstream look open, code added upstream went unscanned. Seen on a real repo, 1389
+# commits behind. Read-only: no fetch, so "behind" is as of the last fetch, and its age is said.
+# -> "branch<TAB>upstream<TAB>ahead<TAB>behind<TAB>hours since the last fetch", or nothing.
+git_freshness(){
+  local br up ab fh="" fm
+  br="$(git -C "$ROOT" symbolic-ref -q --short HEAD 2>/dev/null)" || br="(detached)"
+  up="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || return 0
+  ab="$(git -C "$ROOT" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)" || return 0
+  fm="$(file_mtime "$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null | sed "s|^\([^/]\)|$ROOT/\1|")/FETCH_HEAD" 2>/dev/null)"
+  [ -n "$fm" ] && fh="$(( ( $(date +%s) - fm ) / 3600 ))"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$br" "$up" "$(awk '{print $1}' <<<"$ab")" "$(awk '{print $2}' <<<"$ab")" "$fh"
+}
+git_freshness_line(){   # <freshness> [doctor] -> the warning, or nothing when not behind
+  local br up behind fh what="this scan saw older code than the upstream has; pull, then scan again"
+  [ "${2:-}" = doctor ] && what="a scan now sees older code than the upstream has; pull first"
+  IFS="$(printf '\t')" read -r br up _ behind fh <<<"$1"
+  [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null || return 0
+  printf 'git: %s is %s commit(s) behind %s%s — %s' \
+    "$br" "$behind" "$up" "${fh:+ (as of the last fetch, ${fh}h ago)}" "$what"
+}
+
+# ---- config check (F24) ----------------------------------------------------------------------
+# .security-audit.conf is SOURCED: it is bash, and runs with your privileges on every scan and hook.
+# Nothing here refuses to load it (fail-open, as the gate is). It says out loud what the file does
+# beyond setting values: a syntax error, a setting scan.sh does not read (a typo is otherwise silently
+# ignored), a line that runs a command, a command substitution in a value, a value of the wrong type.
+# One line per warning, on stdout. Known names come from security-audit.conf.example, plus the
+# per-run env knobs that also work from the config.
+CONFIG_ENV_KNOBS="SARIF REPORT BASE_REF SKIP_SECURITY"
+config_check(){
+  [ -f "$CONF" ] || return 0
+  local known err v val
+  known=" $(grep -oE '\$\{[A-Z][A-Z0-9_]*:=|^#? *[A-Z][A-Z0-9_]*=' "$KIT_DIR/security-audit.conf.example" 2>/dev/null \
+            | grep -oE '[A-Z][A-Z0-9_]*' | sort -u | tr '\n' ' ')$CONFIG_ENV_KNOBS "
+  err="$(bash -n "$CONF" 2>&1 | head -1)"
+  [ -n "$err" ] && printf 'syntax error: %s\n' "${err#"$CONF": }"
+  awk -v known="$known" '
+    { line = $0; sub(/^[ \t]+/, "", line) }
+    line == "" || line ~ /^#/ { next }
+    {
+      name = ""
+      if (match(line, /^:[ \t]+"?\$\{[A-Za-z_][A-Za-z0-9_]*:?[=-]/)) {
+        name = substr(line, RSTART, RLENGTH); sub(/^:[ \t]+"?\$\{/, "", name); sub(/:?[=-]$/, "", name)
+      } else if (match(line, /^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*=/)) {
+        name = substr(line, RSTART, RLENGTH); sub(/^export[ \t]+/, "", name); sub(/=$/, "", name)
+      } else {
+        split(line, w, /[ \t;|&<>]+/)
+        printf "line %d runs a command (%s), not a setting: %s\n", NR, w[1], substr(line, 1, 60); next
+      }
+      if (index(known, " " name " ") == 0) printf "line %d: unknown setting %s (a typo? scan.sh does not read it)\n", NR, name
+      if (line ~ /\$\(|`/) printf "line %d: command substitution in %s runs code when the config is loaded\n", NR, name
+      else if (line ~ /;[ \t]*[A-Za-z]/) printf "line %d: more than one statement on the line (;)\n", NR
+    }' "$CONF"
+  # Types, on the values in force (env > config > default).
+  for v in SCAN_LOCK_WAIT SCAN_LOCK_STALE_MIN SCAN_LOCK_HEARTBEAT_SEC SCAN_RUNS_KEEP_DAYS PKGCHECK_CACHE_TTL_MIN TRIVY_DB_MAX_AGE_H; do
+    val="${!v:-}"; [ -z "$val" ] && continue
+    case "$val" in *[!0-9]*) printf '%s=%s: must be a whole number (integer)\n' "$v" "$val" ;; esac
+  done
+  case "${SCAN_OFFLINE:-0}" in 0|1) ;; *) printf 'SCAN_OFFLINE=%s: must be 0 or 1\n' "$SCAN_OFFLINE" ;; esac
+  case "${SARIF:-0}" in 0|1) ;; *) printf 'SARIF=%s: must be 0 or 1\n' "$SARIF" ;; esac
+  case "${PKGCHECK_CACHE:-on}" in on|off|refresh) ;; *) printf 'PKGCHECK_CACHE=%s: must be on, off or refresh\n' "$PKGCHECK_CACHE" ;; esac
+  case "${REPORT:-}" in ""|html) ;; *) printf 'REPORT=%s: must be empty or html\n' "$REPORT" ;; esac
+  return 0
+}
+CONFIG_WARNINGS="$(config_check)"
+config_report(){   # the full list, for doctor / verify
+  [ -f "$CONF" ] || return 0
+  local n=0; [ -n "$CONFIG_WARNINGS" ] && n="$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')"
+  if [ "$n" = 0 ]; then printf '  ok  config %s: settings only, all known\n' "${CONF#"$ROOT"/}"; return 0; fi
+  printf '  !!  config %s: %s warning(s) — it is bash, sourced on every scan and hook:\n' "${CONF#"$ROOT"/}" "$n"
+  printf '%s\n' "$CONFIG_WARNINGS" | sed 's/^/        /'
+}
+
 # help: the usage block at the top of this file, plus what `all` leaves out and what the tags mean.
 scan_help(){
   awk '/^# Usage:/{on=1} on && /^#$/{exit} on{sub(/^# ?/,""); print}' "$KIT_DIR/scan.sh"
   printf '\n  [HARD] blocks commit/push on a finding · [soft] reported, never blocks · [artifact] writes a file\n'
-  printf "  not in 'all': osv guarddog zizmor sbom — run them by name (or /sec-audit)\n"
+  printf "  not in 'all': %s — run them by name (or /sec-audit)\n" "$(scan_command_field all 3)"
   printf '  Needs docker: secret staged container sbom osv · needs uvx or pipx: sast changed iac deps(pip-audit) guarddog zizmor\n'
   printf '  Missing docker or uvx/pipx -> that dimension is "skipped" (not a pass); the run says which.\n'
   printf '  Start here: scan.sh doctor -> scan.sh all -> read the closing summary -> /sec-triage\n'
@@ -1466,8 +1716,8 @@ scan_warm(){
 }
 case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "warm" ]      && { scan_warm; exit $?; }
-[ "${1:-}" = "doctor" ]    && { scan_doctor; exit 0; }
-[ "${1:-}" = "verify" ]    && { scan_verify; exit $?; }
+[ "${1:-}" = "doctor" ]    && { scan_doctor; config_report; exit 0; }
+[ "${1:-}" = "verify" ]    && { scan_verify; vrc=$?; config_report; exit "$vrc"; }
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
 [ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
 [ "${1:-}" = "allowlist" ] && { scan_allowlist; exit $?; }
@@ -1503,24 +1753,18 @@ _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
   # RC_INDETERMINATE is recorded but never blocks: it says "no opinion", not "finding".
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && return 1; return 0; }
 
+# Every unit of the command runs, in table order, even after one blocks: the gate is the OR of them.
 run_scans(){
-  local rc=0
-  case "${1:-all}" in
-    deps)      _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
-    secret)    _dim secret scan_secret || rc=1 ;;
-    staged)    _dim staged scan_secret_staged || rc=1 ;;
-    sast)      _dim sast scan_sast || rc=1 ;;
-    changed)   _dim sast scan_sast_changed || rc=1 ;;
-    iac)       _dim iac scan_iac || rc=1 ;;
-    container) _dim container scan_container || rc=1 ;;
-    sbom)      _dim sbom scan_sbom || rc=1 ;;
-    osv)       _dim osv scan_osv || rc=1 ;;
-    guarddog)  _dim guarddog scan_guarddog || rc=1 ;;
-    zizmor)    _dim zizmor scan_zizmor || rc=1 ;;
-    fast)      _dim staged scan_secret_staged || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1 ;;
-    all)       _dim secret scan_secret || rc=1; _dim sast scan_sast || rc=1; _dim py-deps scan_py_deps || rc=1; _dim js-deps scan_js_deps || rc=1; _dim container scan_container || rc=1; _dim iac scan_iac || rc=1 ;;
-    *) echo "unknown command: $1 (deps|secret|staged|sast|changed|iac|container|sbom|osv|guarddog|zizmor|fast|all|doctor|verify|checksums|rules-test|allowlist|evidence|report|warm|help)"; return 2 ;;
-  esac
+  local rc=0 units u row rec entry
+  if ! units="$(scan_command_field "${1:-all}" 2)"; then
+    echo "unknown command: $1 ($(scan_commands | paste -sd'|' -)|doctor|verify|checksums|rules-test|allowlist|evidence|report|warm|help)"
+    return 2
+  fi
+  for u in $units; do
+    row="$(dim_unit "$u")" || { echo "registry: unit '$u' of '$1' is not in DIM_UNITS"; return 2; }
+    read -r rec entry _ <<<"$row"
+    _dim "$rec" "$entry" || rc=1
+  done
   return $rc
 }
 
@@ -1651,6 +1895,7 @@ provenance_json(){
     "$(json_str "$(tool_ref ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")")"
 }
 PROVENANCE="$(provenance_json)"
+GIT_FRESH="$(git_freshness)"
 
 # This run's SARIF, by name and digest — what evidence.py may treat as this run's findings.
 artifacts_json(){
@@ -1701,6 +1946,25 @@ fi
   printf '  "gate": {"exit_code": %s, "blocked_by": [%s]},\n' "$rc" "$blocked"
   printf '  "provenance": %s,\n' "$PROVENANCE"
   printf '  "trivy_db": %s,\n' "$TRIVY_DB_JSON"
+  if [ -n "$GIT_FRESH" ]; then
+    IFS="$(printf '\t')" read -r gf_br gf_up gf_ahead gf_behind gf_fh <<<"$GIT_FRESH"
+    printf '  "git": {"branch": %s, "upstream": %s, "ahead": %s, "behind": %s, "last_fetch_hours": %s},\n' \
+      "$(json_str "$gf_br")" "$(json_str "$gf_up")" "${gf_ahead:-0}" "${gf_behind:-0}" "${gf_fh:-null}"
+  else
+    printf '  "git": null,\n'
+  fi
+  if [ -f "$CONF" ]; then
+    printf '  "config": {"path": %s, "warnings": [' "$(json_str "${CONF#"$ROOT"/}")"
+    cfirst=1
+    while IFS= read -r cw; do
+      [ -n "$cw" ] || continue
+      [ "$cfirst" = 1 ] || printf ', '; cfirst=0
+      printf '%s' "$(json_str "$cw")"
+    done <<<"$CONFIG_WARNINGS"
+    printf ']},\n'
+  else
+    printf '  "config": null,\n'
+  fi
   printf '  "artifacts": %s,\n' "$(artifacts_json)"
   printf '  "dimensions": [\n'
   first=1
@@ -1775,12 +2039,16 @@ fi
 printf '\n\033[36m── run: %s · scan %s · %ss\033[0m\n' "$RUN_ID" "$CMD" "$RUN_SECONDS"
 awk -F'\t' '{ why=$6; if (length(why) > 72) why=substr(why,1,69) "..."
   printf "   %-10s %-14s %5.1fs  %s\n", $1, $3, $5/1000, why }' "$RESULTS_FILE"
-not_covered=""
-case "$CMD" in
-  all)  not_covered="osv guarddog zizmor sbom" ;;
-  fast) not_covered="secret (full history) sast container iac osv guarddog zizmor sbom" ;;
-esac
+not_covered="$(scan_command_field "$CMD" 3 2>/dev/null)"
 [ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
+GF_WARN="$(git_freshness_line "$GIT_FRESH")"
+[ -n "$GF_WARN" ] && printf '\033[33m── %s\033[0m\n' "$GF_WARN"
+HP_WARN="$(hookspath_check)"
+[ -n "$HP_WARN" ] && printf '\033[33m── %s\033[0m\n' "$HP_WARN"
+if [ -n "$CONFIG_WARNINGS" ]; then
+  printf '\033[33m── config: %s warning(s) in %s (it is bash, run on every scan) — scan.sh doctor lists them\033[0m\n' \
+    "$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')" "${CONF#"$ROOT"/}"
+fi
 # The usual reason for a hole in coverage is the toolchain, not the repo: name the cause once.
 no_docker="$(awk -F'\t' '$3=="skipped" && $6 ~ /no docker/{printf " %s",$1}' "$RESULTS_FILE")"
 [ -n "$no_docker" ] && printf '\033[33m── Docker is not running:%s NOT inspected — start Docker and re-run "scan.sh %s"\033[0m\n' "$no_docker" "$CMD"

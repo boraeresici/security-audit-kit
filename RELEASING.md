@@ -38,6 +38,10 @@ git checkout -b chore/release-vX.Y.Z
 Then, on that branch:
 ```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
+#    and set the same version in .claude-plugin/plugin.json (release.sh refuses a mismatch)
+#    then record the skill templates being released (install.sh uses them to recognise its own
+#    copies on upgrade; release.sh refuses if they are missing):
+bash scripts/skill-sums.sh
 # 2) regenerate + verify the integrity manifest (kit files changed)
 bash scan.sh checksums
 bash scan.sh verify
@@ -54,6 +58,22 @@ Wait for the PR checks, merge, then `git checkout main && git pull --ff-only`. T
 `docs/compare/*` + re-run `landing/build.py`, the lifecycle diagrams, and any doc the release
 invalidates — then regenerate `CHECKSUMS`, because docs are inside the manifest.
 
+### The CI gate
+`scripts/release.sh final` (and `preflight --stable`) stops unless the newest run of every required
+check (`shellcheck pytest e2e plugin checksums self-audit`; a fork sets its own list with
+`RELEASE_REQUIRED_CHECKS="…"`) is completed and green on the exact commit,
+and `origin/main` is that commit. It stops when any of these happens:
+- `gh` is missing;
+- the API call fails;
+- there are no check-runs;
+- a required check is pending or missing;
+- `origin` cannot be fetched.
+
+A check that was re-run counts by its newest run. An RC only warns on these: its gate is the
+dogfood. If CI really cannot be verified (an API outage, say) and you have checked by hand,
+`--ci-unverified="<reason>"` lets a final through. The reason is required and is written into the
+tag message.
+
 ### 3. Cut the RC and mark it pre-release
 ```sh
 VER=v1.11.0
@@ -66,6 +86,21 @@ gh release create ${VER}-rc.1 --prerelease \
 `--prerelease` keeps GitHub's "Latest" pointing at the previous **stable** release.
 
 ### 4. Dogfood the RC in real projects (the actual gate)
+Start with the scripted run. It clones each consumer repo, so the real repos are untouched. It
+also tries a fresh install, and prints one table:
+```sh
+scripts/dogfood.sh ${VER}-rc.1 ~/src/consumer-a ~/src/consumer-b     # exit 1 = do not promote
+```
+It fails when any of these happens:
+- bootstrap or `verify` fails;
+- there is no `summary.json`;
+- any dimension is `error`;
+- `--check` after the upgrade offers an older tag.
+
+Those are the shapes of v1.20.0's two dogfood bugs. Findings and `skipped` dimensions are reported
+in the table, not failed. Then do the manual part below and the checklist; a script cannot judge a
+triage pass.
+
 In **≥1 real consumer project** (ideally 2–3 across stacks), pin to the RC and exercise it:
 ```sh
 # get the COMMIT the RC tag points at — `git rev-parse ${VER}-rc.1` returns the annotated tag
@@ -103,6 +138,9 @@ gh release create ${VER} --latest \
 `--latest` blesses it as the stable release consumers pick up.
 
 ### 7. Consumers update on their own schedule
+`bootstrap.sh --check` offers them the newest **stable** release. An RC is offered only to someone
+who opted into the rc channel (`--check --channel=rc` / `KIT_CHANNEL=rc`), so cutting an RC never
+reaches people who did not ask for one.
 Downstream repos bump their `.kit-version` (`ref` + new `SHA`) / re-run `bootstrap.sh ${VER} --expect=<sha>`
 when they choose. Nothing is forced on them.
 
@@ -118,11 +156,26 @@ when they choose. Nothing is forced on them.
 
 ---
 
-## Branch protection (recommended, one-time)
-On GitHub → Settings → Rules/Branch protection for `main`:
+## Branch protection (recommended, one-time, optional)
+Only a repo admin can set this, so on a fork it is that fork owner's choice. The kit does not
+require it: `release.sh`'s CI gate reads check runs, not the protection settings. On GitHub →
+Settings → Rules → Rulesets (or Branch protection) for `main`:
 - Require a pull request before merging.
-- Require status checks to pass (shellcheck, pytest, e2e, self-audit, checksums).
+- Require status checks to pass: `shellcheck`, `pytest`, `e2e`, `checksums`, `self-audit`.
+- Optionally also `plugin` (the `claude plugin validate --strict` job). Add it only once `main`'s
+  own `ci.yml` has that job: a required check that a branch's workflow never runs leaves every
+  PR from that branch waiting. Leave it out if you do not ship the plugin.
 - Disallow direct pushes / force-pushes to `main`.
+
+From the CLI, add one check to an existing ruleset without touching its other rules:
+```sh
+ID=$(gh api repos/OWNER/REPO/rulesets --jq '.[] | select(.name=="main-protection") | .id')
+gh api repos/OWNER/REPO/rulesets/$ID \
+  | jq '{name,target,enforcement,conditions,bypass_actors,rules}
+        | (.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks) += [{"context":"plugin"}]' \
+  | gh api -X PUT repos/OWNER/REPO/rulesets/$ID --input -
+```
+If you drop a job instead, also drop it from `release.sh`'s gate: `RELEASE_REQUIRED_CHECKS`.
 Tags are not protected by default; only maintainers should push `v*` tags.
 
 ## Hotfix

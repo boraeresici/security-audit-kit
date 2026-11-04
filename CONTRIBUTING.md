@@ -39,12 +39,27 @@ bash tests/e2e.sh
 3. Note the change in `CHANGELOG.md`.
 
 ## Pull requests
-- Keep changes focused; update `README.md` **and** `README-tr.md` when behavior changes.
-- Add a `CHANGELOG.md` entry under `## [Unreleased]`.
-- Make sure `shellcheck` and `bash scan.sh doctor` pass.
+- Keep changes focused. When behavior changes, update the English reference and the Turkish README:
+  `README.md` (first screen, lifecycle diagram, finding loop) plus the page in `docs/` that covers
+  it (`install`, `usage`, `rules`, `skills`, `configuration`), and `README-tr.md`, which keeps the
+  full reference in Turkish. e2e checks that README and docs links resolve.
+- Add a `CHANGELOG.md` entry under `## [Unreleased]`. If consumers must know or do something, add
+  it under `### Upgrade notes`; `bootstrap.sh --check` shows that section to them.
+- A new setting in `scan.sh` goes into `security-audit.conf.example` too (e2e checks it).
+- Skills live in `skills/<name>/SKILL.md`: the plugin loads them from there and `install.sh` copies
+  them from there. A new skill also goes into `install.sh`'s `SKILLS` list (e2e checks both).
+- Make sure `shellcheck`, `python3 -m pytest`, `bash tests/e2e.sh` and `bash scan.sh verify` pass
+  (run `bash scan.sh checksums` after changing kit files).
 
 ## Releasing (maintainers)
-1. Move the `Unreleased` notes into a versioned `CHANGELOG.md` section.
-2. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
-3. Create a GitHub Release from the tag (this is what `bootstrap.sh --check` and
-   Watch → Releases rely on).
+Follow [RELEASING.md](RELEASING.md). Do not tag by hand. In short:
+1. A release-prep PR turns `[Unreleased]` into `[X.Y.Z]` with an `### Upgrade notes` section
+   (`- None.` if nothing changes for consumers), sets the same version in
+   `.claude-plugin/plugin.json`, runs `scripts/skill-sums.sh`, and sweeps the README pins,
+   docs/compare and the landing page.
+2. `scripts/release.sh rc X.Y.Z` cuts a release candidate. It checks the CHANGELOG, the
+   CHECKSUMS, e2e and CI.
+3. `scripts/dogfood.sh vX.Y.Z-rc.N <consumer repos...>` tries it on clones of real repos and on a
+   fresh install. Then do the manual checklist.
+4. `scripts/release.sh final X.Y.Z` promotes the tested RC commit. The stable gate stops if CI
+   cannot be verified.

@@ -1,25 +1,74 @@
-# How security-audit-kit compares — Aikido vs Semgrep vs security-audit-kit
+# How security-audit-kit compares
 
-> **Last updated:** 2026-11-03 · kit **v1.20.0**
+Two comparisons. First, the tools a developer actually chooses between inside a coding agent:
+security plugins for Claude Code. Second, the wider platforms (all-in-one SaaS, Semgrep).
+
+> **Last updated:** 2026-11-04 · kit **v1.21.0**
 >
-> Aikido and Semgrep data is taken from [Aikido's own comparison page](https://www.aikido.dev/comparison/semgrep)
-> (a vendor-published source, retrieved 2026-07) plus public product docs. Aikido and Semgrep are
-> trademarks of their respective owners. This table is maintained as features ship — rows marked
+> Plugin data was checked on 2026-11-04 against the plugins' own repositories and docs (sources under
+> the table). SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep
+> (retrieved 2026-07) plus public product docs. Semgrep is a trademark of its owner. This table is maintained as features ship — rows marked
 > **🔜 Planned** describe intended work, not commitments, and may change.
 
-## Positioning
+## In the coding agent: security plugins for Claude Code
+
+Compared with the two security plugins in the same channel: Semgrep's official plugin (Semgrep
+Guardian, marketplace `claude-plugins-official`) and Trail of Bits' open-source `static-analysis`
+plugin (`trailofbits/skills`). Checked on **2026-11-04** against their repositories and docs (sources
+below). "Not documented" means no statement was found either way.
+
+| Capability | Semgrep plugin | trailofbits static-analysis | security-audit-kit |
+|---|---|---|---|
+| Works without an account | ✗ needs a Semgrep account; 30-day trial, then a paid license | ✓ (optional Semgrep Pro) | ✓ |
+| Checks every file the agent writes | ✓ hooks on every write/edit; the agent fixes and it rescans | ✗ run on request | 🔜 planned (per-file advisory check, F33b); today git hooks gate every commit and push |
+| Gate outside the agent (git hooks / CI) | ✗ agent only; keep Semgrep in CI | Partial — scripts usable in CI | ✓ pre-commit + pre-push hooks, same `scan.sh` in CI |
+| SAST | ✓ Semgrep Code (hosted) | ✓ CodeQL + Semgrep with third-party rules, merged SARIF | ✓ semgrep (pinned), stack-aware packs, plus `/sec-sast-deep` for authz/IDOR and business logic |
+| Secrets | ✓ Semgrep Secrets | Partial — semgrep secret rulesets only | ✓ gitleaks: full history + staged |
+| Dependency CVEs (SCA) | ✓ Semgrep Supply Chain | ✗ (a separate plugin) | ✓ pip-audit, npm/pnpm/yarn audit, OSV-Scanner |
+| Malicious packages / pre-install check | Partial — separate malware firewall, private beta | ✗ (a separate plugin) | ✓ GuardDog + `pkgcheck` before install, opt-in agent hook |
+| IaC | Not documented | Partial — semgrep terraform/kubernetes rules | ✓ checkov |
+| Container image | Not documented | ✗ Dockerfile rules only | ✓ trivy |
+| GitHub Actions | Not documented | Partial — semgrep github-actions rules | ✓ zizmor |
+| SBOM | Not documented | ✗ | ✓ syft (CycloneDX + SPDX) |
+| False-positive triage with an evidence bar | ✗ findings go back to the agent | ✗ (a separate fp-check plugin) | ✓ `/sec-triage`: sink, source and path required; default verdict FP; measured with evals |
+| Threat model · AI/LLM app review | ✗ | ✗ | ✓ `/sec-threat-model` (STRIDE) · `/sec-ai-review` (OWASP LLM Top 10) |
+| A failed or skipped scan is never shown as clean | Not documented | ✓ the report must list failed and skipped scans | ✓ per-dimension status (`skipped`, `error`, `indeterminate`) in every summary |
+| Pinned versions | Partial — versioned, self-updating binaries | ✗ third-party rule repos cloned unpinned | ✓ exact versions + image digests, `CHECKSUMS` checked before every push |
+| Where your code goes | Edited files to a hosted scanner; telemetry (can be turned off) | No code upload found; downloads rules | No scanner sends code; dependency names and versions go to advisory services ([data-flow](../data-flow.md)) |
+| Platforms | ✓ macOS, Linux, Windows, WSL | Not documented (macOS notes) | Linux + macOS; Windows via WSL2 (documented, not yet verified by us) |
+| License | Not documented (no license file; prebuilt binaries) | CC-BY-SA-4.0 (CodeQL has its own terms) | MIT, free |
+
+**Where they are stronger.** The Semgrep plugin checks every edit as the agent writes it and loops
+until the code comes back clean. It runs natively on Windows, and a team can manage it centrally.
+Trail of Bits' plugin brings CodeQL's interprocedural dataflow, a large set of third-party rules and
+generated models for project-specific sources and sinks. The kit's answer to per-edit checking is
+planned (F33b); until then it gates at commit and push.
+
+**Sources (retrieved 2026-11-04):**
+- Semgrep plugin: github.com/semgrep/guardian (README, `plugin/hooks/hooks.json`, CHANGELOG) and
+  docs.semgrep.dev/semgrep-guardian (faq, rules-and-configuration, choose-your-setup,
+  ide-setup/claude-code).
+- trailofbits static-analysis: github.com/trailofbits/skills/tree/main/plugins/static-analysis
+  (README, `skills/*/SKILL.md`, `rulesets.md`, `run-scans.sh`), plugins/fp-check, and the CodeQL CLI
+  license (github.com/github/codeql-cli-binaries).
+
+## Platforms: all-in-one SaaS vs Semgrep vs security-audit-kit
+
+### Positioning
 
 These are three different product shapes, so some "missing" cells are deliberate scope decisions:
 
-- **Aikido** — an all-in-one **SaaS platform**: your code and findings live in their cloud, and the
+- **All-in-one SaaS** — a commercial all-in-one **SaaS platform**: your code and findings live in their cloud, and the
   platform layer (dashboards, PR bots, runtime protection) is the product.
 - **Semgrep** — a **SAST-first platform** (engine + registry + cloud), strongest at static code
   analysis, thinner elsewhere.
 - **security-audit-kit** — a **portable local kit** vendored into your repo: a deterministic,
-  pinned-toolchain scan layer plus an AI judgment layer (Claude Code skills). Nothing leaves your
-  machine unless you opt in; there is no server side.
+  pinned-toolchain scan layer plus an AI judgment layer (Claude Code skills). It runs on your
+  machine with no server side and no telemetry; dependency lookups send package names and
+  versions to advisory services, and the AI layer sends what it reads to the agent's model
+  provider ([data-flow](../data-flow.md)).
 
-## Legend
+### Legend
 
 | Mark | Meaning |
 |---|---|
@@ -29,9 +78,9 @@ These are three different product shapes, so some "missing" cells are deliberate
 | 🔜 | Planned for the kit — not shipped yet |
 | — | Out of scope for the kit **by design** (see below) |
 
-## Feature comparison
+### Feature comparison
 
-| Capability | Aikido | Semgrep | security-audit-kit |
+| Capability | All-in-one SaaS | Semgrep | security-audit-kit |
 |---|---|---|---|
 | SAST | ✓ (Opengrep engine) | ✓ | ✓ semgrep (pinned), stack-aware ruleset auto-selection |
 | Deep semantic SAST (authz/IDOR, business logic) | Partial (taint) | Partial (taint, Pro) | ✓ `sec-sast-deep` skill — flaw classes rule engines can't express |
@@ -46,24 +95,24 @@ These are three different product shapes, so some "missing" cells are deliberate
 | IaC misconfiguration | ✓ | ✗ | ✓ checkov (Terraform) |
 | Container / filesystem scanning | ✓ | ✗ | ✓ trivy (vuln, secret, misconfig, license) |
 | CI/CD pipeline security (GitHub Actions) | Partial | ✗ | ✓ zizmor — template injection, poisoned pipelines, token over-permission |
-| False-positive triage | ✓ AutoTriage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check; suppressions are audited for decay (`scan.sh allowlist`: expired deferrals, entries with no expiry, an advisory suppressed on one dependency path but not the others) |
+| False-positive triage | ✓ auto-triage (opaque) | ✗ (registry noted as noisy) | ✓ `sec-triage`: hard-evidence bar (REAL must name the sink `file:line`, the untrusted source and an unbroken path; default verdict FP) + adversarial consistency pass + confidence gate (≥ 0.7) + CISA KEV/EPSS check; suppressions are audited for decay (`scan.sh allowlist`: expired deferrals, entries with no expiry, an advisory suppressed on one dependency path but not the others) |
 | Measured triage quality (precision/recall evals) | ✗ (marketing claims only) | ✗ | ✓ promptfoo eval harness with recall regression gates (`tests/eval/`) |
 | Structured evidence per finding | ✓ (dashboard) | Partial | ✓ `evidence.json` — every finding in one shape, severity normalized across tools (source value kept verbatim), CVSS only where a tool supplied one; deterministic and diffable |
-| AutoFix | ✓ AI AutoFix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan) with a per-ecosystem command table (direct vs transitive-forcing) and the direct/transitive + parent-range questions asked before any bump; 🔜 computing the parent-range answer automatically |
+| AutoFix | ✓ AI auto-fix PRs (all plans) | Experimental | Partial — AI-assisted fixes via triage (show diff, re-scan) with a per-ecosystem command table (direct vs transitive-forcing) and the direct/transitive + parent-range questions asked before any bump; 🔜 computing the parent-range answer automatically |
 | PoC / exploit validation | ✓ agentic pentesting (executes) | ✗ | 🔜 planned: **generate-only** PoC mode — the kit never executes exploits |
 | AI/LLM app security review (OWASP LLM Top 10) | ✗ | Partial | ✓ `sec-ai-review` skill |
 | Threat modeling | ✗ | ✗ | ✓ `sec-threat-model` (STRIDE + data flows) |
 | DAST | ✓ | ✗ | — rejected by design (no autonomous exploit execution) |
 | Cloud security posture (CSPM) | ✓ | ✗ | — out of scope (repo-local kit; no cloud credentials) |
-| Runtime protection (in-app firewall) | ✓ "Zen" | ✗ | — out of scope (scan kit, not a runtime agent) |
+| Runtime protection (in-app firewall) | ✓ in-app firewall | ✗ | — out of scope (scan kit, not a runtime agent) |
 | Compliance dashboards (SOC 2 / ISO) | ✓ | ✗ | — out of scope as a SaaS surface; the kit emits SARIF + `evidence.json` + a printable single-file HTML report you can attach to an audit |
 | IDE integration | ✓ plugin | ✓ plugin | Partial — SARIF output (`SARIF=1`) consumable by IDE SARIF viewers, including the judgment findings (`kit.sarif`) |
-| Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ fully local; network only in opt-in dimensions (e.g. GuardDog) |
+| Local / air-gapped operation | Limited (SaaS core) | Limited (no Windows local) | ✓ runs locally, no server; offline after `scan.sh warm` with `SCAN_OFFLINE=1`, except the dependency lookups, which send package names and versions ([data-flow](../data-flow.md)) |
 | Platform support | Any (SaaS); local scanner limited | Linux/macOS local (no Windows) | Linux + macOS native; Windows via **WSL2** — documented path + `doctor` platform detection, not yet verified by us on a real WSL2 machine; Git Bash partial (docker mounts mangle) |
 | Supply-chain hygiene of the tool itself | Unpublished | Unpublished | ✓ digest-pinned tools, `CHECKSUMS` integrity manifest enforced by the pre-push hook (an edited vendored copy blocks the push), SHA-pinned bootstrap with tag-repoint guard, and a pin bound to the content — `verify` fails if `.kit-version` claims a release the vendored files aren't |
 | Pricing | Freemium SaaS | Freemium | MIT, free |
 
-## Why some rows are "—" (out of scope by design)
+### Why some rows are "—" (out of scope by design)
 
 The kit's hard boundary is **scan + judge, never exploit or run in production**:
 
@@ -80,7 +129,7 @@ The kit's hard boundary is **scan + judge, never exploit or run in production**:
 The kit publishes a **measured** triage quality number, and the harness that produced it, in-repo.
 The eval harness (`tests/eval/`) grades the `sec-triage` REAL/FP judgment against a 61-case labeled
 corpus via promptfoo, then reports a confusion matrix + precision / recall / F1 / accuracy for the
-REAL class. Aikido's AutoTriage and Semgrep's registry noise claims are marketing-only — no
+REAL class. The SaaS platform's auto-triage and Semgrep's registry noise claims are marketing-only — no
 published precision/recall numbers.
 
 The corpus is split so the headline number is not self-graded. A **dev split** (`cases.yaml`) is
@@ -97,13 +146,12 @@ default verdict is FP — a pattern match is not evidence of exploitability.
 
 | Backend | Split | Precision | Recall | F1 | Accuracy | Confusion |
 |---|---|---|---|---|---|---|
-| Anthropic Claude (default) | — | unpublished | unpublished | unpublished | unpublished | not yet measured — key authenticates but every inference call returns `credit balance is too low` (400) |
 | GLM-5.2 via NVIDIA NIM | dev (tuning, 31) | 100% | 100% | 100% | 100% | TP=15 FP=0 FN=0 TN=16 |
 | GLM-5.2 via NVIDIA NIM | **held-out (36)** | **100%** | **100%** | **100%** | **100%** | **TP=18 FP=0 FN=0 TN=18** |
 
 > **NIM run (2026-07-10):** `z-ai/glm-5.2` on `integrate.api.nvidia.com`, both splits, 0 errors.
-> The default backend is still the shipped one (Claude); it stays unmeasured until the account has
-> API credit.
+> The default backend (Claude) is not measured yet, so it has no row. It gets one when the
+> measurement (F12b) runs; until then, read the numbers above as GLM-5.2's, not the default's.
 >
 > **The held-out 100% is a Phase-A *before/after* result, read it as one.** Before the hard-evidence
 > bar, the same held-out cases scored **precision 83.3%** (3 false positives, recall already 100%):

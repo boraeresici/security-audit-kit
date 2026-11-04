@@ -18,7 +18,7 @@ jobs:
       - name: shellcheck (pinned image — no version drift; uses repo .shellcheckrc)
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
-            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push hooks/pre-tool-install.sh tests/e2e.sh scripts/release.sh tests/eval/run.sh
+            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push hooks/pre-tool-install.sh tests/e2e.sh scripts/release.sh scripts/dogfood.sh scripts/skill-sums.sh tests/eval/run.sh
 
   pytest:
     runs-on: ubuntu-latest
@@ -45,6 +45,17 @@ jobs:
           python-version: '3.11'
       - name: e2e (offline — no docker, no uvx; external-tool assertions skip gracefully)
         run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          persist-credentials: false
+      - name: claude plugin validate --strict (plugin + marketplace; pinned CLI, no login needed)
+        run: |
+          npx -y @anthropic-ai/claude-code@2.1.316 plugin validate --strict .
+          npx -y @anthropic-ai/claude-code@2.1.316 plugin validate --strict .claude-plugin/marketplace.json
 
   checksums:
     runs-on: ubuntu-latest

@@ -1,139 +1,139 @@
-# Security Audit Kit — çok rollü uygulama değerlendirmesi
+# Security Audit Kit — multi-role application review
 
-Tarih: 8 Eylül 2026 · İncelenen yerel commit: `48fad91` · Dal: `main`
+Date: 2026-09-08 · Local commit reviewed: `48fad91` · Branch: `main`
 
-Bu değerlendirme uygulama kodunu değiştirmeden hazırlanmıştır. İşlerin tamamı öneridir; planlama ve uygulama onayı verilmiş sayılmaz. Önceliklendirilmiş karşılığı: [iş listesi](application-backlog-2026-09-08.md).
+This review was prepared without changing application code. All items are proposals; it does not count as approval for planning or implementation. Prioritized counterpart: [work list](application-backlog-2026-09-08.md).
 
-## Yönetici değerlendirmesi
+## Executive assessment
 
-Ürünün güçlü çekirdeği, farklı güvenlik tarayıcılarını repo içine taşınabilen tek bir akışta birleştirmesi ve tarama ile AI yargısını ayırmasıdır. Sürüm/digest pinleme, bütünlük manifesti, günlük ham kayıt, SARIF, normalize kanıt ve çevrimdışı HTML rapor mevcut. Yeni tarayıcı eklemekten önce **çıktının hangi çalıştırmaya ait olduğunu ve gerçekten neyin tarandığını güvenilir biçimde göstermek** daha yüksek değer taşıyor.
+The product's strong core is that it combines different security scanners into a single flow that can be carried inside the repo, and separates scanning from AI judgment. Version/digest pinning, an integrity manifest, a daily raw log, SARIF, normalized evidence and an offline HTML report exist. Before adding new scanners, **reliably showing which run the output belongs to and what was actually scanned** carries higher value.
 
-En önemli sonuç: mevcut çevrimdışı e2e testleri geçmesine rağmen kilit zaman aşımı, eksik tarayıcı ve eski SARIF bileşimi yanlış bir tarama kaydı üretebiliyor. Bunlar üretimde istismar gösterimi yapılmış güvenlik açıkları olarak değil, yerel olarak doğrulanmış doğruluk ve güvenilirlik hataları olarak sınıflandırılmıştır.
+Most important result: although the current offline e2e tests pass, lock timeout, a missing scanner and stale SARIF composition can produce a wrong scan record. These are classified not as security vulnerabilities with a demonstrated exploit in production, but as locally verified correctness and reliability bugs.
 
-Önerilen sıra: kayıt güvenilirliği → otomatik kalite kapıları → kurulum ve sonuç anlaşılabilirliği → ölçümle gerekçelendirilmiş performans ve kapsam geliştirmeleri.
+Recommended order: record reliability → automated quality gates → installation and result understandability → measurement-justified performance and coverage improvements.
 
-## Kapsam ve yöntem
+## Scope and method
 
-İncelenen yüzeyler: `scan.sh`, `bootstrap.sh`, `install.sh`, üç hook, `lib/` içindeki dört Python modülü, beş `sec-*` talimatı, e2e/eval yapısı, CI ve release akışı, İngilizce/Türkçe README, güvenlik politikası, evidence şeması, landing HTML/build/headers ve yerel yol haritaları.
+Surfaces reviewed: `scan.sh`, `bootstrap.sh`, `install.sh`, three hooks, the four Python modules in `lib/`, five `sec-*` instructions, the e2e/eval structure, CI and release flow, English/Turkish README, security policy, evidence schema, landing HTML/build/headers and local roadmaps.
 
-Roller ayrı değerlendirme perspektifleridir; bağımsız insan/ajan incelemeleri yapılmış olduğu iddia edilmez.
+The roles are separate review perspectives; no claim is made that independent human/agent reviews were performed.
 
-- **D — Deneyle doğrulandı:** geçici Git reposunda sentetik veriyle davranış yeniden üretildi.
-- **K — Kod/doküman kanıtı:** uygulama yolu veya açık doküman sınırlaması incelendi; etki uçtan uca ölçülmedi.
-- **Ö — Öneri:** kullanıcı/performans ölçümü ile doğrulanması gereken ürün fırsatı.
+- **V — Verified by experiment:** behavior reproduced with synthetic data in a temporary Git repo.
+- **C — Code/doc evidence:** implementation path or explicit documentation limitation reviewed; impact not measured end to end.
+- **P — Proposal:** product opportunity that must be validated by user/performance measurement.
 
-Canlı servise saldırı, dış tarayıcı indirme/çalıştırma, ücretli LLM değerlendirmesi, gerçek WSL2 testi, kullanıcı görüşmesi ve tarayıcıda görsel/erişilebilirlik testi yapılmadı. Rakiplerin güncel özellikleri ve pinli araçların güncel CVE durumları bu çalışmanın kapsamında doğrulanmadı. Tanıtım sayfası için sonuçlar kaynak kodu incelemesidir.
+No attack on a live service, external scanner download/run, paid LLM evaluation, real WSL2 test, user interview, or in-browser visual/accessibility test was performed. Competitors' current features and the current CVE status of pinned tools were not verified within the scope of this work. For the landing page, the results are a source-code review.
 
-## Doğrulama sonuçları
+## Verification results
 
-| Kontrol | Sonuç | Yorum |
+| Check | Result | Comment |
 |---|---|---|
-| Başlangıç çalışma ağacı | Temiz | Var olan kullanıcı değişikliği üzerine yazılmadı |
-| Shell sözdizimi | Seçilen dokuz script `bash -n` kontrolünü geçti | ShellCheck veya davranış testi yerine geçmez |
-| Python sözdizimi | `lib/` içindeki dört modül AST parse kontrolünü geçti | Runtime/adaptör uyumu testi yerine geçmez |
-| `bash scan.sh verify` | 69 dosya manifest ile eşleşti | Başlangıçtaki takipli dosyaların bütünlüğü |
-| Çevrimdışı e2e | **93 geçti, 0 başarısız; 10 bölüm atlandı** | `PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh`; dış tarayıcılar ve Node bu PATH'te yoktu |
-| Kilit doluyken ikinci tarama | Ortak `summary.json` değişti | F01; `SCAN_LOCK_WAIT=0`, canlı PID'li kilit |
-| Docker olmadan secret | Çıkış 0, boyut `pass` | F02; tarama gerçekte atlandı |
-| Eski SARIF + atlanan secret | Önceki sentetik bulgu yeni evidence içine alındı; uyarı yok | F03 |
-| Çıkış kodu bulunmayan evidence → HTML | `clean (exit 0)` yazdı | F04 |
+| Initial working tree | Clean | No existing user change was overwritten |
+| Shell syntax | Nine selected scripts passed `bash -n` | Not a substitute for ShellCheck or behavior tests |
+| Python syntax | The four modules in `lib/` passed an AST parse check | Not a substitute for runtime/adapter compatibility tests |
+| `bash scan.sh verify` | 69 files matched the manifest | Integrity of the tracked files at the start |
+| Offline e2e | **93 passed, 0 failed; 10 sections skipped** | `PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh`; external scanners and Node were not on this PATH |
+| Second scan while lock is held | Shared `summary.json` changed | F01; `SCAN_LOCK_WAIT=0`, lock with a live PID |
+| Secret without Docker | Exit 0, dimension `pass` | F02; the scan was actually skipped |
+| Stale SARIF + skipped secret | Previous synthetic finding was pulled into the new evidence; no warning | F03 |
+| Evidence without an exit code → HTML | Printed `clean (exit 0)` | F04 |
 
-### Tekrar üretme tarifi
+### Reproduction recipe
 
-Geçici bir Git reposunda `docs/security/scan-findings/sarif/gitleaks.sarif` içine tek sentetik sonuç ve `summary.json` içine ayırt edilebilir bir işaret koy. `.git/security-audit-cache/scan.lock/owner` dosyasına halen yaşayan bir sürecin `pid=<PID> date=now cmd=fixture` bilgisini yaz. Bu repo içinden, kitin mutlak yolunu kullanarak `PATH=/usr/bin:/bin:/usr/sbin:/sbin SCAN_LOCK_WAIT=0 SARIF=1 /bin/bash <kit>/scan.sh secret` çalıştır. Docker'ın bu PATH'te bulunmadığını doğrula.
+In a temporary Git repo, put a single synthetic result into `docs/security/scan-findings/sarif/gitleaks.sarif` and a distinguishable marker into `summary.json`. Write `pid=<PID> date=now cmd=fixture` for a still-living process into `.git/security-audit-cache/scan.lock/owner`. From inside this repo, using the kit's absolute path, run `PATH=/usr/bin:/bin:/usr/sbin:/sbin SCAN_LOCK_WAIT=0 SARIF=1 /bin/bash <kit>/scan.sh secret`. Verify that Docker is not on this PATH.
 
-Gözlenen sonuç: “SEPARATE log” mesajına rağmen ortak özet üzerine yazıldı; `secret` durumu `pass` oldu; evidence bir eski bulgu içerdi ve `warnings=[]` çıktı. Bu deney kilit zaman aşımı yolunu deterministik olarak sınar; iki gerçek tarayıcının aynı anda çalıştığı yük testi değildir.
+Observed result: despite the “SEPARATE log” message, the shared summary was overwritten; the `secret` status became `pass`; evidence contained a stale finding and output `warnings=[]`. This experiment deterministically exercises the lock-timeout path; it is not a load test with two real scanners running at the same time.
 
-F04 için `schema=security-audit-kit/evidence@1`, `scan={}`, `counts={total:0}`, `findings=[]` içeren JSON, `lib/report_html.py` ile üretildi; çıktı `clean (exit 0)` içerdi.
+For F04, JSON containing `schema=security-audit-kit/evidence@1`, `scan={}`, `counts={total:0}`, `findings=[]` was rendered with `lib/report_html.py`; the output contained `clean (exit 0)`.
 
-## Rollere göre değerlendirme
+## Review by role
 
-### 1. Ürün yöneticisi
+### 1. Product manager
 
-**Güçlü:** Yerel ve repo kapsamlı kullanım, düşük altyapı ihtiyacı, deterministik kontrol ile yargı ayrımı net bir ürün kimliği oluşturuyor. OSV/GuardDog/zizmor gibi ek boyutların isteğe bağlı olması maliyeti kontrol ediyor.
+**Strong:** Local, repo-scoped use, low infrastructure needs, and the split between deterministic checks and judgment form a clear product identity. Having extra dimensions like OSV/GuardDog/zizmor be optional keeps cost under control.
 
-**Gelişim:** `all` komutu OSV, GuardDog, zizmor ve SBOM'u kapsamıyor (`scan.sh:1137`). Bu bilinçli ve belgelenmiş; ancak ilk kullanıcının “tam tarama” beklentisiyle karışabilir. Çalıştırmadan önce/sonra etkin, uygulanamaz ve isteğe bağlı boyutları gösteren kapsam özeti ve kullanım profilleri önerilir (F14).
+**Improvement:** The `all` command does not cover OSV, GuardDog, zizmor and SBOM (`scan.sh:1137`). This is deliberate and documented; but it can clash with a first-time user's expectation of a “full scan”. A coverage summary showing active, not-applicable and optional dimensions before/after running, plus usage profiles, is recommended (F14).
 
-“Nothing leaves your machine” / “network only in opt-in dimensions” gibi landing ifadeleri, standart akışın `uvx`, registry kuralları, dependency audit ve AI servisi kullanabilmesiyle uyumlu bir veri akışı açıklaması gerektiriyor. Yerel çalıştırma, ağsızlık ve verinin dış servise gönderilmesi ayrı kavramlar olarak anlatılmalı (F13). Bu inceleme gerçek ağ paketlerini ölçmedi.
+Landing statements like “Nothing leaves your machine” / “network only in opt-in dimensions” need a data-flow explanation consistent with the standard flow being able to use `uvx`, registry rules, dependency audit and an AI service. Local execution, no-network and data being sent to an external service should be explained as separate concepts (F13). This review did not measure real network packets.
 
-Ürün başarısı yeni araç sayısıyla değil; ilk işe yarar rapora ulaşma süresi, eksik kapsam oranı, tarama gecikmesi ve kapanan gerçek bulgu oranıyla ölçülmeli. Bunlar varsayılan telemetri olmadan yerel metriklerle başlayabilir (F20).
+Product success should be measured not by the number of new tools but by time to the first useful report, missing-coverage rate, scan latency and the rate of closed real findings. These can start with local metrics without default telemetry (F20).
 
-### 2. Geliştirici deneyimi / UX
+### 2. Developer experience / UX
 
-**Güçlü:** `doctor`, sıfır konfigürasyon, çift dil README, `--skills-only`, kopyalanabilir kurulum komutları ve framework bağımsız rapor iyi başlangıç noktaları.
+**Strong:** `doctor`, zero configuration, bilingual README, `--skills-only`, copyable install commands and a framework-independent report are good starting points.
 
-**Gelişim:** Kurulum mevcut `core.hooksPath` değerini doğrudan değiştiriyor (`install.sh:45`); README alternatifleri anlatsa da kurulum mevcut hook sahibini tespit edip somut seçenek göstermiyor. Mevcut davranışı koruyan kurulum planı, yedek ve geri alma gerekli (F10).
+**Improvement:** Installation directly changes the existing `core.hooksPath` value (`install.sh:45`); although the README describes alternatives, installation does not detect the existing hook owner and show concrete options. An installation plan that preserves existing behavior, plus backup and rollback, is needed (F10).
 
-`scan.sh` komut yardımını ve sonuç özetini geliştirmek, uzun README'yi başlangıç/ileri kullanım/referans olarak ayırmak ilk kullanım sürtünmesini azaltır (F14). `scan_report()` ve `scan_evidence()` eksik girdide ya da bazı üretim hatalarında 0 döndüğü için otomasyon dosyanın gerçekten üretildiğini ayrıca kontrol etmek zorunda (F04).
+Improving `scan.sh` command help and the result summary, and splitting the long README into getting started/advanced use/reference, reduces first-use friction (F14). Because `scan_report()` and `scan_evidence()` return 0 on missing input or some generation errors, automation has to separately check that the file was actually produced (F04).
 
-Landing kopyala düğmesinde clipboard reddi için hata yolu bulunmuyor; animasyonlu görünürlük `IntersectionObserver` ve JS'ye bağlı (`landing/index.html:543`). JS kapalı kullanım, klavye odağı, kopyalama hatası, ekran okuyucu bildirimi ve mobil taşma tarayıcıda sınanmalı (F15). Azaltılmış hareket desteği zaten var; yeniden yapılacak özellik sayılmamalı.
+The landing copy button has no error path for clipboard rejection; animated visibility depends on `IntersectionObserver` and JS (`landing/index.html:543`). Use with JS disabled, keyboard focus, copy failure, screen-reader announcement and mobile overflow should be tested in a browser (F15). Reduced-motion support already exists; it should not be counted as a feature to redo.
 
-### 3. Yazılım mimarı / backend
+### 3. Software architect / backend
 
-**Güçlü:** Python yardımcıları stdlib ile çalışıyor; evidence ortak model olarak rapor ve SARIF üreticilerini ayrıştırıyor. Başlıca davranışlar fonksiyonlara ayrılmış.
+**Strong:** The Python helpers run on the stdlib; evidence as the shared model decouples the report and SARIF generators. The main behaviors are split into functions.
 
-**F01 — D, yüksek:** `scan.sh:1193` kilit alınamayınca yalnız `LOG` yolunu değiştiriyor. `SUMMARY`, `SARIF_DIR`, `EVIDENCE` ve HTML yolu ortak kalıyor; `scan.sh:1230` civarındaki atomik rename ortak özeti yine değiştiriyor. Atomik dosya yazımı, farklı çalıştırmaların aynı kaydı sahiplenmesini engellemiyor. Her çalıştırma ayrı dizin kullanmalı; ortak “son tamamlanan çalışma” işaretçisi yalnız uygun kilitle güncellenmeli.
+**F01 — V, high:** When the lock cannot be acquired, `scan.sh:1193` only changes the `LOG` path. `SUMMARY`, `SARIF_DIR`, `EVIDENCE` and the HTML path stay shared; the atomic rename around `scan.sh:1230` still changes the shared summary. Atomic file writes do not prevent different runs from claiming the same record. Each run should use a separate directory; a shared “last completed run” pointer should only be updated under a proper lock.
 
-**F02 — D/K, yüksek:** `scan_secret()` ve eksik toolchain yolları 0 döndürüyor (`scan.sh:375`, `396`); özet üretimi 0'ı `pass` yapıyor. Python manifest yokluğu için mevcut `indeterminate` yaklaşımı tüm boyutlara taşınmalı. Tarama sonucu ve engelleme politikası farklı alanlar olmalı; geliştirmeyi engellemeden eksik kapsam doğru kaydedilebilir.
+**F02 — V/C, high:** `scan_secret()` and missing-toolchain paths return 0 (`scan.sh:375`, `396`); summary generation turns 0 into `pass`. The existing `indeterminate` approach for a missing Python manifest should be carried to all dimensions. Scan result and blocking policy should be separate fields; missing coverage can be recorded correctly without blocking development.
 
-**F03 — D, yüksek:** `lib/evidence.py:392` boyut adına göre dosya seçiyor; dosyanın bu çalıştırmada üretilip üretilmediğini doğrulamıyor. Aynı boyut atlanınca eski SARIF geçerli sayılıyor. Çalıştırma kimliği, commit/kapsam bilgisi ve o çalıştırmanın artifact manifesti gerekli.
+**F03 — V, high:** `lib/evidence.py:392` picks files by dimension name; it does not verify whether the file was produced in this run. When the same dimension is skipped, stale SARIF counts as valid. A run ID, commit/scope information and that run's artifact manifest are needed.
 
-**F05 — K:** `scan_lock_acquire()` canlı PID olsa bile yaş sınırı aşılmış kilidi silebiliyor; `scan_lock_release()` sahiplik token'ı doğrulamadan dizini siliyor (`scan.sh:1090`). Uzun tarama ve PID yeniden kullanım senaryoları, sahiplik token'ı/heartbeat ve yarış testleriyle ele alınmalı.
+**F05 — C:** `scan_lock_acquire()` can delete a lock that has exceeded the age limit even with a live PID; `scan_lock_release()` deletes the directory without verifying an ownership token (`scan.sh:1090`). Long-scan and PID-reuse scenarios should be handled with an ownership token/heartbeat and race tests.
 
-**F17 — Ö:** `scan.sh` tarayıcı adaptörleri, keşif, kilit, allowlist, cache ve JSON üretimini tek dosyada taşıyor. Önce davranış sözleşmelerini testlerle sabitleyip küçük modüllere ayırmak uygun; tüm sistemi yeniden yazmak için kanıt yok.
+**F17 — P:** `scan.sh` carries scanner adapters, discovery, locking, allowlist, cache and JSON generation in a single file. It is appropriate to first pin the behavior contracts with tests and then split into small modules; there is no evidence for rewriting the whole system.
 
-### 4. Güvenlik mühendisi / tedarik zinciri
+### 4. Security engineer / supply chain
 
-**Güçlü:** İmaj digest'leri, pin doğrulama, tag-repoint kontrolü, manifest, redaction ve build-script riskinin açık ele alınması değerli. Bu kontrollerin varlığı korunmalı.
+**Strong:** Image digests, pin verification, tag-repoint checking, the manifest, redaction and explicit handling of build-script risk are valuable. These controls should be kept.
 
-**F06 — K, yüksek:** `pkgcheck_one()` cache anahtarında ekosistem, paket, sürüm ve GuardDog sürümü bulunuyor; `PKGCHECK_BLOCK_EXTRA`/`PKGCHECK_REPORT_EXTRA` bulunmuyor (`scan.sh:551`). Cache'den ham analiz yerine önceki karar okunuyor. Politika sertleştiğinde önceki kararın tekrar kullanılması mümkün. Ham analiz cache'lenip güncel politika uygulanmalı veya politika digest'i anahtara eklenmeli. Tam sürümlerde süresiz cache için de açık yenileme/geçersizleştirme kuralı tanımlanmalı.
+**F06 — C, high:** The `pkgcheck_one()` cache key includes ecosystem, package, version and GuardDog version; it does not include `PKGCHECK_BLOCK_EXTRA`/`PKGCHECK_REPORT_EXTRA` (`scan.sh:551`). The previous verdict, rather than the raw analysis, is read from the cache. When the policy is tightened, the previous verdict can be reused. The raw analysis should be cached and the current policy applied, or a policy digest added to the key. An explicit refresh/invalidation rule should also be defined for the indefinite cache on exact versions.
 
-**F07 — K, yüksek:** `scripts/release.sh:60` civarında `gh` yokluğu, check-run bulunamaması ve eksik zorunlu kontroller uyarıyla geçiliyor; `preflight` başarısız fetch sonrası devam edebiliyor. Release belgesindeki zorunlu doğrulama ile otomasyonun davranışı ayrışıyor. Stabil yayın için doğrulanamayan kontrol açık başarısızlık olmalı; acil istisna gerekiyorsa ayrıca kayıtlı ve bilinçli olmalı.
+**F07 — C, high:** Around `scripts/release.sh:60`, missing `gh`, check-runs not found and missing required checks pass with a warning; `preflight` can continue after a failed fetch. The mandatory verification in the release document and the automation's behavior diverge. For a stable release, an unverifiable check should be an explicit failure; if an emergency exception is needed, it should be separately recorded and deliberate.
 
-**F08 — K:** `bootstrap.sh:60` güncelleme adayını bütün sürüm etiketlerini sıralayarak seçiyor; `-rc.N` ayıklanmıyor. Stabil kanalın RC önerme ihtimali yerel tag fixture'ıyla test edilmeli. `RELEASING.md` stabil/RC ayrımıyla uyumlu kanal seçimi gerekir.
+**F08 — C:** `bootstrap.sh:60` picks the update candidate by sorting all version tags; `-rc.N` is not filtered out. The possibility of the stable channel suggesting an RC should be tested with a local tag fixture. Channel selection consistent with the stable/RC split in `RELEASING.md` is needed.
 
-**F11 — K:** `.security-audit.conf` shell olarak source ediliyor (`scan.sh:48`); bu normal bir konfigürasyon veri dosyası değil, çalıştırılabilir kod. Tarayıcı container'ları repoyu yazılabilir mount ediyor. Kitin kendi tehdit modelinde repo/config/tool/output sınırları açıkça belgelenmeli; veri biçimli config'e geçiş ve salt okunur kaynak/ayrı çıktı mount'u uyumluluk deneyiyle değerlendirilmelidir. Burada saldırı veya ele geçirilmiş tarayıcı gösterilmedi.
+**F11 — C:** `.security-audit.conf` is sourced as shell (`scan.sh:48`); it is not a normal configuration data file but executable code. Scanner containers mount the repo writable. In the kit's own threat model, the repo/config/tool/output boundaries should be documented explicitly; moving to a data-format config and a read-only source/separate output mount should be evaluated with a compatibility experiment. No attack or compromised scanner was demonstrated here.
 
-### 5. QA / release mühendisi
+### 5. QA / release engineer
 
-**Güçlü:** 93 çevrimdışı assertion, sentetik stack fixture'ları, bütünlük/tamper testleri, RC ile gerçek projede deneme kültürü mevcut.
+**Strong:** 93 offline assertions, synthetic stack fixtures, integrity/tamper tests and a culture of trying RCs on a real project exist.
 
-**F09 — K, yüksek:** `.github/workflows/ci.yml` yalnız ShellCheck ve checksums koşuyor; self-audit secret/SAST çalıştırıyor. `tests/e2e.sh` PR zorunlu kontrolü değil. Release öncesi yerel e2e bunun yerini tam karşılamıyor. Çevrimdışı deterministik e2e PR kapısı; gerçek tarayıcı adaptör smoke testleri ayrı zamanlanmış iş olmalı. Atlanan testler raporda sayılmalı.
+**F09 — C, high:** `.github/workflows/ci.yml` only runs ShellCheck and checksums; self-audit runs secret/SAST. `tests/e2e.sh` is not a required PR check. Local e2e before release does not fully replace it. Offline deterministic e2e should be a PR gate; real scanner adapter smoke tests should be a separate scheduled job. Skipped tests should be counted in the report.
 
-**F18 — K/Ö:** Linux/macOS iddiasına karşı CI Linux ile sınırlı; WSL2 gerçek cihazda doğrulanmamış olduğu karşılaştırma metninde belirtiliyor. Destek matrisi Bash/Python sürümleriyle açık olmalı. Dosya yolu boşlukları ayrıca sınanmalı: `scan.sh:421` değişen dosyaları, `scan.sh:1026` findings argümanını boşlukla bölünebilen string olarak geçiriyor. Bu çalışmada boşluklu yol uçtan uca denenmedi.
+**F18 — C/P:** Against the Linux/macOS claim, CI is limited to Linux; the comparison text states that WSL2 has not been verified on a real device. The support matrix should be explicit with Bash/Python versions. Spaces in file paths should be tested separately: `scan.sh:421` passes changed files, and `scan.sh:1026` the findings argument, as a string that can be split on spaces. A path with spaces was not tried end to end in this work.
 
-### 6. AI değerlendirme / uygulamalı araştırma
+### 6. AI evaluation / applied research
 
-**Güçlü:** Kanıt eşiği, karşı örnekler, dev/holdout ayrımı, precision/recall ve provider hatalarının ayrı ele alınması olgun yaklaşım.
+**Strong:** The evidence threshold, counterexamples, dev/holdout split, precision/recall and separate handling of provider errors are a mature approach.
 
-**F12 — K, yüksek:** `skills/sec-triage.skill.md:69` kanıt eksikliğinde varsayılan FP önerirken aynı akış UNCERTAIN de tanımlıyor. `tests/eval/triage_prompt.md` ve grader ikili REAL/FP sözleşmesi kullanıyor. “Güvensiz değil” ile “karar verecek bağlam yok” ayrımı kaybolabilir; yanlış negatif oranının gerçekten yükseldiği bu incelemede ölçülmedi. Eksik bağlamı UNCERTAIN olarak kaydeden ve otomatik allowlist'e sokmayan sözleşme yeni dev vakalarıyla ölçülmeli; prompt doğrudan değiştirilmemeli.
+**F12 — C, high:** `skills/sec-triage.skill.md:69` recommends FP by default when evidence is missing, while the same flow also defines UNCERTAIN. `tests/eval/triage_prompt.md` and the grader use a binary REAL/FP contract. The distinction between “not insecure” and “no context to decide” can be lost; whether the false-negative rate actually rises was not measured in this review. A contract that records missing context as UNCERTAIN and does not feed it into the automatic allowlist should be measured with new dev cases; the prompt should not be changed directly.
 
-`tests/eval/README.md` varsayılan Claude backend'inin ölçülmediğini söylüyor; bu tarihsel kayıt güncel bir test sonucu sayılmaz. Korpus büyüklüğü anlatımı da 61/30 ile daha sonraki 36 holdout anlatımı arasında tutarsız. Korpus sayıları ve ölçüm raporu koddan üretilmeli; prompt hash'i, model kimliği, veri seti sürümü, abstention ve coverage birlikte raporlanmalı. Deep/AI-review pasları ve tarama çıktısına gömülmüş kötü niyetli talimatlara direnç ayrı değerlendirme ihtiyacı (F12).
+`tests/eval/README.md` says the default Claude backend was not measured; this historical record does not count as a current test result. The corpus size description is also inconsistent between 61/30 and the later 36-holdout description. Corpus counts and the measurement report should be generated from code; prompt hash, model ID, dataset version, abstention and coverage should be reported together. Deep/AI-review passes and resistance to malicious instructions embedded in scan output need separate evaluation (F12).
 
-### 7. Veri / raporlama
+### 7. Data / reporting
 
-**Güçlü:** Kanıtın şiddet kaynağı korunuyor; Python HTML üreticisi metinleri escape ediyor; rapor tek dosya ve harici servis gerektirmiyor.
+**Strong:** The severity source of the evidence is preserved; the Python HTML generator escapes text; the report is a single file and needs no external service.
 
-**F04 — D/K:** `lib/report_html.py:191` civarında bulunmayan `exit_code` temiz kabul ediliyor; sıfır dışındaki her kod “findings present (exit 1)” gösteriliyor. Araç hatası, eksik kapsam ve güvenlik bulgusu ayrılmalı. Rapor oluşturma zamanı ile taramanın zamanı ayrı tutulmalı; `scan.sh report` bugünün tarihini eski kanıta basabiliyor.
+**F04 — V/C:** Around `lib/report_html.py:191`, a missing `exit_code` is treated as clean; every non-zero code is shown as “findings present (exit 1)”. Tool error, missing coverage and a security finding should be separated. Report generation time and scan time should be kept separate; `scan.sh report` can stamp today's date onto stale evidence.
 
-**F16 — K:** Evidence adaptör listesi (`lib/evidence.py:21`) gitleaks, semgrep, trivy, osv ve zizmor ile sınırlı. pip-audit, JS audit, checkov ve GuardDog boyutlarının ham bulguları ortak modele doğrudan alınmıyor. `scan.sh all` sonrası HTML'nin bütün boyutların tüm bulgularını içerdiği varsayılmamalı; önce kapsama matrisi, sonra eksik adaptörler gerekir.
+**F16 — C:** The evidence adapter list (`lib/evidence.py:21`) is limited to gitleaks, semgrep, trivy, osv and zizmor. Raw findings from the pip-audit, JS audit, checkov and GuardDog dimensions are not taken directly into the shared model. It should not be assumed that the HTML after `scan.sh all` contains all findings of all dimensions; first a coverage matrix, then the missing adapters, are needed.
 
-**F19 — K/Ö:** Bulgu kimliği boyut+kural+dosya+satır (`lib/evidence.py:135`); satır kayması kimliği değiştiriyor. Aynı kural ve manifest konumundaki farklı paketler dedup sırasında birleşebilir. Paket adı/sürümü/purl, araç fingerprint'i ve commit bağlamıyla örnekler doğrulanmalı. Allowlist kontrolü exact-id ve mevcut dosya çiftleriyle sınırlı (`scan.sh:865`); alias eşleştirme/uygulanabilir boyut bilgisi olmadan otomatik fan-out yapılmamalı. Sahip, gerekçe, son tarih ve tekrar doğrulama bilgisi ortak karar kaydında tutulabilir.
+**F19 — C/P:** The finding ID is dimension+rule+file+line (`lib/evidence.py:135`); a line shift changes the ID. Different packages at the same rule and manifest location can merge during dedup. Examples should be verified with package name/version/purl, tool fingerprint and commit context. The allowlist check is limited to exact-id and existing file pairs (`scan.sh:865`); automatic fan-out should not be done without alias matching/applicable-dimension information. Owner, justification, expiry date and re-verification info can be kept in a shared decision record.
 
-### 8. Bakım / operasyon
+### 8. Maintenance / operations
 
-**F20 — Ö:** Boyut başına süre, hata nedeni, atlama nedeni, dosya sayısı ve cache hit bilgisi performans kararlarını kanıta bağlar. Önce ölçüm, sonra cache ve monorepo kapsam optimizasyonu (F21). Cache doğruluğu araç/rule/config/kapsam/veri tabanı değişimlerini hesaba katmadan sağlanamaz.
+**F20 — P:** Per-dimension duration, failure reason, skip reason, file count and cache-hit information tie performance decisions to evidence. Measurement first, then cache and monorepo scope optimization (F21). Cache correctness cannot be ensured without accounting for tool/rule/config/scope/database changes.
 
-**F22 — K:** Yerel planlarda evidence/HTML gibi mevcut özelliklerin toplu maddeleri ve eski “unreleased” durumları bulunuyor. `ROADMAP.local.md` R5.2 slice A'yı yapılmış ve unreleased gösteriyor; yerel HEAD kilit değişikliğinin main'de olduğunu kanıtlıyor, yayınlanmış olup olmadığı uzaktan doğrulanmadı. Yapılmış işler yeni geliştirme gibi yeniden listelenmemeli. Tek güncel backlog ile tarihsel araştırma notları arasında bağlantı kurulmalı.
+**F22 — C:** The local plans contain bulk items for existing features such as evidence/HTML and stale “unreleased” states. `ROADMAP.local.md` shows R5.2 slice A as done and unreleased; the local HEAD proves the lock change is on main, but whether it was released was not verified remotely. Done work should not be relisted as new development. A link should be established between a single current backlog and the historical research notes.
 
-## Korunması gereken ürün sınırları
+## Product boundaries to keep
 
-Bu inceleme DAST/otonom saldırı yürütme, SaaS paneli, CSPM veya yeni tarayıcı sayısını artırmayı önermiyor. Mevcut yol haritasındaki ürün kimliği korunmalı. Ağsız rapor üretimi, isteğe bağlı ağır kontroller ve ham bulgu/yargı ayrımı sonraki geliştirmelerin kabul koşullarında kalmalı.
+This review does not propose DAST/autonomous attack execution, a SaaS dashboard, CSPM, or increasing the number of scanners. The product identity in the current roadmap should be kept. Network-free report generation, optional heavy checks and the raw finding/judgment split should remain in the acceptance criteria of subsequent development.
 
-## Roadmap ile birleştirme güncellemesi — 8 Eylül 2026
+## Roadmap merge update — 2026-09-08
 
-Roadmap, uygulama planı, AI tasarımı ve wizard tasarımı ayrıca değerlendirildi. [Eşleme belgesi](roadmap-reconciliation-2026-09-08.md) mevcut özellikleri ve gerçek kalan işleri ayırır. Güncel sıra: F09 → F01/F05 → F02/F03/F04 → F06/F07/F08; ardından kapsam, kurulum ve ölçülmüş performans işleri. F12 kalibrasyon hattı bağımsızdır; F21 cache ve monorepo olarak iki teslimata ayrıldı. Aşağıdaki ilk öneri tarihçedir; güncel iş sırası backlog tablosudur.
+The roadmap, implementation plan, AI design and wizard design were reviewed separately. The [mapping document](roadmap-reconciliation-2026-09-08.md) separates existing features from the real remaining work. Current order: F09 → F01/F05 → F02/F03/F04 → F06/F07/F08; then coverage, installation and measured performance work. The F12 calibration track is independent; F21 was split into two deliveries, cache and monorepo. The initial proposal below is history; the current work order is the backlog table.
 
-## İlk planlama önerisi — güncel sıra backlog'da
+## Initial planning proposal — current order is in the backlog
 
-Önce F01–F04 ve F09 ile bir “güvenilir kayıt” paketi seçilsin. F05/F06/F07 aynı güvenilirlik döneminde takip etsin. AI karar sözleşmesi F12 ayrı ölçüm kapısıyla yürüsün. Cache, monorepo ve yeni dağıtım kanalları ancak bu temel ve ihtiyaç ölçümleri hazır olduktan sonra planlansın. Ayrıntılı kabul kriterleri ve bağımlılıklar iş listesinde verilmiştir.
+First, select a “reliable record” package with F01–F04 and F09. F05/F06/F07 should follow in the same reliability period. The AI verdict contract F12 should proceed with a separate measurement gate. Cache, monorepo and new distribution channels should be planned only once this foundation and the needs measurements are ready. Detailed acceptance criteria and dependencies are given in the work list.
