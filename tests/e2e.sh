@@ -424,6 +424,29 @@ echo 'requests==2.31.0' > "$VP/repo/requirements.txt"
     && ok "py-deps: mismatch warned" || no "py-deps: mismatch not warned" )
 cd "$TARGET" || exit 1
 
+echo "-- merge commits: what a merge brings in is reported; only what the merger adds blocks --"
+# Seen on a real repo: merging a 1389-commit dev branch staged all of it, and `protect --staged`
+# blocked the merger on content already pushed upstream (QA digests, UUIDs, test data). The block
+# protected nothing and pushed people toward SKIP_SECURITY=1.
+if docker_ok && have python3; then
+  MG="$(mktemp -d)"; MGG=(-c user.email=e2e@test -c user.name=e2e)
+  ( cd "$MG" && git init -q && git checkout -q -b main && mkdir -p tools/security-audit-kit \
+    && { if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ tools/security-audit-kit/; else cp -R "$KIT_SRC"/. tools/security-audit-kit/; fi; } \
+    && echo base > base.txt && git add base.txt && git "${MGG[@]}" commit -qm base \
+    && git checkout -q -b dev && AK=AKIA && printf 'aws_key = "%s1234567890ABCDEF"\n' "$AK" > from_dev.py \
+    && git add from_dev.py && git "${MGG[@]}" commit -qm dev && git checkout -q main \
+    && echo m > m.txt && git add m.txt && git "${MGG[@]}" commit -qm main \
+    && git "${MGG[@]}" merge -q --no-ff --no-commit dev ) >/dev/null 2>&1
+  MGO="$(cd "$MG" && bash tools/security-audit-kit/scan.sh staged 2>&1)"; MGRC=$?
+  [ "$MGRC" -eq 0 ] && grep -q 'came in with the merge of dev' <<<"$MGO" && grep -q 'from_dev.py' <<<"$MGO" \
+    && ok "merge: a finding that came in with the merged branch is reported, not blocking" || no "merge: incoming finding (rc=$MGRC): $(tail -4 <<<"$MGO")"
+  AK=AKIA; printf 'token = "%s0987654321ZYXWVU"\n' "$AK" > "$MG/own.py"; git -C "$MG" add own.py
+  MGO="$(cd "$MG" && bash tools/security-audit-kit/scan.sh staged 2>&1)"; MGRC=$?
+  [ "$MGRC" -eq 1 ] && grep -q 'own.py' <<<"$MGO" && grep -q 'from_dev.py' <<<"$MGO" \
+    && ok "merge: a secret the merger adds still blocks (the incoming one is still only reported)" || no "merge: own secret (rc=$MGRC): $(tail -4 <<<"$MGO")"
+  rm -rf "$MG"
+else skip "merge commits (needs docker + python3)"; fi
+
 echo "-- secret (gitleaks) + pre-commit gate --"
 if docker_ok; then
   $SCAN secret >/dev/null 2>&1 && ok "secret: clean repo passes" || no "secret: clean repo should pass"

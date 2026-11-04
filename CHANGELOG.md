@@ -68,6 +68,15 @@ All notable changes to this project are documented here. The format is based on
   4 starts with it; CI shellchecks it.
 
 ### Fixed
+- **A merge commit was blocked by secrets the merged branch already had.** `pre-commit` runs
+  `gitleaks protect --staged`, and a merge stages the whole other branch. On a real repo, merging a
+  1389-commit dev branch blocked on QA digests, UUIDs and test data that dev had carried for months.
+  The block protected nothing, since that content was already upstream, and pushed the merger
+  toward `SKIP_SECURITY=1`. Now, with `MERGE_HEAD` present:
+  - A finding whose line exists verbatim in the merged branch's version of the file is reported
+    ("came in with the merge of `<branch>`… triage them there") and does not block.
+  - A finding in a line neither side had blocks, as any commit's would.
+  - Without python3 the old behaviour stays (everything blocks), and the run says so.
 - **Worktrees could run no hooks at all, silently.** Worktrees share one git config. A
   `core.hooksPath` that points at a directory which does not exist (one worktree's copy of the kit,
   in a branch that lacks it) makes git skip every hook without a word. Found on a real repo with

@@ -448,10 +448,66 @@ scan_secret(){
 scan_secret_staged(){
   docker_ok || { dim_skip secret "no docker -> staged secret scan skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
+  # A merge stages the whole other branch. Blocking the merger on content already committed there
+  # protects nothing (it is upstream already) and teaches SKIP_SECURITY=1. Seen on a real repo: a
+  # 1389-commit merge blocked on QA digests and test data that dev had carried for months.
+  if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    if have python3; then scan_secret_merge "$cfg"; return $?; fi
+    warn secret "merge in progress, but no python3 to tell incoming lines from yours -> every staged finding blocks"
+  fi
   say secret "gitleaks protect --staged"
   # shellcheck disable=SC2086
   docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     protect --staged --source /repo $cfg --redact --exit-code 1 --verbose
+}
+
+# During a merge: a finding whose line exists verbatim in the merged branch's version of that file
+# came in with the merge. It is reported (triage it on that branch), but does not block. A finding
+# in a line neither side had (a conflict resolution, an edit made during the merge) is the merger's
+# own, and blocks as any commit would.
+scan_secret_merge(){
+  local cfg="$1" od="$RUN_DIR/merge-scan" OUTM=() rc from
+  from="$(git name-rev --name-only --exclude='tags/*' MERGE_HEAD 2>/dev/null || git rev-parse --short MERGE_HEAD)"
+  out_mount "$od"
+  say secret "gitleaks protect --staged (merge of $from in progress: what it brings in vs. what you add)"
+  # shellcheck disable=SC2086
+  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) "${OUTM[@]}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+    protect --staged --source /repo $cfg --redact --exit-code 0 --report-format json --report-path /out/staged.json >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$od/staged.json" ] || { rm -rf "$od"; dim_error secret "gitleaks exit $rc (staged scan of a merge failed)"; return 1; }
+  local lines own=0 inc=0
+  lines="$(python3 - "$od/staged.json" <<'PY'
+import json, subprocess, sys
+def lines(spec):
+    r = subprocess.run(["git", "show", spec], capture_output=True)
+    return r.stdout.decode("utf-8", "replace").splitlines() if r.returncode == 0 else []
+seen = {}
+for f in json.load(open(sys.argv[1])) or []:
+    path = f.get("File") or ""
+    path = path[len("/repo/"):] if path.startswith("/repo/") else path
+    n = int(f.get("StartLine") or 0)
+    if path not in seen:
+        seen[path] = (lines(":" + path), set(lines("MERGE_HEAD:" + path)))
+    staged, theirs = seen[path]
+    line = staged[n - 1] if 0 < n <= len(staged) else None
+    kind = "in" if line is not None and line in theirs else "own"
+    print(f"{kind}\t{path}:{n}\t{f.get('RuleID')}")
+PY
+)"
+  rm -rf "$od"
+  own="$(grep -c '^own' <<<"$lines" || true)"; inc="$(grep -c '^in' <<<"$lines" || true)"
+  if [ "$inc" -gt 0 ]; then
+    note secret "$inc finding(s) came in with the merge of $from — already in that branch, so not blocking here; triage them there (scan.sh secret on $from):"
+    grep '^in' <<<"$lines" | cut -f2,3 | sed 's/\t/  /; s/^/        /'
+  fi
+  if [ "$own" -gt 0 ]; then
+    printf '\033[31m[scan:secret] BLOCK: %s finding(s) in lines this merge adds (in neither branch before):\033[0m\n' "$own"
+    grep '^own' <<<"$lines" | cut -f2,3 | sed 's/\t/  /; s/^/        /'
+    dim_mark findings "$own in lines this merge adds; $inc came in with $from (reported only)"
+    return 1
+  fi
+  [ "$inc" -gt 0 ] && dim_mark findings "$inc came in with the merge of $from (already there; reported, not blocking)"
+  return 0
 }
 
 # The kit's own record (raw logs, SARIF, reports under docs/security/scan-findings) is output, not

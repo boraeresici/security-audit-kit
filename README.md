@@ -482,7 +482,10 @@ printed but does not change the scan's exit code.
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus
-  `scan.sh deps` when a dependency manifest is staged (both HARD).
+  `scan.sh deps` when a dependency manifest is staged (both HARD). **During a merge** the whole
+  other branch is staged. A secret in a line that branch already had is *reported*: it is already
+  upstream, so triage it there, and it does not block. Only a secret in a line the merge itself
+  adds (a conflict resolution, an edit made while merging) blocks.
 - **pre-push** — runs `scan.sh verify` (integrity, sub-second) and then `scan.sh all` (both HARD).
   Right before a PR. Verify runs first because a scan is only worth its exit code if the kit that
   produced it is the one you pinned.

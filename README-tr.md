@@ -470,7 +470,11 @@ taramanin sonundaki rapor hatasi ekrana yazilir ama taramanin cikis kodunu degis
 
 Otomatik tetik (install sonrasi):
 - **pre-commit** — her zaman saniye-alti staged-secret taramasi (`scan.sh staged`); ayrica
-  bagimlilik manifesti stage edilirse `scan.sh deps` (ikisi de HARD).
+  bagimlilik manifesti stage edilirse `scan.sh deps` (ikisi de HARD). **Merge sirasinda** karsi
+  branch'in tamami stage edilir. O branch'te zaten olan bir satirdaki secret *raporlanir*: zaten
+  upstream'de oldugu icin triyaji orada yapilir ve bloklamaz. Yalnizca merge'un kendisinin
+  ekledigi bir satirdaki secret (bir cakisma cozumu, merge sirasinda yapilan bir duzenleme)
+  bloklar.
 - **pre-push** — once `scan.sh verify` (butunluk, saniye-alti), sonra `scan.sh all` (ikisi de HARD).
   PR'dan hemen once. Verify once kosar: bir taramanin exit kodu, ancak onu ureten kit pinledigin
   kit ise anlamlidir.

@@ -198,6 +198,12 @@ Default, custom hooksPath and pre-commit framework fixtures must be prepared. Ex
   - `doctor` and every closing summary name a hooksPath that points at a missing directory.
 - **Tests:** 4 e2e checks; the kit-less worktree case reproduces the bug first.
 
+**Addendum 2 — 2026-11-04 (found by the plugin's triage on TMS, after the kit update):**
+- **What happened:** a merge commit stages the whole other branch, so `protect --staged` blocked the merger on content already upstream. On TMS, a 1389-commit dev branch blocked on QA digests, UUIDs and test data.
+- **The fix:** with `MERGE_HEAD` present, findings whose line exists verbatim in the merged branch's file are reported, not blocking ("triage them there"). Findings in lines the merge adds still block. Without python3 the old behaviour stays, and the run says so.
+- **Tests:** 2 e2e checks with real gitleaks and a real `git merge --no-commit`.
+- **Out of scope:** the repo's own false positives (digests, UUIDs) are fixed by narrow `.gitleaks.toml` entries in that repo, as the triage proposed.
+
 ### F11 — Kit threat model
 
 Data/privilege flows must be mapped for config, scanned code, scanner output, AI instructions, cache, vendor and external registries. It must be stated explicitly that the config is executable. A read-only source + separate writable artifact mount must be tested with at least gitleaks and trivy fixtures. If compatibility breaks, the migration cost must be recorded; an unverified risk must not be presented as an exploit.
