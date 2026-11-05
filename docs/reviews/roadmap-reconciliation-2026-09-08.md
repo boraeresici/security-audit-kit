@@ -4,6 +4,13 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-05 — directory review; `release` branch (F37); R17 deferred
+
+The directory took `af39eac` (main after the PRIVACY.md merge) as a new version and put it back in review: every merge to `main` was a new version, and the credential-word hold (R17) sends each one to a person. The portal fixes the repo and path per submission; only the tracked branch or tag can change, and not during a review. So:
+- **F37:** a `release` branch that only `release.sh final` moves, by fast-forward. Created at `af39eac` with ruleset `release-protection` (admin bypass, ff-only). Auto-publish is off. The user switches the tracked branch to `release` once the review ends; until then, PRs wait unmerged.
+- **R17** needs a new submission (the path is fixed), so it is deferred.
+- **F33b** follows F37 in v1.22.0.
+
 ## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
 
 The developer portal validated `main @ 7770088`: 7 checks passed, 16 warnings and 16 policy holds, all from the plugin root being the repo root (classification in the R17 card). The user decided to submit as is and leave the holds to the reviewer (A), and to move the plugin into its own folder later (B → R17, P2). The listing icon was the only real gap; the portal takes it once, at the first save, so `.claude-plugin/icon.png` (drawn by `scripts/make_icon.py`, checked by e2e) went to `main` before the submission.
