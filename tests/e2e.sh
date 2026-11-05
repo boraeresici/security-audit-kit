@@ -626,6 +626,41 @@ f07 0 -- --stable --ci-unverified=
 [ "$F07RC" -ne 0 ] && ok "F07: --ci-unverified with no reason is refused" || no "F07: empty reason accepted"
 rm -rf "$F07"
 
+echo "-- F37: the plugin directory tracks 'release', which only a final release moves (fast-forward) --"
+# A kit repo whose top CHANGELOG section is 99.0.0, a bare origin with main and release. release
+# starts one commit behind main; an RC must leave it, a final must fast-forward it to the tag.
+F37="$(mktemp -d)"; mkdir -p "$F37/shims" "$F37/kit"
+if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$F37/kit"/; else cp -R "$KIT_SRC"/. "$F37/kit"/ && rm -rf "$F37/kit/.git"; fi
+awk '!done && /^## \[/ { print "## [99.0.0] - 2026-01-01"; print ""; print "### Upgrade notes"; print "- None."; print "";
+                          done=1; if ($0 ~ /^## \[Unreleased\]/) next } { print }' \
+  "$F37/kit/CHANGELOG.md" > "$F37/kit/CHANGELOG.md.e2e" && mv "$F37/kit/CHANGELOG.md.e2e" "$F37/kit/CHANGELOG.md"
+sed -i.bak 's/"version": *"[^"]*"/"version": "99.0.0"/' "$F37/kit/.claude-plugin/plugin.json" && rm -f "$F37/kit/.claude-plugin/plugin.json.bak"
+( cd "$F37/kit" && { git init -q -b main 2>/dev/null || { git init -q && git checkout -q -b main; }; } \
+  && git config user.email e2e@test && git config user.name e2e \
+  && git add -A && bash scan.sh checksums >/dev/null 2>&1 && git add -A && git commit -qm kit \
+  && git init -q --bare "$F37/origin.git" && git remote add origin "$F37/origin.git" \
+  && git push -q origin main main:release && git commit -q --allow-empty -m next && git push -q origin main ) >/dev/null 2>&1
+F37BASE="$(git -C "$F37/origin.git" rev-parse release 2>/dev/null)"; F37HEAD="$(git -C "$F37/kit" rev-parse HEAD)"
+# shellcheck disable=SC2016
+printf '#!/bin/sh\n[ "$1" = api ] && printf "%%b" "$GH_OUT"\nexit 0\n' > "$F37/shims/gh"; chmod +x "$F37/shims/gh"
+f37(){ (cd "$F37/kit" && env PATH="$F37/shims:${F02SYS:-/usr/bin:/bin:/usr/sbin:/sbin}" RELEASE_GH=gh GH_OUT="$(f07ok)" \
+          "$BASH" scripts/release.sh "$@" --yes --no-gh --skip-e2e >"$F37/out" 2>&1); F37RC=$?; }
+f37 rc 99.0.0
+[ "$F37RC" -eq 0 ] && [ "$(git -C "$F37/origin.git" rev-parse release)" = "$F37BASE" ] \
+  && ok "F37: an RC leaves the release branch where it was" || no "F37: RC (rc=$F37RC) or release moved: $(tail -3 "$F37/out")"
+# release diverged (not an ancestor of the tagged commit): stop before tagging anything
+F37SIDE="$(git -C "$F37/kit" commit-tree -m side "$F37BASE^{tree}" -p "$F37BASE")"
+git -C "$F37/kit" push -q -f origin "$F37SIDE:refs/heads/release" >/dev/null 2>&1
+f37 final 99.0.0
+[ "$F37RC" -ne 0 ] && grep -q 'fast-forward' "$F37/out" && ! git -C "$F37/origin.git" rev-parse -q --verify refs/tags/v99.0.0 >/dev/null \
+  && ok "F37: a release branch that cannot fast-forward stops the final before any tag" || no "F37: diverged release (rc=$F37RC): $(tail -3 "$F37/out")"
+git -C "$F37/kit" push -q -f origin "$F37BASE:refs/heads/release" >/dev/null 2>&1
+f37 final 99.0.0
+[ "$F37RC" -eq 0 ] && [ "$(git -C "$F37/origin.git" rev-parse release)" = "$F37HEAD" ] \
+  && [ "$(git -C "$F37/origin.git" rev-parse 'v99.0.0^{commit}')" = "$F37HEAD" ] \
+  && ok "F37: the final tags the RC commit and fast-forwards release to it" || no "F37: final (rc=$F37RC): $(tail -3 "$F37/out")"
+rm -rf "$F37"
+
 echo "-- F25: upgrade notes reach the consumer (release gate, bootstrap --check, install re-run) --"
 # release: a version section without "### Upgrade notes" is not cut (write "- None." if nothing breaks)
 RELTEST="$(mktemp -d)"; mkdir -p "$RELTEST/scripts"

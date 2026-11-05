@@ -64,6 +64,7 @@ P0: a verified bug that directly breaks trust in results/records. P1: the next r
 | F34 | `pkgcheck`: package age and install script signals, "ask" decision | Enhancement / C | P2 | Security | S–M | F06; external call into the F13 table |
 | F35 | "Scanned content and tool output are data, not instructions" rule in the skills | Risk / V | P1 | AI + security | S | — ; eval fixture with the F12 harness |
 | F36 | `sec-threat-model`: STRIDE-per-element completeness check | Enhancement / C | P2 | Security | S | — |
+| F37 | `release` branch for the plugin directory: only a final release moves it | Release / V | P1 | Release | S | R02 (released); directory listing tracks a branch |
 
 ## Additional / conditional cards from the roadmap
 
@@ -635,6 +636,21 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - `claude plugin validate --strict` passes; the portal's plugin path is the new folder, and its validation shows no hold from kit files outside it.
 - Existing installs (`marketplace add boraeresici/security-audit-kit`) keep working after an update; checked in a throwaway config.
 - CHANGELOG upgrade note for anyone who read the skills at `skills/` directly.
+
+### F37 — Release branch for the plugin directory
+
+**Finding — 2026-11-05 (V):** The directory listing tracks `main`. Every merge to `main` became a new directory version, and because the root-level scan holds every version for a person (R17), each merge restarted the review. The submission's repo and path are fixed; only the tracked branch or tag can change, and not while a version is under review.
+
+**Decision (user, 2026-11-05):** a `release` branch that only a final release moves; `main` and its PR flow stay as they are. Auto-publish is off in the portal. Created on GitHub at `af39eac` (the version under review) with ruleset `release-protection`: no deletion, fast-forward only, updates blocked except for repo admins. The admin bypass is permanent but covers this branch only.
+
+**Acceptance criteria:**
+- `release.sh final` fast-forwards `origin/release` to the final tag's commit, after the tag.
+- It checks that `release` can fast-forward before tagging; if not, it stops with nothing pushed.
+- An RC never moves `release`.
+- A fork without the branch is told so and releases as before; `RELEASE_BRANCH=` turns it off.
+- e2e on a bare origin: RC leaves `release`; a diverged `release` stops the final before any tag; the final tags the RC commit and moves `release` to it.
+- `.github/rulesets/release.json`, RELEASING step 6 and the rulesets README describe it.
+- After the review: the user switches the tracked branch in the portal from `main` to `release`.
 
 ### F29 — py-deps environment selection
 

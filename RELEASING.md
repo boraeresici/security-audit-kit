@@ -137,6 +137,13 @@ gh release create ${VER} --latest \
 ```
 `--latest` blesses it as the stable release consumers pick up.
 
+`scripts/release.sh final` then fast-forwards the **`release` branch** to the tagged commit. The
+plugin directory tracks `release`, not `main`: merges to `main` between releases never become a
+directory version, and each release goes through the directory's checks once. The script checks
+that `release` can fast-forward **before** it tags anything; if someone moved it, the final stops
+with nothing pushed. A fork without a `release` branch is told so and releases as before
+(`RELEASE_BRANCH=` turns the step off). By hand: `git push origin ${VER}^{commit}:refs/heads/release`.
+
 ### 7. Consumers update on their own schedule
 `bootstrap.sh --check` offers them the newest **stable** release. An RC is offered only to someone
 who opted into the rc channel (`--check --channel=rc` / `KIT_CHANNEL=rc`), so cutting an RC never
@@ -177,6 +184,13 @@ gh api repos/OWNER/REPO/rulesets/$ID \
 ```
 If you drop a job instead, also drop it from `release.sh`'s gate: `RELEASE_REQUIRED_CHECKS`.
 Tags are not protected by default; only maintainers should push `v*` tags.
+
+For the `release` branch, [`.github/rulesets/release.json`](.github/rulesets/release.json): no
+deletion, fast-forward only, and only repo admins may update it (the admin bypass is how
+`release.sh final` moves it). The bypass does not skip fast-forward: `release` only moves forward.
+```sh
+gh api -X POST repos/OWNER/REPO/rulesets --input .github/rulesets/release.json
+```
 
 ## Hotfix
 For an urgent fix to the latest stable: branch from the stable tag, fix, PR to `main`, then run this
