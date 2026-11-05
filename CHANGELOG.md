@@ -93,6 +93,11 @@ All notable changes to this project are documented here. The format is based on
   knows, not the working tree's run debris), since the integrity check now counts every file.
 
 ### Added
+- `scripts/release.sh final` fast-forwards a `release` branch to the final tag. The plugin
+  directory tracks `release`, so merges to `main` between releases no longer become directory
+  versions. The final checks that `release` can fast-forward before it tags anything.
+  `.github/rulesets/release.json` protects the branch. Forks without it are told and release as
+  before; `RELEASE_BRANCH=` turns it off.
 - The plugin has a listing icon, `.claude-plugin/icon.png`: the banner's shield mark, drawn by
   `scripts/make_icon.py` with no dependencies. e2e checks its size and that the script redraws it.
 - `PRIVACY.md`: the privacy policy the plugin directory asks for. The kit and the plugin collect

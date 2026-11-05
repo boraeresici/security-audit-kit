@@ -73,6 +73,12 @@ The 2026-10-11 comparison (local note `docs/compare/cloudflare-security-audit-sk
 **Where the kit is ahead, checked in the clone:** upstream's four workflow files (`SKILL.md`, `RECONNAISSANCE.md`, `HUNTING.md`, `VALIDATION-AND-REPORTING.md`) have no rule that text in the reviewed repo is not an instruction (F35); the companion files were not searched for one. Upstream's tests cover the validators only; it has no measurement of the skill's decisions (F12). Neither point goes into public comparison text without a re-check at the time.
 
 **Open PRs touching the same tables:** #52 (F37) and #53 (F33b) were open when this was written; the priority table and this log will need a manual merge with whichever lands second.
+## 2026-11-05 — directory review; `release` branch (F37); R17 deferred
+
+The directory took `af39eac` (main after the PRIVACY.md merge) as a new version and put it back in review: every merge to `main` was a new version, and the credential-word hold (R17) sends each one to a person. The portal fixes the repo and path per submission; only the tracked branch or tag can change, and not during a review. So:
+- **F37:** a `release` branch that only `release.sh final` moves, by fast-forward. Created at `af39eac` with ruleset `release-protection` (admin bypass, ff-only). Auto-publish is off. The user switches the tracked branch to `release` once the review ends; until then, PRs wait unmerged.
+- **R17** needs a new submission (the path is fixed), so it is deferred.
+- **F33b** follows F37 in v1.22.0.
 
 ## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
 
