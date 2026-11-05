@@ -169,8 +169,15 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
   notes'u yazar, `bootstrap.sh <tag>`'i onerir. Pin ekibin kararidir; hook'lari ve CI'lari ayni
   surumu calistirir.
 
-Plugin hook tasimaz. Bir plugin'in hook'lari senin tum yetkilerinle calisirdi. Kitin git hook'lari
-`install.sh`'ten gelir; agent hook'u istege baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
+**Duzenleme kontrolu (plugin'in tek hook'u).** Ajan her Edit ya da Write yaptiginda plugin, repodaki
+vendor edilmis tarayiciyi yalnizca o dosyada calistirir (`scan.sh edit`, semgrep) ve yeni bulgulari
+ajanin baglamina ekler. Asla engellemez, tarama kaydi yazmaz. Temiz bir dosya hicbir sey eklemez.
+Kontrol edemedigi bir dosya (uvx yok, sure butcesi asildi, tarayici hatasi, vendor edilmis kit yok)
+**kontrol edilmedi** diye soylenir, asla temiz denmez. Her bulgu ve her sebep oturumda bir kez
+soylenir. Plugin hook'u da git hook'lari gibi senin yetkilerinle calisir; okunabilir bir script'tir:
+[`hooks/post-edit-check.sh`](hooks/post-edit-check.sh). Kapatmak icin `.security-audit.conf`'a
+`EDIT_CHECK=0`. Kitin git hook'lari yine `install.sh`'ten gelir; kurulum oncesi agent hook'u istege
+baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
 surum itibariyla herkese acik listelenmeden once kendi projelerin icin.
 
 ## Diger kurulum yollari

@@ -28,6 +28,7 @@ Three different things, kept apart:
 | `py-deps` (pip-audit) | yes | — | **package names and versions** of the environment, to PyPI's advisory API |
 | `py-deps` without a venv (osv-scanner) | yes | image only | **package names and versions** from the committed manifests, to osv.dev |
 | `js-deps` (npm / pnpm / yarn audit) | yes | — | the **dependency tree** (names and versions from the lockfile) to the package registry's audit endpoint |
+| `edit` (the plugin's hook, after each agent edit; semgrep on one file) | yes | `p/...` rule packs from the semgrep registry, each run | the **names of the rule packs** requested, as for `sast`. Source code: no |
 | `iac` (checkov) | yes | — | nothing. The kit sets no platform API key, so nothing is uploaded |
 | `container` (trivy) | yes | the vulnerability DB (ghcr.io), when older than `TRIVY_DB_MAX_AGE_H`. `SCAN_OFFLINE=1`: never | nothing |
 | `sbom` (syft) | yes | image only | nothing |

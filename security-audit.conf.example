@@ -100,6 +100,14 @@
 # PKGCHECK_CACHE=off        # or: refresh (re-scan now and replace the entry)
 # PKGCHECK_CACHE_TTL_MIN=1440
 
+# --- edit check: the plugin's PostToolUse hook (scan.sh edit) ---------------------------------
+# After each agent Edit/Write, one advisory semgrep pass on that file: never blocks, writes no record.
+# A clean file adds nothing to the agent's context; a file it could not check is said to be NOT
+# checked (once per session). The plugin has no per-hook switch, so this is it.
+# EDIT_CHECK=0
+# Time budget per file in seconds (max 55: the hook itself times out at 60). Slower -> "not checked".
+# EDIT_CHECK_TIMEOUT_SEC=30
+
 # --- run lock: one writer at a time for raw-<date>.log + the shared record ---------------------
 # A second run waits this many seconds for the lock, then scans anyway into its own
 # runs/<run-id>/ (the scan is never skipped for a lock; the shared record is left alone).

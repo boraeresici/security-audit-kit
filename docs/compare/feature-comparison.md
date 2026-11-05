@@ -3,7 +3,7 @@
 Two comparisons. First, the tools a developer actually chooses between inside a coding agent:
 security plugins for Claude Code. Second, the wider platforms (all-in-one SaaS, Semgrep).
 
-> **Last updated:** 2026-11-04 · kit **v1.21.0**
+> **Last updated:** 2026-11-05 · kit **v1.21.0**
 >
 > Plugin data was checked on 2026-11-04 against the plugins' own repositories and docs (sources under
 > the table). SaaS-platform and Semgrep data is taken from a SaaS vendor's own published comparison against Semgrep
@@ -20,7 +20,7 @@ below). "Not documented" means no statement was found either way.
 | Capability | Semgrep plugin | trailofbits static-analysis | security-audit-kit |
 |---|---|---|---|
 | Works without an account | ✗ needs a Semgrep account; 30-day trial, then a paid license | ✓ (optional Semgrep Pro) | ✓ |
-| Checks every file the agent writes | ✓ hooks on every write/edit; the agent fixes and it rescans | ✗ run on request | 🔜 planned (per-file advisory check, F33b); today git hooks gate every commit and push |
+| Checks every file the agent writes | ✓ hooks on every write/edit; the agent fixes and it rescans | ✗ run on request | ✓ advisory: the edited file gets one pinned-semgrep pass and new findings go to the agent; never blocks, no fix loop; git hooks gate every commit and push |
 | Gate outside the agent (git hooks / CI) | ✗ agent only; keep Semgrep in CI | Partial — scripts usable in CI | ✓ pre-commit + pre-push hooks, same `scan.sh` in CI |
 | SAST | ✓ Semgrep Code (hosted) | ✓ CodeQL + Semgrep with third-party rules, merged SARIF | ✓ semgrep (pinned), stack-aware packs, plus `/sec-sast-deep` for authz/IDOR and business logic |
 | Secrets | ✓ Semgrep Secrets | Partial — semgrep secret rulesets only | ✓ gitleaks: full history + staged |
@@ -41,8 +41,9 @@ below). "Not documented" means no statement was found either way.
 **Where they are stronger.** The Semgrep plugin checks every edit as the agent writes it and loops
 until the code comes back clean. It runs natively on Windows, and a team can manage it centrally.
 Trail of Bits' plugin brings CodeQL's interprocedural dataflow, a large set of third-party rules and
-generated models for project-specific sources and sinks. The kit's answer to per-edit checking is
-planned (F33b); until then it gates at commit and push.
+generated models for project-specific sources and sinks. The kit also checks each edited file, but
+only as advice: it does not loop the agent until the file is clean, and the gate stays at commit
+and push.
 
 **Sources (retrieved 2026-11-04):**
 - Semgrep plugin: github.com/semgrep/guardian (README, `plugin/hooks/hooks.json`, CHANGELOG) and
