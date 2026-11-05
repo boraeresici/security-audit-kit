@@ -79,6 +79,9 @@ The directory took `af39eac` (main after the PRIVACY.md merge) as a new version 
 - **F37:** a `release` branch that only `release.sh final` moves, by fast-forward. Created at `af39eac` with ruleset `release-protection` (admin bypass, ff-only). Auto-publish is off. The user switches the tracked branch to `release` once the review ends; until then, PRs wait unmerged.
 - **R17** needs a new submission (the path is fixed), so it is deferred.
 - **F33b** follows F37 in v1.22.0.
+## 2026-11-05 — F33b edit check implemented (unreleased)
+
+After each agent Edit/Write, the plugin's PostToolUse hook runs the repo's vendored `scan.sh edit` on that file: one pinned-semgrep pass, advisory, no record. Status and tests are in the F33 card. With it, the plugin carries a hook for the first time. PRIVACY.md, README en/tr, data-flow, threat model, usage and the comparison row were updated. The comparison row changed from "planned" to "advisory, no fix loop". It goes out in v1.22.0 with F37. Branch `feat/f33b-edit-check` is held unmerged until the directory review ends.
 
 ## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
 

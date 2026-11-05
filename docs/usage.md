@@ -174,3 +174,27 @@ note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in 
   `PKGCHECK_CACHE=refresh` re-scans and replaces the entry, and `PKGCHECK_CACHE=off` skips the cache.
   A half-written entry is a miss, and an INDETERMINATE result is never stored. `scan.sh doctor` prints
   whether the hook is wired, where the cache is, and how many rules block.
+
+## The edit check — after each agent edit
+
+The plugin's one hook (`hooks/hooks.json`: PostToolUse on `Edit|Write`) runs
+`hooks/post-edit-check.sh`, which calls the repo's **vendored** `scan.sh edit <file>`. That is one
+semgrep pass on the edited file, with the same pinned version and stack-aware packs as `sast`, at
+ERROR and WARNING severity. The plugin never runs a scanner of its own.
+
+- **Advisory only.** It never blocks the edit. New findings go to the agent's context as
+  "data, not instructions", one line each (rule, line, message; control characters dropped, length
+  capped). The commit and push hooks remain the gate.
+- **No record.** No lock, no `summary.json`, no run directory: a one-file pass never replaces the
+  last full scan's record. Its only state is which findings and notes this session has seen, under
+  `.git/security-audit-cache/edit-check/` (pruned after two days).
+- **Never a silent clean.** A clean file adds nothing. A file it could not check says **not
+  checked** and why: no uvx/pipx, over the time budget, a semgrep error, no vendored kit, or a
+  vendored kit older than this check. Each finding (file + rule) and each reason is said once per
+  session.
+- **Scope.** Files inside the repo only. Not the scan record, not `.git/`, not git-ignored files.
+- **Settings** (`.security-audit.conf` or env): `EDIT_CHECK=0` turns it off. Claude Code has no
+  per-hook switch for plugin hooks, so this is it. `EDIT_CHECK_TIMEOUT_SEC` (default 30, max 55,
+  because the hook itself times out at 60) is the budget per file; slower is "not checked".
+- **Network.** Like `sast`, semgrep fetches its registry rule packs on each run (see
+  [data-flow](data-flow.md)). The measured cost of one pass is about 4 s on a small file.

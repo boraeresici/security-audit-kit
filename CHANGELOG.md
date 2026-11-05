@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Upgrade notes
+- The plugin now carries one hook: after each agent Edit/Write it runs the repo's vendored
+  `scan.sh edit` on that file (advisory, never blocks). Plugin users get it on update; turn it off
+  with `EDIT_CHECK=0` in `.security-audit.conf`. It needs the vendored kit at this release or later;
+  with an older pin it says once per session that the file was not checked, and runs nothing.
+
 ### Security
 - **Hooks no longer run from the vendored tree (N1).** `core.hooksPath` pointed at
   `tools/security-audit-kit/hooks/`, a directory of the checked-out branch: a branch that added
@@ -59,6 +65,12 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- **Edit check (F33b):** `scan.sh edit <file>` and the plugin's PostToolUse hook
+  (`hooks/hooks.json`, `hooks/post-edit-check.sh`). One pinned-semgrep pass on the file the agent
+  just edited; new findings reach the agent as context ("data, not instructions"), each file + rule
+  once per session. It writes no record and takes no lock. A file it could not check (no uvx, over
+  `EDIT_CHECK_TIMEOUT_SEC`, a scanner error, no or an old vendored kit) is said to be not checked,
+  never clean; a clean file adds nothing. Settings: `EDIT_CHECK`, `EDIT_CHECK_TIMEOUT_SEC`.
 - checkov findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, checkov
   writes its JSON beside the SARIF files as well as its table in the log, and each failed check
   becomes a row with its file, line, resource and guideline. A check skipped with
