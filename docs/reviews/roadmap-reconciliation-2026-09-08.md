@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-05 — F33b edit check implemented (unreleased)
+
+After each agent Edit/Write, the plugin's PostToolUse hook runs the repo's vendored `scan.sh edit` on that file: one pinned-semgrep pass, advisory, no record. Status and tests are in the F33 card. With it, the plugin carries a hook for the first time. PRIVACY.md, README en/tr, data-flow, threat model, usage and the comparison row were updated. The comparison row changed from "planned" to "advisory, no fix loop". It goes out in v1.22.0 with F37. Branch `feat/f33b-edit-check` is held unmerged until the directory review ends.
+
 ## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
 
 The developer portal validated `main @ 7770088`: 7 checks passed, 16 warnings and 16 policy holds, all from the plugin root being the repo root (classification in the R17 card). The user decided to submit as is and leave the holds to the reviewer (A), and to move the plugin into its own folder later (B → R17, P2). The listing icon was the only real gap; the portal takes it once, at the first save, so `.claude-plugin/icon.png` (drawn by `scripts/make_icon.py`, checked by e2e) went to `main` before the submission.

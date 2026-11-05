@@ -200,9 +200,16 @@ conversation. In the VS Code extension, run **Developer: Reload Window** from th
   upgrade notes, and recommends `bootstrap.sh <tag>`. The pin is the team's decision, and their
   hooks and CI run the same version.
 
-The plugin ships no hooks. A plugin's hooks would run with your full permissions. The kit's git
-hooks come from `install.sh`, and its agent hook is opt-in (`--with-agent-hook`). The plugin
-channel is new: as of this version it is meant for your own projects, ahead of a public listing.
+**The edit check (the plugin's one hook).** After each agent Edit or Write, the plugin runs the
+repo's vendored scanner on that one file (`scan.sh edit`, semgrep) and adds new findings to the
+agent's context. It never blocks, and it writes no scan record. A clean file adds nothing. A file
+it could not check (no uvx, over its time budget, a scanner error, no vendored kit) is said to be
+**not checked**, never clean. Each finding and each reason is said once per session. A plugin hook
+runs with your permissions, like the git hooks: it is a readable script,
+[`hooks/post-edit-check.sh`](hooks/post-edit-check.sh). Turn it off with `EDIT_CHECK=0` in
+`.security-audit.conf`. Details: [docs/usage.md](docs/usage.md#the-edit-check--after-each-agent-edit).
+The kit's git hooks still come from `install.sh`, and its pre-install agent hook is opt-in
+(`--with-agent-hook`).
 
 ## Finding loop (end to end)
 

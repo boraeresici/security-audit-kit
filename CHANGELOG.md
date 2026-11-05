@@ -6,7 +6,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Upgrade notes
+- The plugin now carries one hook: after each agent Edit/Write it runs the repo's vendored
+  `scan.sh edit` on that file (advisory, never blocks). Plugin users get it on update; turn it off
+  with `EDIT_CHECK=0` in `.security-audit.conf`. It needs the vendored kit at this release or later;
+  with an older pin it says once per session that the file was not checked, and runs nothing.
+
 ### Added
+- **Edit check (F33b):** `scan.sh edit <file>` and the plugin's PostToolUse hook
+  (`hooks/hooks.json`, `hooks/post-edit-check.sh`). One pinned-semgrep pass on the file the agent
+  just edited; new findings reach the agent as context ("data, not instructions"), each file + rule
+  once per session. It writes no record and takes no lock. A file it could not check (no uvx, over
+  `EDIT_CHECK_TIMEOUT_SEC`, a scanner error, no or an old vendored kit) is said to be not checked,
+  never clean; a clean file adds nothing. Settings: `EDIT_CHECK`, `EDIT_CHECK_TIMEOUT_SEC`.
 - The plugin has a listing icon, `.claude-plugin/icon.png`: the banner's shield mark, drawn by
   `scripts/make_icon.py` with no dependencies. e2e checks its size and that the script redraws it.
 - `PRIVACY.md`: the privacy policy the plugin directory asks for. The kit and the plugin collect
