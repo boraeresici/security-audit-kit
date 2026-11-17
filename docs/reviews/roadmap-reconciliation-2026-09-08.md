@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — F40/F41 recon measured; not shipped
+
+Recon baseline hit@1 13/14, candidate 14/14, the difference coming from a distractor with a flaw of its own. With no measurable gain in verify or recon on `claude-opus-4-8`, F40/F41 text is held. Reopened by a non-ceiling backend (Codex hosts other models, F43) or flaw-free distractors.
+
 ## 2026-11-17 — F40/F41: verify is not the gap
 
 12 harder dev twins were added; the baseline got all of them right in three uncached runs. F40/F41 target recon recall, which the deep-review eval does not measure. Next: a recon eval (code in, candidates out) before any F40/F41 text ships.
