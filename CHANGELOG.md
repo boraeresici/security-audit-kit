@@ -37,6 +37,13 @@ All notable changes to this project are documented here. The format is based on
   first: on the 18 dev cases of the new deep-review eval it fixed one of two over-stated cases with
   no regression in three runs (`docs/skills.md`, "Severity of a judgment finding").
 
+### Documented
+- Measured with the pinned tools (`tests/fixtures/native/uvlock/`): trivy 0.58.0 does not read
+  `uv.lock`, so in a uv project the `container` dimension reports nothing about Python dependencies;
+  `py-deps` and `osv` cover them. The same advisory is `CVE-2021-33503` to trivy and
+  `PYSEC-2021-108` to osv-scanner and pip-audit, and `.trivyignore.yaml` matches trivy's own id
+  only, so a suppression copied from pip-audit's output into it suppresses nothing.
+
 ### Security
 - The judgment parser treats the model-written findings table as untrusted input. A row whose
   location is not a safe repo-relative path (absolute, `~`, drive letter, backslash, `.`/`..`
