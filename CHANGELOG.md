@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format is based on
   `codex plugin marketplace add` and `codex plugin add` (`docs/install.md`, "The skills in
   Codex"). e2e installs it in a throwaway `CODEX_HOME` and counts the five skills when `codex` is
   on PATH. Not yet: the agent hook for Codex and a Codex directory listing.
+- `docs/install.md` documents the Skills CLI (`npx skills add`) as a third install path, tried with
+  `skills@1.7.4`: pin the tag and the CLI version, and turn its telemetry off
+  (`DISABLE_TELEMETRY=1`); `docs/data-flow.md` has its row.
 
 ### Changed
 - Every skill answers a question without running its flow: asked about one finding or the method,
@@ -43,6 +46,11 @@ All notable changes to this project are documented here. The format is based on
   location.
 
 ### Fixed
+- `install.sh` no longer writes or deletes through a link. The Skills CLI (`npx skills add`) links
+  `.claude/skills/<name>` to `.agents/skills/<name>`; `--no-skills` and `--uninstall` used to delete
+  the `SKILL.md` behind the link, the copy Codex and other agents read, while reporting "removed the
+  kit's copy", and a plain install wrote over it. A linked skill folder is now left alone in every
+  mode, and the output says so.
 - A location such as `app.py:²`, or a line number of 5000 digits, no longer crashes
   `scan.sh evidence`. A findings file that is not UTF-8 is reported and skipped instead of raising;
   one that starts with a BOM is read. `path:line:column` keeps the line, not the column. A

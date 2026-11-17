@@ -35,6 +35,7 @@ Three different things, kept apart:
 | `guarddog` | yes | **every declared dependency's package** from PyPI / npm, to analyse it | the **list of your dependencies**, as download requests |
 | `pkgcheck` (and the opt-in agent hook) | yes | the named package from PyPI / npm | the **package name** being installed |
 | `zizmor` | yes, `--offline` | — | nothing |
+| Skills CLI (`npx skills add`, a third-party install path, not the kit) | yes | the CLI from npm, then the skill files from GitHub | by default, **anonymous usage telemetry** to the CLI's maintainer, including the repo and skill names for a public GitHub source, plus security-audit requests. `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` turns both off |
 | `verify`, `doctor`, `allowlist`, `evidence`, `report`, `rules-test` | yes | — | nothing |
 | HTML report (`REPORT=html`, `scan.sh report`) | yes | — | nothing: one self-contained file, no scripts, no external fetch, opens offline |
 | AI layer (`/sec-triage`, `/sec-audit`, other skills) | **no** | — | **what the agent reads**: source files, findings, config, scan output. It goes to the model provider your coding agent uses, under that provider's terms. The kit does not control this, and it is the largest flow by far |

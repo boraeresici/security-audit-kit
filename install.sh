@@ -62,9 +62,20 @@ fsum(){ cksum < "$1" | awk '{print $1"-"$2}'; }
 # install, identical to this kit's template, or identical to a RELEASED template: a copy an older kit
 # put there is recognised although this kit's template changed since (lib/released-skills.sums,
 # generated from the release tags by scripts/skill-sums.sh). Anything else is someone's edit: kept.
+# A link on the way to .claude/skills/<s>/SKILL.md means another tool installed it (the Skills CLI
+# links .claude/skills/<s> to .agents/skills/<s>): writing or deleting through it would change
+# that tool's copy, which other agents read.
+linked(){
+  local p
+  for p in "$ROOT/.claude" "$ROOT/.claude/skills" "$ROOT/.claude/skills/$1" "$ROOT/.claude/skills/$1/SKILL.md"; do
+    [ -L "$p" ] && return 0
+  done
+  return 1
+}
 kit_copy(){
   local s="$1" f="$ROOT/.claude/skills/$1/SKILL.md" sum
   [ -f "$f" ] || return 1
+  linked "$s" && return 1
   sum="$(fsum "$f")"
   [ "$sum" = "$(state_get "skill_$s")" ] && return 0
   [ -f "$KIT/skills/$s/SKILL.md" ] && [ "$sum" = "$(fsum "$KIT/skills/$s/SKILL.md")" ] && return 0
@@ -98,7 +109,9 @@ uninstall(){
   [ -d "$CHAIN_DIR" ] && rm -rf "$CHAIN_DIR" && ok "removed the hook wrappers (.git/security-audit-hooks)"
   for s in $SKILLS; do
     f="$ROOT/.claude/skills/$s/SKILL.md"; [ -f "$f" ] || continue
-    if kit_copy "$s"; then
+    if linked "$s"; then
+      miss "kept .claude/skills/$s — it is a link, so another tool installed it; not touched"
+    elif kit_copy "$s"; then
       rm -f "$f"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true; ok "removed .claude/skills/$s"
     else
       miss "kept .claude/skills/$s/SKILL.md — it was edited after install (delete it yourself if you want)"
@@ -243,7 +256,9 @@ if [ "$NO_SKILLS" = "1" ]; then
   # Copies a previous install left would load next to the plugin's: remove the kit's own, keep edits.
   for s in $SKILLS; do
     [ -f "$ROOT/.claude/skills/$s/SKILL.md" ] || continue
-    if kit_copy "$s"; then
+    if linked "$s"; then
+      miss "kept .claude/skills/$s — it is a link, so another tool installed it; not touched"
+    elif kit_copy "$s"; then
       rm -f "$ROOT/.claude/skills/$s/SKILL.md"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true
       state_del "skill_$s"; ok "removed .claude/skills/$s (the kit's copy; the plugin provides it)"
     else
@@ -256,23 +271,24 @@ else
   state_set skills_mode copy
   # Source templates live in the kit under skills/; they are installed into the TARGET
   # repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
-  mkdir -p "$ROOT/.claude/skills/sec-triage"
-  cp "$KIT/skills/sec-triage/SKILL.md" "$ROOT/.claude/skills/sec-triage/SKILL.md"
-  ok ".claude/skills/sec-triage/SKILL.md (finding triage)"
-  mkdir -p "$ROOT/.claude/skills/sec-sast-deep"
-  cp "$KIT/skills/sec-sast-deep/SKILL.md" "$ROOT/.claude/skills/sec-sast-deep/SKILL.md"
-  ok ".claude/skills/sec-sast-deep/SKILL.md (semantic SAST: authz/IDOR/logic)"
-  mkdir -p "$ROOT/.claude/skills/sec-ai-review"
-  cp "$KIT/skills/sec-ai-review/SKILL.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
-  ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
-  mkdir -p "$ROOT/.claude/skills/sec-threat-model"
-  cp "$KIT/skills/sec-threat-model/SKILL.md" "$ROOT/.claude/skills/sec-threat-model/SKILL.md"
-  ok ".claude/skills/sec-threat-model/SKILL.md (STRIDE + data-flow threat modeling)"
-  mkdir -p "$ROOT/.claude/skills/sec-audit"
-  cp "$KIT/skills/sec-audit/SKILL.md" "$ROOT/.claude/skills/sec-audit/SKILL.md"
-  ok ".claude/skills/sec-audit/SKILL.md (one-command orchestrator: scan + triage + signal-gated deep)"
+  for s in $SKILLS; do
+    if linked "$s"; then
+      miss ".claude/skills/$s is a link (another tool installed it) -> not overwritten"; continue
+    fi
+    mkdir -p "$ROOT/.claude/skills/$s"
+    cp "$KIT/skills/$s/SKILL.md" "$ROOT/.claude/skills/$s/SKILL.md"
+    case "$s" in
+      sec-triage)       what="finding triage" ;;
+      sec-sast-deep)    what="semantic SAST: authz/IDOR/logic" ;;
+      sec-ai-review)    what="AI/LLM security: prompt injection/agency" ;;
+      sec-threat-model) what="STRIDE + data-flow threat modeling" ;;
+      sec-audit)        what="one-command orchestrator: scan + triage + signal-gated deep" ;;
+      *)                what="" ;;
+    esac
+    ok ".claude/skills/$s/SKILL.md${what:+ ($what)}"
+    state_set "skill_$s" "$(fsum "$ROOT/.claude/skills/$s/SKILL.md")"
+  done
   mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
-  for s in $SKILLS; do state_set "skill_$s" "$(fsum "$ROOT/.claude/skills/$s/SKILL.md")"; done
 fi
 
 echo "== agent hook (pre-install package check) =="

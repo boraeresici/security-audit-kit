@@ -1,6 +1,6 @@
 # Install, update and platforms
 
-Other install paths, making the skills visible, the skills in Codex, the pre-commit framework, updates, reachability, platform notes and requirements. Start with the [README](../README.md).
+Other install paths, making the skills visible, the skills in Codex, the Skills CLI, the pre-commit framework, updates, reachability, platform notes and requirements. Start with the [README](../README.md).
 
 ## Other ways to install
 
@@ -83,6 +83,29 @@ scanner and never download one, so vendor it too (`bash bootstrap.sh <tag> --no-
 What is not there yet: `install.sh --with-agent-hook` wires the package pre-install check for
 Claude Code only, and the kit is not listed in the Codex plugin directory. Codex copies the whole
 repo into its plugin cache, not just the skills, until the plugin moves into its own folder.
+
+## The skills with the Skills CLI
+
+The [Skills CLI](https://github.com/vercel-labs/skills) (`npx skills`) installs `SKILL.md` folders
+for many agents at once, Claude Code and Codex among them. It is a third-party tool, not part of
+the kit. Tried with `skills@1.7.4`:
+
+```bash
+DISABLE_TELEMETRY=1 npx -y skills@1.7.4 add boraeresici/security-audit-kit#v1.21.0 -s '*' -a claude-code -a codex
+```
+
+- **Pin both.** `#v1.21.0` pins the skills; `skills-lock.json` records that ref and a hash per
+  skill. `skills@1.7.4` pins the CLI: `npx skills` alone runs its newest release, which may be days
+  old.
+- **Telemetry is on by default.** The CLI reports installs, with the repo and skill names for a
+  public GitHub source. `DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`) turns it off; see
+  [data flow](data-flow.md).
+- **Where the files go.** Each skill is copied to `.agents/skills/<name>/` and linked from
+  `.claude/skills/<name>`. With `-a '*'` it also creates folders for every agent it knows, including
+  an `agent/skills/` folder at the repo root; name the agents you use instead.
+- **Only the skills.** The scanner is not installed, and the skills say so when it is missing, as
+  with the plugin. Vendor it with `bash bootstrap.sh <tag> --no-skills`. `install.sh` leaves skill
+  folders that are links alone in every mode: it neither overwrites nor removes them.
 
 ## Using the pre-commit framework (alternative to the kit's own hooks)
 

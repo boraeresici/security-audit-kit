@@ -1516,6 +1516,25 @@ rm -rf "$TNS/.claude/skills/sec-triage"
 (cd "$TNS" && bash tools/security-audit-kit/install.sh --with-skills) >/dev/null 2>&1
 [ -f "$TNS/.claude/skills/sec-audit/SKILL.md" ] && ok "R02: --with-skills copies them again" || no "R02: --with-skills"
 rm -rf "$TNS"
+# R18: the Skills CLI installs into .agents/skills/<s> and links .claude/skills/<s> to it. install.sh
+# used to delete (and overwrite) through that link, removing the copy other agents read.
+for R18M in --no-skills "" --uninstall; do
+  R18T="$(mktemp -d)"; git -C "$R18T" init -q; mkdir -p "$R18T/tools" "$R18T/.agents/skills" "$R18T/.claude/skills"
+  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$R18T/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$R18T/tools/security-audit-kit"/; fi
+  for s in $R02D; do
+    mkdir -p "$R18T/.agents/skills/$s"; cp "$KIT_SRC/skills/$s/SKILL.md" "$R18T/.agents/skills/$s/"
+    ln -s "../../.agents/skills/$s" "$R18T/.claude/skills/$s"
+  done
+  R18B="$(cat "$R18T"/.agents/skills/*/SKILL.md | cksum)"
+  [ "$R18M" = --uninstall ] && (cd "$R18T" && bash tools/security-audit-kit/install.sh) >/dev/null 2>&1
+  R18O="$(cd "$R18T" && bash tools/security-audit-kit/install.sh $R18M 2>&1)"
+  [ "$(cat "$R18T"/.agents/skills/*/SKILL.md 2>/dev/null | cksum)" = "$R18B" ] \
+    && [ "$(find "$R18T/.claude/skills" -maxdepth 1 -type l | wc -l | tr -d ' ')" = "$F35T" ] \
+    && grep -q 'another tool installed it' <<<"$R18O" \
+    && ok "R18: install.sh ${R18M:-(default)} leaves skills another tool linked in place, and says so" \
+    || no "R18: install.sh ${R18M:-(default)} changed a linked skill install"
+  rm -rf "$R18T"
+done
 # every skill has at least one released template on record (else an old copy could not be told apart)
 R02R=""; for d in $R02D; do grep -q "^$d " "$KIT_SRC/lib/released-skills.sums" 2>/dev/null || R02R="$R02R $d"; done
 [ -z "$R02R" ] && ok "R02: lib/released-skills.sums covers every skill" || no "R02: RELEASED.sums lacks:$R02R"

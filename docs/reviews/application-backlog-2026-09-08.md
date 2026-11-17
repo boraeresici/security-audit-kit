@@ -899,6 +899,12 @@ The baseline already saw both smaller flaws (ReDoS, a client-only quota) and cal
 
 **Decision after the trial:** document it in `docs/install.md` as a third path, or record why not. The CLI is a third-party tool that downloads from GitHub: if documented, it gets a row in `docs/data-flow.md`. Not a release gate. F38 goes first.
 
+**Trial — 2026-11-17 (`feat/r18-skills-cli`):** `skills@1.7.4` (2026-10-19; 1.9.0 was a day old, so not used), installed into a throwaway directory with `--ignore-scripts` and run with `HOME` redirected and `DISABLE_TELEMETRY=1`. `pkgcheck`: `skills@1.7.4` clean; `tar@7.5.23` (6 days old) shows filesystem and network capabilities, expected for an archiver. Results: `#v1.21.0` and `/tree/v1.21.0` both pin; all five skills found and byte-identical to the tag; only `SKILL.md` copied; `skills-lock.json` records the ref and a hash per skill. Copies go to `.agents/skills/<name>`, `.claude/skills/<name>` is a link to them, and `-a '*'` also creates `agent/skills/` at the repo root. Telemetry is on by default (repo and skill names for public GitHub sources, plus security-audit requests). Not tried: `skills update` (whether it moves past the pinned ref) and a skill session without the scanner.
+
+**Bug found:** `install.sh --no-skills` and `--uninstall` deleted the `SKILL.md` behind each link (the copy in `.agents/skills`, which Codex and others read) while printing "removed the kit's copy"; a plain install wrote through the link. Fixed: a linked skill folder is left alone in every mode; e2e covers the three modes.
+
+**Decision:** documented in `docs/install.md` as a third path, with the tag and CLI version pinned and telemetry off; a row in `docs/data-flow.md`.
+
 ### F43 — Codex as a second plugin host
 
 **Record — 2026-11-17:** tried with `codex-cli 0.145.0` in a throwaway `CODEX_HOME`, on a clone of `791f18c`, with no change to the repo:
