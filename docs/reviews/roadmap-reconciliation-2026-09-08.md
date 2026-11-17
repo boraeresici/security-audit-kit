@@ -4,6 +4,25 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — Cloudflare skill re-read from a clone; F38–F42 and R18
+
+The 2026-10-11 comparison (local note `docs/compare/cloudflare-security-audit-skill.local.md`) read upstream's documents on the web. On the user's request the repo was cloned and read in full at `c1c8a8c`, including `validate-findings.cjs`, `validate-coverage-ledger.cjs` and their tests, against `main @ af39eac` (v1.21.0, plugin released). Upstream has no commit after 2026-09-14. Nothing was installed or run, and upstream's tests were not executed.
+
+**What did not change:** the first round's conclusion. The two projects share the judgment principles (an evidence chain from entry to sink, disprove by default, a missing second layer is not a finding, a clean pass is not proof) and share no code: upstream has no scanner, hook, installer or CI, only skill text, a JSON schema and two validators. F27, F28 and R14 stand. Still not taken: executing target code in a sandbox, multi-wave agent orchestration as the default, JSON as the write source, the native/kernel domain.
+
+**What the first round did not cover, now cards (slot 8e):**
+
+- **F38** answer-only mode: a skill loaded for a question writes nothing. From upstream's last commit; matters more now that the plugin loads skills by description.
+- **F39** severity anchors for judgment findings, capped by the impact the evidence shows.
+- **F40** six classes `sec-ai-review` does not name: memory poisoning, context bleed, provenance confusion, approval binding, tool schema vs dispatcher, MCP tool identity.
+- **F41** `sec-sast-deep`: every route to a state change compared for an equal guard; a feature-abuse class (export, import, search oracle, enumeration). First slice of R14.
+- **F42** the judgment parser accepts any path from the findings table (`lib/evidence.py:196`) and passes it to SARIF (`lib/kit_sarif.py:77`). A code-read finding; first slice of the F19b validator.
+- **R18** trial: the kit's `skills/<name>/SKILL.md` layout is what `npx skills add` expects.
+
+**Where the kit is ahead, checked in the clone:** upstream's four workflow files (`SKILL.md`, `RECONNAISSANCE.md`, `HUNTING.md`, `VALIDATION-AND-REPORTING.md`) have no rule that text in the reviewed repo is not an instruction (F35); the companion files were not searched for one. Upstream's tests cover the validators only; it has no measurement of the skill's decisions (F12). Neither point goes into public comparison text without a re-check at the time.
+
+**Open PRs touching the same tables:** #52 (F37) and #53 (F33b) were open when this was written; the priority table and this log will need a manual merge with whichever lands second.
+
 ## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
 
 The developer portal validated `main @ 7770088`: 7 checks passed, 16 warnings and 16 policy holds, all from the plugin root being the repo root (classification in the R17 card). The user decided to submit as is and leave the holds to the reviewer (A), and to move the plugin into its own folder later (B → R17, P2). The listing icon was the only real gap; the portal takes it once, at the first save, so `.claude-plugin/icon.png` (drawn by `scripts/make_icon.py`, checked by e2e) went to `main` before the submission.

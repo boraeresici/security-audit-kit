@@ -22,6 +22,8 @@ Source: [2026-09-08 multi-role evaluation](application-review-2026-09-08.md). Lo
 
 **Update — 2026-11-03 (dimension registry; classic security tool review):** At the user's request, the first slice of **F17** was taken ahead of its slot (13) and implemented on `dev/plugin-readiness`. `scan.sh` dispatch now reads a dimension registry, and the adapter contract is documented in `docs/adapters.md`. Behavior is unchanged: before and after runs were compared over every scan command and five toolchain scenarios, 75 cases with 0 differences. Separately, 15 classic security tools (Nmap, Metasploit, OpenVAS, SQLmap, commercial web proxies and OSINT suites, and others) and the agentic pentest tools Strix and PentAGI were reviewed. None of them becomes a dimension. **R16** was added as a conditional card: an optional external dynamic adapter, with nuclei as the reference. **F36** got a detection/monitoring addendum. The weak-password idea needs no card, because the local-rules mechanism (old plan #14) already exists. **UI track (user decision):** R13 moves from conditional to planned, in slot 8a as F26 → F19a → R13a → R13b → R13c. The UI is `scan.sh ui`, a thin client over the CLI built on the Python standard library. It starts read-only, then adds running a dimension and approving time-bound allowlist entries through the CLI. The gate stays in the CLI. F19a moves up from slot 9, because the UI needs stable finding identity. The agreed order to the plugin did not change.
 
+**Update — 2026-11-17 (Cloudflare skill re-read from a clone):** The 2026-10-11 comparison read the upstream documents on the web. This round read a local clone at `c1c8a8c` (still upstream `main`; no commit since 2026-09-14), including the two validators' code, against `main @ af39eac` (v1.21.0). F27, F28 and R14 stand as written. Five small cards and one trial were added for what the first round did not cover: **F38** answer-only mode in the skills, **F39** severity anchors for judgment findings, **F40** six missing classes in `sec-ai-review`, **F41** sibling-path equivalence and a feature-abuse class in `sec-sast-deep`, **F42** path and text checks in the judgment parser, and **R18** a trial of the `npx skills add` install channel. Order: slot 8e. Nothing was installed or run; these are plan changes, not implemented. Details: local note `docs/compare/cloudflare-security-audit-skill.local.md` (2026-11-17 addendum).
+
 P0: a verified bug that directly breaks trust in results/records. P1: the next reliability and usability package. P2: improvement driven by measurement and demand. The P0 label is not CVSS or exploit severity. Effort: S ≈ 0.5–2, M ≈ 3–5, L ≈ 6–10 engineer-days; a rough estimate including tests and docs, not a schedule commitment.
 
 ## Priority table
@@ -64,6 +66,11 @@ P0: a verified bug that directly breaks trust in results/records. P1: the next r
 | F34 | `pkgcheck`: package age and install script signals, "ask" decision | Enhancement / C | P2 | Security | S–M | F06; external call into the F13 table |
 | F35 | "Scanned content and tool output are data, not instructions" rule in the skills | Risk / V | P1 | AI + security | S | — ; eval fixture with the F12 harness |
 | F36 | `sec-threat-model`: STRIDE-per-element completeness check | Enhancement / C | P2 | Security | S | — |
+| F38 | Skills: a question or a focused look gets an answer, not a full run or files | UX + risk / C | P1 | AI + DX | S | — ; e2e guard as in F35 |
+| F39 | Severity anchors for judgment findings; severity capped by the shown impact | Enhancement / C | P2 | AI + security | S | F12 dev cases; the UNCERTAIN part with F12c/F19 |
+| F40 | `sec-ai-review`: memory, context scope, provenance, approval binding, tool schema, MCP identity | Enhancement / C | P2 | AI + security | S–M | F12 dev cases (one REAL/FP pair per class) |
+| F41 | `sec-sast-deep`: sibling paths compared for equivalence; feature-abuse class | Enhancement / C | P2 | AI + security | S–M | F12 dev cases; first slice of R14 |
+| F42 | Judgment parser: safe repo-relative paths and text limits before SARIF/HTML | Risk / C | P2 | Data + security | S | — ; first slice of the F19b validator |
 
 ## Additional / conditional cards from the roadmap
 
@@ -88,6 +95,7 @@ This table does not repeat the F items above. “Conditional” items are not ta
 | R15 | New vulnerability tracking, event output and agent access | Note / conditional | Security + integration | a: S; b: S–M; c: M–L; d: M | a: none; b: F01; c: F03, F19; d: c, F11, F13; real consumer demand |
 | R16 | Optional external dynamic adapter (nuclei reference) | Conditional | Security + integration | M | F17 registry (done), F16b normalizer; real consumer request for a live-target check |
 | R17 | The plugin in its own folder, so the directory scan sees only the plugin | P2 (2026-11-04) | Release + DX | M | R02 (released); the first directory review's outcome |
+| R18 | `npx skills add` as a second install channel for the skills | Trial (2026-11-17) | DX + release | S | R02 (released); F38 first, so a skill installed without the scanner stays quiet on a question |
 
 ## Work cards / acceptance criteria
 
@@ -778,6 +786,94 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - The "would anyone notice?" question goes into the T and R cells of processes and data stores, with no product recommendation.
 - Earlier dated models are not rewritten. Not merged with F27.
 
+### F38 — Answer-only mode in the skills
+
+**Source — 2026-11-17 (C):** Cloudflare re-read (local note `docs/compare/cloudflare-security-audit-skill.local.md`). Upstream's last commit `c1c8a8c` ("Clarify guidance and full audit modes") adds an "Operating modes" section: loading the skill does not authorize the full workflow or file creation; a question or a focused review uses only the relevant part and writes nothing; an ambiguous request gets one question first ([`SKILL.md:10-17`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/SKILL.md#L10-L17)).
+
+**Gap in the kit:** the plugin loads a skill from its `description` (`skills/*/SKILL.md:3`). `sec-triage` then scans, writes `findings-<TODAY>.md`, writes allowlist entries and applies patches (steps 4–6). `sec-audit` announces deep passes before running them (`Transparency contract`), but no skill says what to do when the user only asked a question, such as "is this semgrep finding real?" or "how does the confidence gate work?".
+
+**Acceptance criteria:**
+
+- One short, identical section in all five skills: a security question, a methodology question or a look at one named finding is answered in the conversation with the skill's evidence bar; no scan is started, and no findings file, allowlist entry, exclusion or patch is written. The full flow runs when the user asks for a scan, triage, audit or review of the repo, or asks for the record. If the request can mean either, ask once.
+- The answer still says which evidence it rests on (sink, source, path) and that nothing was recorded.
+- e2e guards that the section exists and is identical in all five skills, as it does for the F35 rule.
+- `docs/skills.md` describes the two modes. The skill `description` lines are reviewed so that they do not promise a write on every load.
+- The text is written independently; the idea is credited in the skill as the other inspirations are.
+
+### F39 — Severity anchors for judgment findings
+
+**Source — 2026-11-17 (C):** Cloudflare re-read. Upstream separates priority from certainty ([`SKILL.md:150-162`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/SKILL.md#L150-L162)): anchors for critical/high/medium/low/informational, a high/medium question ("does the shown result fully defeat an explicit control, or only weaken it?"), and two rules its validator enforces: overall severity cannot exceed the demonstrated impact, and an unresolved record carries no severity ([`validate-findings.cjs:556-567`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/validate-findings.cjs#L556-L567)).
+
+**Gap in the kit:** `sec-sast-deep` and `sec-ai-review` ask for a severity per finding (`skills/sec-sast-deep/SKILL.md:187`, `skills/sec-ai-review/SKILL.md:142`) and say "severity ranks, never decides", but give no scale. A scanner finding has the tool's severity; a judgment finding has only the model's word. `docs/schema/evidence.md` rule 2 already keeps CVSS off judgment findings; this card gives the bucket a meaning.
+
+**Acceptance criteria:**
+
+- A short anchor table shared by `sec-sast-deep`, `sec-ai-review` and the whole-repo mode of `sec-audit`, tied to who the actor is and what the path in the evidence chain actually reaches. The severity of a REAL may not exceed the impact its evidence chain shows.
+- A scanner finding keeps the tool's severity (`severity_source`); the anchors apply to judgment findings only.
+- F12 dev cases: one over-stated impact (a crash called code execution) and one same-principal action called privilege gain; expected severity is checked, not only the decision.
+- Whether UNCERTAIN carries a severity at all is decided with F12c/F19, not here.
+- Skill text is written independently. No calibration claim is made without an F12 run.
+
+### F40 — `sec-ai-review`: six classes it does not name
+
+**Source — 2026-11-17 (C):** Cloudflare re-read, [`AI-AND-LLM.md`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/AI-AND-LLM.md) at `c1c8a8c`. The kit's skill follows the OWASP LLM ids (`skills/sec-ai-review/SKILL.md:75-113`); memory and MCP output appear only in the surface list (`:115-120`), and the "known attack classes" are jailbreak families (`:122-126`), not code-level defects.
+
+**Classes to add, each as an "A flaw / Not a flaw" pair:**
+
+| Class | What the code gets wrong | Upstream |
+|---|---|---|
+| Persistent memory poisoning | low-trust content or a model summary is written to memory that later steers another task, user or privileged session | `AI-AND-LLM.md:28` |
+| Cross-session / cross-tenant context bleed | history, embeddings, retrieval or a prompt cache keyed too broadly; the tenant filter is missing from the query or the cache key | `:25` |
+| Role and provenance confusion | prompt assembly lets untrusted text pass as a system message, tool result or prior turn (string concatenation, caller-set role field) | `:31` |
+| Approval binding | the action that runs is not the action the user approved (arguments change after the approval) | `:42` |
+| Tool schema vs dispatcher | the handler accepts what the schema forbids, or trusts schema validation as authorization | `:45` |
+| MCP tool identity | two servers or tools share a name; tool metadata is treated as policy | `:56`, `:59` |
+
+**Acceptance criteria:**
+
+- The six pairs are in the skill, each mapped to its OWASP LLM id where one fits, so the record format (`OWASP-LLM id` column) does not change.
+- Two framing rules are added ([`AI-AND-LLM.md:12-16`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/AI-AND-LLM.md#L12-L16)): prompt injection alone is not a finding without a code-level boundary failure; authorization and action binding are separate controls. The first is expected to lower FPs.
+- F12 dev cases: one REAL and one FP twin per class; the holdout is not touched.
+- The signal in `sec-audit` step 3 gains memory/vector-store and MCP-server terms.
+- Upstream is MIT (`LICENSE`, Cloudflare, Inc.); the text is written independently and credited in the skill header as the existing inspirations are.
+
+### F41 — `sec-sast-deep`: sibling paths and feature abuse
+
+**Source — 2026-11-17 (C):** Cloudflare re-read. Two things in upstream's hunting text have no counterpart in the kit:
+
+- **Sibling paths, compared for equivalence.** "Read sibling, legacy, batch, retry, cancellation, migration, and error paths that produce the same effect. Compare sibling controls for equivalence, not only presence" ([`HUNTING.md:37-41`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/HUNTING.md#L37-L41)). The kit's Class 2 has one such case (GET checked, POST not; `skills/sec-sast-deep/SKILL.md:98`) and the bonus pass looks for siblings of a past fix (`:151-159`), but Phase 1 does not ask for the other routes to the same state change.
+- **Feature abuse and data leakage** ([`ATTACK-CLASSES.md:74-79`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/ATTACK-CLASSES.md#L74-L79)): export or backup returning more than the caller may read, import or restore writing past validation, search/filter/sort as an existence oracle, and enumeration through different errors, timings or status codes.
+
+**Acceptance criteria:**
+
+- Phase 1 lists, per sensitive state change, every route to it (bulk, import, legacy version, retry, admin tool, background job). Classes 1 and 2 compare the guard on each route with the known-correct pattern; a weaker guard on one route is a candidate.
+- A fifth class, feature abuse, with "A flaw / Not a flaw" pairs. Not a flaw: a per-item permission check inside the export, a uniform not-found response, a search limited to the actor's scope.
+- The evidence bar does not change: sink `file:line`, untrusted source or actor, unbroken path, confidence ≥ 0.7.
+- F12 dev cases: one REAL and one FP twin for an unequal sibling guard and for an export that leaks.
+- This is the first slice of R14 and does not wait for its trigger; the other domains (HTTP framing, RPC, mobile/IPC, native) stay in R14.
+
+### F42 — Judgment parser: safe paths and text limits
+
+**Finding — 2026-11-17 (C):** `parse_location` takes the location cell of the model-written findings table as it is (`lib/evidence.py:196`): an absolute path, a `..` segment, a backslash path or a control character is accepted. The value goes into `evidence.json` and from there into the SARIF `artifactLocation.uri` (`lib/kit_sarif.py:77`), which is uploaded to GitHub Code Scanning. `lib/report_html.py:95` escapes HTML, so the report is not an injection path; bidirectional and control characters still pass through. The table is written by a model that read the scanned repo, so its cells are not trusted input (F35 is a rule the model is asked to follow, not a control). No exploit was built; this is a code-read finding.
+
+**Reference:** upstream's findings validator at `c1c8a8c`: `isSafeRelativeSourcePath` ([`validate-findings.cjs:473-483`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/validate-findings.cjs#L473-L483)), escaped diagnostics (`:60-84`), input limits (`:42-49`), duplicate-identity and positive-line checks (`:493-517`).
+
+**Acceptance criteria:**
+
+- A judgment row is kept only if its path is repo-relative with no empty, `.` or `..` segment, no leading `/`, `~` or drive letter, no backslash and no control, format or line-separator character, and its line is a positive integer. A rejected row is dropped with a line in `warnings`, as an unparseable row is today; nothing is dropped silently.
+- Free-text cells (`Why`, `Action`, `Untrusted source`) have control and bidirectional characters removed or escaped before they reach `evidence.json`, `kit.sarif` and the HTML report, and have a length limit. The findings file has a size limit; over it, the judgment layer is skipped with a warning.
+- Unit tests in `tests/unit/test_evidence.py` for each rejected shape and for a normal row that must still pass. Byte-identical output for existing fixtures.
+- Written in the kit's Python; no Node dependency is added and no upstream code is copied. If code is taken later, the MIT notice is kept.
+- F19b keeps the rest of the validator (verdict-specific fields, root-cause identity, migration). This card does not change the schema version.
+
+### R18 — `npx skills add` as a second install channel (trial)
+
+**Record — 2026-11-17:** Upstream is not a Claude Code plugin; it installs with the Skills CLI ([`README.md:54-63`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/README.md#L54-L63)), and moved its files to `skills/<name>/SKILL.md` for that reason (upstream commit `75be8dd`). The kit already has that layout. The skills say what to do when the scanner is not vendored ("do not download, clone or install anything … state that the deterministic scan did not run"), so a skills-only install is a supported state since R02.
+
+**Trial, before any documentation:** in a throwaway directory and config, install the five skills with the CLI from a tag, and check: all five are found, the frontmatter is accepted, a skill runs in a repo without the vendored scanner and reports that, and no file outside the skills is copied. Record which agents the CLI installs to and whether it pins a version; a channel that follows `main` conflicts with the pinned-version promise and with `lib/released-skills.sums`.
+
+**Decision after the trial:** document it in `docs/install.md` as a third path, or record why not. The CLI is a third-party tool that downloads from GitHub: if documented, it gets a row in `docs/data-flow.md`. Not a release gate. F38 goes first.
+
 ## Current delivery order — primary planning source
 
 The order below is the suggested default for a single team; items on the same row do not have to be a single PR. Conditional items that are not opened do not hold up the next independent item. The earlier Package A/B/C order was replaced by this table.
@@ -801,6 +897,7 @@ The order below is the suggested default for a single team; items on the same ro
 | 8b | **R12a → R12b if the condition is met** SkillSpector | First a fixture-based benefit/false positive measurement, then a pinned optional adapter; the default gate does not change |
 | 8c | **F33a → F33b → F34** plugin hook set and `pkgcheck` signals | Added on 2026-11-03 (Phoenix comparison). Comes after R02 because hooks come with the plugin's `hooks.json` file. F34 waits for F06's cache policy. Not in scope for the plugin-ready release |
 | 8d | **F36** STRIDE-per-element completeness check | Added on 2026-11-03. A small skill text change with no dependencies; can be slotted in |
+| 8e | **F38 → F42 → F39 + F40 + F41**; **R18** trial alongside | Added on 2026-11-17 (Cloudflare re-read). F38 first: the plugin is public and its skills load from their descriptions. F42 is a parser check with no dependency. F39–F41 are skill text and go in one change with their F12 dev cases; no prompt change ships unmeasured. None of them waits for F19/F27 |
 | 9 | **F19b** (F19a moved to 8a on 2026-11-03) finding/decision and evidence contract | Stable identity, uncertainty, schema validation and backward compatibility; JSONL/resume only with a measured need |
 | 9a | **F27 → F28a → F28b if the condition is met** deep review quality | Coverage record followed by an independent validation pilot; F28 also waits for F12c. This AI track does not block the independent F20/F21 work |
 | 10 | **F20 → F31b + F14b → F21a** measurement, parallel dimensions, quiet output and opt-in dimension cache | No cache without measuring speed gain and invalidation equivalence. F31b only gives a meaningful gain after F30; F14b uses the same output infrastructure |
