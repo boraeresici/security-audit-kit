@@ -511,6 +511,86 @@ class TestParseFindingsMd:
 
 
 # ---------------------------------------------------------------------------
+# F42: the findings table is model-written, so its cells are untrusted input
+# ---------------------------------------------------------------------------
+def _one_row(tmp_path, loc, why="ok"):
+    md = tmp_path / "findings.md"
+    md.write_text(f"# sec-sast-deep\n\n| Sink (file:line) | Sev | Why |\n|---|---|---|\n| {loc} | high | {why} |\n",
+                  encoding="utf-8")
+    warnings = []
+    return evidence.parse_findings_md(str(md), warnings), warnings
+
+
+class TestJudgmentInputSafety:
+    @pytest.mark.parametrize("loc", [
+        "/etc/passwd:1",
+        "~/x.py:3",
+        "../outside.py:4",
+        "src/../../x.py:4",
+        "src/./x.py:4",
+        "src//x.py:4",
+        "src/:4",
+        "C:/repo/x.py:5",
+        "c:x.py:5",
+        "src\\app.py:6",
+        "src/app.py:0",
+        "src/a\x07pp.py:7",
+        "src/\u202eyp.exe:8",
+        "src/a\u200bpp.py:8",
+        "src/a\u2028pp.py:8",
+    ])
+    def test_unsafe_location_is_dropped_and_said(self, tmp_path, loc):
+        results, warnings = _one_row(tmp_path, loc)
+        assert results == []
+        assert any("not a safe repo-relative path" in w for w in warnings)
+
+    def test_warning_escapes_what_it_quotes(self, tmp_path):
+        _, warnings = _one_row(tmp_path, "src/\u202eyp.exe:8")
+        assert all("\u202e" not in w for w in warnings)
+        assert any("\\u202e" in w for w in warnings)
+
+    @pytest.mark.parametrize("loc,path,line", [
+        ("src/app.py:42", "src/app.py", 42),
+        ("`src/app.py:42`", "src/app.py", 42),
+        ("./src/app.py:42", "src/app.py", 42),
+        ("src/app.py", "src/app.py", None),
+        ("docs/ünïcode/naïve.py:3", "docs/ünïcode/naïve.py", 3),
+        (".github/workflows/ci.yml:9", ".github/workflows/ci.yml", 9),
+    ])
+    def test_normal_location_still_passes(self, tmp_path, loc, path, line):
+        results, warnings = _one_row(tmp_path, loc)
+        assert [(r["file"], r["line"]) for r in results] == [(path, line)]
+        assert warnings == []
+
+    def test_non_ascii_digit_is_not_a_line_and_does_not_crash(self, tmp_path):
+        results, _ = _one_row(tmp_path, "src/app.py:²")
+        assert [(r["file"], r["line"]) for r in results] == [("src/app.py:²", None)]
+
+    def test_free_text_loses_control_and_bidi_characters(self, tmp_path):
+        results, _ = _one_row(tmp_path, "src/app.py:1", why="see\x1b[31m red\u202e evil\u200b\u2029end")
+        assert results[0]["message"] == "see [31m red evil end"
+        assert results[0]["evidence"]["note"] == "see [31m red evil end"
+
+    def test_free_text_is_capped(self, tmp_path):
+        results, _ = _one_row(tmp_path, "src/app.py:1", why="x" * 5000)
+        msg = results[0]["message"]
+        assert len(msg) == evidence.MAX_CELL_CHARS and msg.endswith("…")
+
+    def test_oversized_findings_file_skips_the_judgment_layer(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(evidence, "MAX_FINDINGS_BYTES", 64)
+        results, warnings = _one_row(tmp_path, "src/app.py:1", why="x" * 100)
+        assert results == []
+        assert any("judgment layer skipped" in w for w in warnings)
+
+    def test_undecodable_findings_file_is_said_not_raised(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_bytes(b"| Sink | Sev |\n|---|---|\n| a.py:1 | \xff\xfe |\n")
+        warnings = []
+        assert evidence.parse_findings_md(str(md), warnings) == []
+        assert any("UnicodeDecodeError" in w for w in warnings)
+
+
+# ---------------------------------------------------------------------------
 # merge_judgment()
 # ---------------------------------------------------------------------------
 class TestMergeJudgment:

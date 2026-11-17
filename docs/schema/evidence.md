@@ -134,6 +134,13 @@ asked to also emit JSON — two sources of truth drift, and the markdown is the 
 - **Section headings set the context.** `## Round N — sec-sast-deep` sets the origin skill; a
   `### Suppressed` heading marks everything under it `decision: suppressed`; a `### Kit issues`
   section is skipped entirely — those are bugs in the kit, not findings about your repo.
+- **The table is untrusted input.** A model that read the scanned repo writes it, and its location
+  ends up in `kit.sarif`, which Code Scanning ingests. A row is dropped, with a warning that quotes
+  it escaped, unless its location is a repo-relative path: no leading `/`, `~` or drive letter, no
+  backslash, no empty, `.` or `..` segment, no control, format (bidirectional, zero-width) or
+  line-separator character, and a line, if given, of 1 or more. A leading `./` is removed first.
+  The other cells lose those characters too and are cut at 2000 characters. A findings file over
+  2 MiB, or one that is not UTF-8, skips the judgment layer with a warning.
 - **A triage row about a scanner finding fills that finding in** (matched on file + line, with the
   tool name as a tiebreak) rather than becoming a second entry. A deep-pass finding has no scanner
   counterpart, so it becomes a new finding with `dimension: "judgment"` and `tool: "<skill>"`.

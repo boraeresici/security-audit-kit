@@ -13,7 +13,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
+import unicodedata
 
 SCHEMA = "security-audit-kit/evidence@1"
 
@@ -200,9 +202,43 @@ def parse_location(text: str):
         return None, None
     if ":" in raw:
         head, _, tail = raw.rpartition(":")
-        if head and tail.isdigit():
+        if head and tail.isascii() and tail.isdigit():   # "²" is a digit to isdigit(), not to int()
             return head.strip(), int(tail)
     return raw, None
+
+
+# The findings table is written by a model that read the scanned repo, so its cells are untrusted
+# input: the path goes on into kit.sarif's artifactLocation, which is uploaded to Code Scanning.
+MAX_FINDINGS_BYTES = 2 * 1024 * 1024
+MAX_CELL_CHARS = 2000
+_DRIVE_RE = re.compile(r"^[A-Za-z]:")
+
+
+def _unsafe_char(c: str) -> bool:
+    """Control, format (bidirectional, zero-width) and line/paragraph separator characters."""
+    return unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")
+
+
+def safe_location(path: str, line):
+    """-> the repo-relative path to keep, or None when the location must not be trusted."""
+    while path.startswith("./"):
+        path = path[2:]
+    if not path or any(_unsafe_char(c) for c in path) or "\\" in path:
+        return None
+    if path.startswith(("/", "~")) or _DRIVE_RE.match(path):
+        return None
+    if any(seg in ("", ".", "..") for seg in path.split("/")):
+        return None
+    if line is not None and line < 1:
+        return None
+    return path
+
+
+def clean_cell(text: str) -> str:
+    """Free text bound for evidence.json, kit.sarif and the report: no control or bidi characters."""
+    out = "".join(" " if unicodedata.category(c) in ("Cc", "Zl", "Zp") else c
+                  for c in text if unicodedata.category(c) != "Cf")
+    return out if len(out) <= MAX_CELL_CHARS else out[:MAX_CELL_CHARS - 1] + "…"
 
 
 def slug(text: str, fallback: str) -> str:
@@ -216,11 +252,16 @@ def slug(text: str, fallback: str) -> str:
 def parse_findings_md(path: str, warnings: list) -> list:
     """-> judgment findings: [{origin, tool, rule_id, file, line, severity, decision, ...}]."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            lines = fh.read().splitlines()
+        if os.path.getsize(path) > MAX_FINDINGS_BYTES:
+            warnings.append(f"findings file is over {MAX_FINDINGS_BYTES // (1024 * 1024)} MiB -> judgment layer skipped")
+            return []
+        # Split on newlines only: splitlines() also breaks at U+2028 and friends, which would cut a
+        # row in two before its cells are checked.
+        with open(path, encoding="utf-8", newline="") as fh:
+            lines = [ln.rstrip("\r") for ln in fh.read().split("\n")]
     except FileNotFoundError:
         return []
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         warnings.append(f"findings file unreadable ({exc.__class__.__name__}) -> judgment layer skipped")
         return []
 
@@ -257,9 +298,17 @@ def parse_findings_md(path: str, warnings: list) -> list:
         for role, value in zip(header, cells):
             if role:
                 row[role] = value
-        path_, line_no = parse_location(row.get("loc", ""))
-        if not path_:
+        # The path is checked as written, before cleaning: removing a bidi character could turn a
+        # rejected path into an accepted one.
+        raw_path, line_no = parse_location(row.get("loc", ""))
+        if not raw_path:
             continue
+        path_ = safe_location(raw_path, line_no)
+        if path_ is None:
+            warnings.append(f"findings file: location {ascii(row['loc'].strip())[:120]} is not a safe "
+                            "repo-relative path:line -> row dropped")
+            continue
+        row = {role: clean_cell(value) for role, value in row.items() if role != "loc"}
 
         sev_raw = row.get("sev", "").strip()
         severity = SEVERITY_WORDS.get(sev_raw.lower())

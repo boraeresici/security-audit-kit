@@ -22,6 +22,19 @@ All notable changes to this project are documented here. The format is based on
   audit or review of the repo still runs the full flow; an ambiguous request gets one question
   (`docs/skills.md`, "Asking versus auditing"). The skill descriptions no longer name one host.
 
+### Security
+- The judgment parser treats the model-written findings table as untrusted input. A row whose
+  location is not a safe repo-relative path (absolute, `~`, drive letter, backslash, `.`/`..`
+  segment, control or bidirectional character, line 0) is dropped with an escaped warning instead
+  of reaching `evidence.json` and the `kit.sarif` uploaded to Code Scanning. Free-text cells lose
+  control and bidirectional characters and are capped at 2000 characters; a findings file over
+  2 MiB skips the judgment layer. Rows are split on newlines only, so U+2028 can no longer cut one
+  in two (`docs/schema/evidence.md`).
+
+### Fixed
+- A location such as `app.py:²` no longer crashes `scan.sh evidence`: only ASCII digits are read
+  as a line number. A findings file that is not UTF-8 is reported and skipped instead of raising.
+
 ## [1.21.0] - 2026-11-04
 
 ### Upgrade notes

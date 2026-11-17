@@ -868,6 +868,8 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - Written in the kit's Python; no Node dependency is added and no upstream code is copied. If code is taken later, the MIT notice is kept.
 - F19b keeps the rest of the validator (verdict-specific fields, root-cause identity, migration). This card does not change the schema version.
 
+**Status — 2026-11-17:** implemented on `fix/f42-judgment-parser` (`lib/evidence.py`, 27 unit tests, `docs/schema/evidence.md`). Two changes beyond the criteria: a leading `./` is removed rather than rejected, since it names the same file; a line number is required only to be positive when given, since rows without one are valid today. Found while testing: `splitlines()` split a row at U+2028 before its cells were checked, and a non-ASCII digit (`:²`) crashed the parser; both fixed. Old and new parser give identical output on the e2e fixtures and every tracked `.md` file (38 files). Schema version unchanged.
+
 ### R18 — `npx skills add` as a second install channel (trial)
 
 **Record — 2026-11-17:** Upstream is not a Claude Code plugin; it installs with the Skills CLI ([`README.md:54-63`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/README.md#L54-L63)), and moved its files to `skills/<name>/SKILL.md` for that reason (upstream commit `75be8dd`). The kit already has that layout. The skills say what to do when the scanner is not vendored ("do not download, clone or install anything … state that the deterministic scan did not run"), so a skills-only install is a supported state since R02.
