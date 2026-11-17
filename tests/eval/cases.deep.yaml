@@ -391,3 +391,228 @@
               w.writerow([r["name"], r["email"], r["phone"]])     # line 12
           return resp
   metadata: { split: dev, card: F41, class: export-leak, twin: export-leak }
+
+# ================= Harder twins (added after the 2026-11-17 baseline got 15/16 of the above) =================
+# Each targets what F40/F41 add: the baseline has the evidence bar but not these distinctions.
+
+- description: "F40 REAL — approval is for the tool name once per session, not for the recipient or body"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/approve.py:14 — approval binding: the user approves send_email once; later calls run unreviewed."
+    code: |
+      # agent/approve.py
+      GRANTED = {}   # (session_id, tool) -> True
+
+      def call_tool(session, tool, args):
+          if (session.id, tool) not in GRANTED:
+              if not ask_user(f"Allow the assistant to use {tool}?"):      # shows the tool name only
+                  return "denied"
+              GRANTED[(session.id, tool)] = True
+          return TOOLS[tool](**args)                                       # line 14
+
+      # the assistant triages the user's inbox (external senders' mail is in its context) and has
+      # send_email(to, subject, body) using the user's mailbox.
+  metadata: { split: dev, card: F40, class: approval-binding, twin: approval-scope }
+
+- description: "F40 FP — every send is approved with its exact recipient and body, and runs as approved"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/approve.py:14 — prompt injection: inbox mail from external senders can make the assistant send email."
+    code: |
+      # agent/approve.py
+      def call_tool(session, tool, args):
+          frozen = dict(args)
+          if tool in SIDE_EFFECT_TOOLS:                                    # send_email is one
+              if not ask_user(f"Send this?\nTo: {frozen['to']}\nSubject: {frozen['subject']}\n\n{frozen['body']}"):
+                  return "denied"
+          return TOOLS[tool](**frozen)                                     # line 14: exactly what was shown
+
+      # the assistant triages the user's inbox (external senders' mail is in its context).
+  metadata: { split: dev, card: F40, class: approval-binding, twin: approval-scope }
+
+- description: "F40 FP — injectable summarizer with no tool and escaped output: injection alone, no boundary failure"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "summarize/api.py:9 — LLM01 indirect prompt injection: untrusted web page text is concatenated into the prompt."
+    code: |
+      # summarize/api.py
+      @app.post("/summarize")
+      def summarize(req: Req, user=Depends(current_user)):
+          page = fetch(req.url).text[:20000]                               # any URL the user submits
+          out = client.chat([{"role": "system", "content": "Summarize the page."},
+                             {"role": "user", "content": page}])          # no tools
+          return {"summary": out.text}                                     # line 9
+
+      # frontend/Summary.tsx renders summary as a text node ({summary}); no markdown, no links, no images.
+      # The summary is shown only to the user who asked for it, and is not stored.
+  metadata: { split: dev, card: F40, class: injection-without-sink, twin: injection-framing }
+
+- description: "F40 REAL — the same summarizer, but its output is rendered as HTML with remote images"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "summarize/api.py:9 — LLM01 indirect prompt injection: untrusted web page text is concatenated into the prompt."
+    code: |
+      # summarize/api.py
+      @app.post("/summarize")
+      def summarize(req: Req, user=Depends(current_user)):
+          page = fetch(req.url).text[:20000]
+          history = Note.objects.filter(user=user).values_list("text", flat=True)[:50]   # the user's private notes
+          out = client.chat([{"role": "system", "content": "Summarize the page. Context: " + "\n".join(history)},
+                             {"role": "user", "content": page}])
+          return {"summary_html": markdown_to_html(out.text)}              # line 9: no sanitizer
+
+      # frontend/Summary.tsx: <div dangerouslySetInnerHTML={ {__html: summary_html} } />; images load automatically.
+  metadata: { split: dev, card: F40, class: injection-without-sink, twin: injection-framing }
+
+- description: "F40 REAL — the model can call save_note while reading external tickets; notes join later system prompts"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/notes.py:6 — persistent memory poisoning: notes saved through a tool steer later sessions."
+    code: |
+      # agent/notes.py
+      def save_note(text, session):                                        # exposed to the model as a tool
+          Note.objects.create(user_id=session.user_id, text=text)
+
+      def system_prompt(session):
+          notes = Note.objects.filter(user_id=session.user_id)[:30]
+          return BASE + "\nStanding instructions from the user:\n" + "\n".join(n.text for n in notes)   # line 6
+
+      # agent/run.py — the support agent reads tickets from external customers; the same user's later
+      # sessions use system_prompt(); support agents can call refund_order(order_id, amount).
+  metadata: { split: dev, card: F40, class: memory-poisoning, twin: memory-via-tool }
+
+- description: "F40 FP — a note is stored only after the user confirms its exact text, and is replayed as quoted data"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/notes.py:6 — persistent memory poisoning: notes saved through a tool reach later sessions."
+    code: |
+      # agent/notes.py
+      def save_note(text, session):                                        # exposed to the model as a tool
+          if not ask_user(f"Save this note for future chats?\n\n{text}"):
+              return "not saved"
+          Note.objects.create(user_id=session.user_id, text=text[:500])
+
+      def notes_turn(session):
+          notes = Note.objects.filter(user_id=session.user_id)[:30]
+          return {"role": "user", "content": "<my_notes>" + json.dumps([n.text for n in notes]) + "</my_notes>"}   # line 6
+  metadata: { split: dev, card: F40, class: memory-poisoning, twin: memory-via-tool }
+
+- description: "F40 REAL — answers are cached by question text alone, across tenants"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "assist/cache.py:8 — cross-tenant context bleed: cached answers are shared."
+    code: |
+      # assist/cache.py
+      def answer(question, user):
+          key = "ans:" + sha256(question.strip().lower().encode()).hexdigest()
+          if (hit := redis.get(key)):
+              return hit.decode()
+          ctx = retrieve(question, tenant_id=user.tenant_id)              # tenant-scoped retrieval
+          out = llm.complete(PROMPT.format(ctx=ctx, q=question)).text
+          redis.set(key, out, ex=86400)                                    # line 8
+          return out
+
+      # answers quote the retrieved documents (contract terms, prices, customer names).
+  metadata: { split: dev, card: F40, class: context-bleed, twin: answer-cache }
+
+- description: "F40 FP — the same cache, keyed by tenant"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "assist/cache.py:8 — cross-tenant context bleed: LLM answers are cached in a shared Redis."
+    code: |
+      # assist/cache.py
+      def answer(question, user):
+          key = f"ans:{user.tenant_id}:" + sha256(question.strip().lower().encode()).hexdigest()
+          if (hit := redis.get(key)):
+              return hit.decode()
+          ctx = retrieve(question, tenant_id=user.tenant_id)
+          out = llm.complete(PROMPT.format(ctx=ctx, q=question)).text
+          redis.set(key, out, ex=86400)                                    # line 8
+          return out
+  metadata: { split: dev, card: F40, class: context-bleed, twin: answer-cache }
+
+- description: "F41 REAL — the legacy route keeps the org filter but drops the permission check"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    candidate: "billing/legacy.py:9 — sibling path: v1 status change compared with v2."
+    code: |
+      # billing/api_v2.py
+      @require_perm("invoices.approve")
+      def approve_invoice(request, pk):
+          inv = get_object_or_404(Invoice, pk=pk, org=request.user.org)
+          inv.mark_approved(by=request.user)
+
+      # billing/legacy.py — /api/v1/invoices/<pk>/approve, still routed for the mobile app
+      @login_required
+      def approve_invoice_v1(request, pk):
+          inv = get_object_or_404(Invoice, pk=pk, org=request.user.org)
+          inv.mark_approved(by=request.user)                               # line 9
+
+      # roles: "member" (creates invoices) and "approver"; only approvers hold invoices.approve.
+  metadata: { split: dev, card: F41, class: sibling-guard, twin: sibling-weaker }
+
+- description: "F41 FP — the legacy route calls the same service, which checks the permission"
+  vars:
+    skill: sec-sast-deep
+    expected: FP
+    candidate: "billing/legacy.py:9 — sibling path: the v1 route has no permission decorator."
+    code: |
+      # billing/services.py
+      def approve(user, pk):
+          if not user.has_perm("invoices.approve"):
+              raise PermissionDenied
+          inv = get_object_or_404(Invoice, pk=pk, org=user.org)
+          inv.mark_approved(by=user)
+
+      # billing/api_v2.py
+      @login_required
+      def approve_invoice(request, pk):
+          services.approve(request.user, pk)
+
+      # billing/legacy.py
+      @login_required
+      def approve_invoice_v1(request, pk):
+          services.approve(request.user, pk)                               # line 9
+  metadata: { split: dev, card: F41, class: sibling-guard, twin: sibling-weaker }
+
+- description: "F41 REAL — a count-only search is unscoped, so it answers whether another tenant has a record"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    candidate: "search/api.py:8 — feature abuse: the duplicate check may count other tenants' records."
+    code: |
+      # search/api.py
+      @api_view(["GET"])
+      @permission_classes([IsAuthenticated])
+      def duplicate_check(request):
+          tax_id = request.GET["tax_id"]
+          # "is this supplier already registered?" — returns a number, never the record
+          n = Supplier.objects.filter(tax_id=tax_id).count()
+          return Response({"matches": n})                                  # line 8
+
+      # Supplier rows belong to tenants; a supplier's presence tells a competitor who a tenant buys from.
+  metadata: { split: dev, card: F41, class: existence-oracle, twin: count-oracle }
+
+- description: "F41 FP — the same count, limited to the caller's tenant"
+  vars:
+    skill: sec-sast-deep
+    expected: FP
+    candidate: "search/api.py:8 — feature abuse: the duplicate check reveals whether a supplier exists."
+    code: |
+      # search/api.py
+      @api_view(["GET"])
+      @permission_classes([IsAuthenticated])
+      def duplicate_check(request):
+          tax_id = request.GET["tax_id"]
+          n = Supplier.objects.filter(tax_id=tax_id, tenant=request.user.tenant).count()
+          return Response({"matches": n})                                  # line 8
+  metadata: { split: dev, card: F41, class: existence-oracle, twin: count-oracle }

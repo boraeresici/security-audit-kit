@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — F40/F41: verify is not the gap
+
+12 harder dev twins were added; the baseline got all of them right in three uncached runs. F40/F41 target recon recall, which the deep-review eval does not measure. Next: a recon eval (code in, candidates out) before any F40/F41 text ships.
+
 ## 2026-11-17 — F39 measured and implemented (`feat/eval-deep`, unreleased)
 
 The deep-review baseline ran on `claude-opus-4-8` (16/18). The F39 candidate fixed one of the two over-stated cases with no regression in three uncached runs and shipped in three skills; the other case is an open gap. F40/F41 cases are too easy for the baseline to show their value and need harder cases next.
