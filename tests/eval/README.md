@@ -144,6 +144,23 @@ EVAL_CONFIG=promptfooconfig.deep.yaml bash tests/eval/run.sh      # -> output.de
 - Dev split only, 18 cases: F40 and F41 in REAL/FP twins, two F39 over-statement cases. A holdout
   for the deep review is written by someone who has not read the candidate prompts.
 
+## Recon eval
+The deep-review eval hands the model a candidate, so it measures verification only. F40 and F41
+claim something else: that naming a class makes recon list the flaw at all. The recon eval
+measures that. Each case is a small repo, one real F40/F41 flaw among up to three FP twins of
+other classes (safe code that looks suspicious), and the model ranks at most three candidates.
+
+```sh
+EVAL_CONFIG=promptfooconfig.recon.yaml EVAL_SCORER=score_recon.mjs bash tests/eval/run.sh   # -> output.recon.json
+```
+
+- `score_recon.mjs` reports **hit@1** (the planted flaw ranked first) and hit@2 per card, next to
+  what a random pick of the first file would score.
+- `cases.recon.yaml` is generated: `python3 tests/eval/make_recon_cases.py` (needs PyYAML) rebuilds
+  it from `cases.deep.yaml` with a fixed seed. Edit the deep cases, not this file; e2e checks it is
+  current.
+- `recon_prompt.md` is today's recon text of the two skills: the baseline.
+
 ## Files
 - `cases.yaml` — dev/tuning split (promptfoo tests).
 - `cases.holdout.yaml` — held-out split; the reportable number. Do not read while tuning.

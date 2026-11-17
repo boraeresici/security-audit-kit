@@ -862,6 +862,27 @@ JSON
   DSP="$(grep -c 'split: dev' "$DC")"; DN="$(grep -c '^- description:' "$DC")"
   [ "$DTW" = 0 ] && [ "$DSP" = "$DN" ] && [ "$DN" -ge 18 ] \
     && ok "eval: deep corpus has $DN dev cases, each twin a REAL/FP pair" || no "eval: deep corpus shape (unpaired twins: $DTW, dev $DSP of $DN)"
+  # Recon eval (F40/F41): ranks the planted flaw among safe-but-suspicious code.
+  ( cd tools/security-audit-kit && env ANTHROPIC_API_KEY= EVAL_CONFIG=promptfooconfig.recon.yaml EVAL_SCORER=score_recon.mjs bash tests/eval/run.sh >/dev/null 2>&1 ) \
+    && ok "eval: the recon config skips cleanly without a key" || no "eval: recon run.sh should exit 0 when key absent"
+  cat > eval_recon_mock.json <<'JSON'
+{"results":{"results":[
+ {"vars":{"expected_file":"a/x.py"},"testCase":{"metadata":{"card":"F40","distractors":3}},"response":{"output":"prose {\"candidates\":[{\"file\":\"a/x.py\"}]}"}},
+ {"vars":{"expected_file":"a/x.py"},"testCase":{"metadata":{"card":"F40","distractors":3}},"response":{"output":"{\"candidates\":[{\"file\":\"b.py\"},{\"file\":\"./a/x.py:9\"}]}"}}
+]}}
+JSON
+  ROUT="$(node tools/security-audit-kit/tests/eval/score_recon.mjs eval_recon_mock.json 2>/dev/null)"
+  grep -qE 'all +n= +2 +hit@1 50\.0% +hit@2 100\.0%' <<<"$ROUT" \
+    && ok "eval: recon scoring ranks the planted flaw (hit@1, hit@2)" || no "eval: recon scoring wrong: $ROUT"
+  rm -f eval_recon_mock.json
+  RC="tools/security-audit-kit/tests/eval/cases.recon.yaml"
+  if python3 -c 'import yaml' 2>/dev/null; then
+    RTMP="$(mktemp -d)"; cp tools/security-audit-kit/tests/eval/make_recon_cases.py tools/security-audit-kit/tests/eval/cases.deep.yaml "$RTMP"/
+    python3 "$RTMP/make_recon_cases.py" >/dev/null 2>&1 && cmp -s "$RTMP/cases.recon.yaml" "$RC" \
+      && ok "eval: cases.recon.yaml is what make_recon_cases.py generates from cases.deep.yaml" \
+      || no "eval: cases.recon.yaml is stale — run python3 tests/eval/make_recon_cases.py"
+    rm -rf "$RTMP"
+  else skip "eval: recon corpus freshness (no PyYAML)"; fi
 else
   skip "eval harness (node unavailable)"
 fi

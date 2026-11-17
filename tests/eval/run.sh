@@ -156,4 +156,4 @@ npx -y "promptfoo@$PROMPTFOO_VER" eval -c "$CONFIG" -o "$OUT_TMP" --no-progress-
 if [ -f "$OUT_TMP" ]; then
   mv -- "$OUT_TMP" "$OUT"
 fi
-node score.mjs "$OUT"
+node "${EVAL_SCORER:-score.mjs}" "$OUT"
