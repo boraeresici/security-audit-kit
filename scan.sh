@@ -1490,11 +1490,21 @@ scan_lock_state(){
   printf 'live\t%s, heartbeat %ss ago' "$who" "$age"
 }
 
+# claim_dir <dir>: create <dir> and own it, atomically, or fail. `mkdir` alone is not enough: uutils
+# coreutils' mkdir (Ubuntu 25.10+, 0.10.0) lets several concurrent callers all "create" the same
+# directory (200 rounds of four racers gave 319 winners). The owner is whoever creates <dir>/.claim
+# under noclobber, which bash opens with O_CREAT|O_EXCL itself — one winner, whatever mkdir does. A
+# racer that got past mkdir but lost the claim leaves the directory to its owner.
+claim_dir(){
+  mkdir "$1" 2>/dev/null || return 1
+  ( set -C; : > "$1/.claim" ) 2>/dev/null
+}
+
 # Reclaim a stale lock under a short guard lock, re-reading the state inside it: between our first
 # look and now, another run may already have reclaimed it and taken a fresh one.
 scan_lock_reclaim(){
   local guard="$LOCK_DIR.reclaim" st mt
-  if ! mkdir "$guard" 2>/dev/null; then
+  if ! claim_dir "$guard"; then
     # A reclaim takes milliseconds; a guard a minute old belongs to a reclaimer that died mid-way.
     mt="$(file_mtime "$guard")"
     [ -n "$mt" ] && [ $(( $(date +%s) - mt )) -gt 60 ] && rm -rf "$guard" 2>/dev/null
@@ -1505,7 +1515,7 @@ scan_lock_reclaim(){
     note lock "stale lock reclaimed (${st#*	})"
     rm -rf "$LOCK_DIR" 2>/dev/null
   fi
-  rmdir "$guard" 2>/dev/null
+  rm -rf "$guard" 2>/dev/null
   return 0
 }
 
@@ -1535,7 +1545,7 @@ scan_lock_acquire(){
   mkdir -p "$(dirname "$LOCK_DIR")" 2>/dev/null || return 1
   LOCK_TOKEN="$$-$(date +%s)-$RANDOM$RANDOM"
   while :; do
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
+    if claim_dir "$LOCK_DIR"; then
       ps0="$(proc_start "$$")"
       # Owner written whole or not at all: a reader never parses half of it.
       printf 'pid=%s\ntoken=%s\nhost=%s\npstart=%s\nstarted=%s\ncmd=%s\ndate=%s\n' \

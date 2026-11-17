@@ -146,7 +146,7 @@ If there is no exit code or coverage is incomplete, the HTML must not say `clean
 
 ### F05 — Lock lifecycle
 
-**CI note — 2026-11-17 (PR #54):** e2e case 7 (three runs reclaim one stale lock) failed once on `ubuntu-latest` with the counts right (`reclaims=1, lock-less=0`) but the lock directory still present after `wait`; the re-run on the next push passed, and it passes locally every time. Intermittent, timing-sensitive; not investigated further yet. If it recurs: check whether the last holder's release can lag `wait` (a background child of the run), before touching the lock code.
+**Bug found — 2026-11-17 (PR #54, `fix/lock-atomic-claim`):** e2e case 7 (three runs reclaim one stale lock) failed on 2 of 3 CI runs on `ubuntu-latest`, now Ubuntu 26.04, and never in 40 earlier runs. Reproduced in an `ubuntu:26.04` container (6 of 30) and not in Debian bookworm (0 of 30). Cause: Ubuntu 25.10+ ships uutils coreutils, whose `mkdir` 0.10.0 is not exclusive under concurrency (200 rounds of four racers: 319 winners). Both the lock and the reclaim guard relied on it, so two runs could hold the lock and a reclaim could delete a fresh one. Fix: `claim_dir` — `mkdir`, then the owner is whoever creates `<dir>/.claim` under bash noclobber (`O_CREAT|O_EXCL` by bash). After: 200/200 single winners, 0 of 30 failures in the container. e2e races `claim_dir` with the system's own `mkdir` (50 rounds, 4 racers).
 
 The lock of a live, long-running scan must not be taken solely because of its age. Release must remove only the lock carrying its own token. Dead PID, PID reuse, missing heartbeat, simultaneous stale reclaim and INT/TERM tests must be done. A corrupt lock file must not lead to an infinite wait.
 

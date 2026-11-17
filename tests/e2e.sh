@@ -1226,6 +1226,13 @@ SH
   [ "$RECL" = 1 ] && [ "$SEP" = 0 ] && [ ! -d "$F01LOCK" ] \
     && ok "lock: concurrent reclaim of one stale lock — one reclaim, three serialized holders" \
     || no "lock: concurrent reclaim raced (reclaims=$RECL, lock-less=$SEP)"
+  # The primitive under both locks: four racers, one winner, every round, with this system's mkdir.
+  # uutils coreutils' mkdir (Ubuntu 25.10+) lets several racers "create" one directory.
+  # shellcheck disable=SC2016  # the bash -c script expands in that shell
+  CLW="$(bash -c 'eval "$(sed -n "/^claim_dir()/,/^}/p" "$1/scan.sh")"; d="$(mktemp -d)/c"
+    for _ in $(seq 1 50); do rm -rf "$d"; for _ in 1 2 3 4; do ( claim_dir "$d" && echo w ) & done; wait; done' _ "$KIT_SRC" | grep -c w)"
+  [ "$CLW" = 50 ] && ok "lock: claim_dir has exactly one winner per race (50 rounds, 4 racers)" \
+    || no "lock: claim_dir let $CLW racers win 50 rounds — the lock is not exclusive here"
 
   rm -rf "$F01" "$F01BIN" "$F01".?.out
 else

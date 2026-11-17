@@ -60,6 +60,13 @@ All notable changes to this project are documented here. The format is based on
   location.
 
 ### Fixed
+- **The run lock was not exclusive on Ubuntu 25.10 and later.** Its atomic step was `mkdir`, and the
+  uutils coreutils `mkdir` those releases ship (0.10.0) lets several concurrent callers all "create"
+  the same directory: in 200 rounds of four racers, 319 won. Two scans could both hold the lock and
+  both write the shared record (F01), and a reclaim could delete a fresh lock. Ownership is now taken
+  by creating a file under bash's noclobber (`O_CREAT|O_EXCL`, done by bash itself), so there is one
+  winner whatever `mkdir` does. Found when the e2e lock test failed on CI's Ubuntu 26.04 runner and
+  reproduced in an `ubuntu:26.04` container (6 of 30 runs before, 0 of 30 after).
 - A project in a folder with a non-ASCII name (`güvenlik/requirements.txt`) was not scanned: git
   quotes such paths by default, so no manifest pattern matched, `py-deps` reported "not applicable"
   and `p/python` was not selected, and the pre-commit dependency gate did not fire. `scan.sh` and
