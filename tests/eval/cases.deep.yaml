@@ -177,9 +177,10 @@
           reply = client.chat(messages, tools=[issue_refund])
           return run_tools(reply, user)
 
-      # tools/refund.py
-      def issue_refund(amount, user):
-          if amount > 50 and not user.is_manager:
+      # tools/refund.py — policy: a customer may self-serve a refund up to 50 EUR on their own order
+      def issue_refund(order_id, amount, user):
+          order = Order.objects.get(id=order_id, customer_id=user.id)
+          if amount > min(50, order.total) and not user.is_manager:
               raise PermissionDenied("manager approval required")
           ...
   metadata: { split: dev, card: F40, class: role-confusion, twin: role-confusion }

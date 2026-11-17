@@ -1371,6 +1371,17 @@ F38B="$(for f in "$KIT_SRC"/skills/*/SKILL.md; do awk -v h="$F38H" '$0==h{p=1;ne
   || no "F38: section in $F38N of $F35T skills, $F38B variants"
 grep -qF 'nothing was recorded' <<<"$(awk -v h="$F38H" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/skills/sec-triage/SKILL.md")" \
   && ok "F38: the answer says nothing was recorded" || no "F38: the section does not say the answer records nothing"
+echo "-- F39: judgment severity is anchored to the demonstrated impact --"
+F39H='## Severity is what the evidence shows'
+F39S="sec-sast-deep sec-ai-review sec-audit"
+F39N=0; for s in $F39S; do grep -qxF "$F39H" "$KIT_SRC/skills/$s/SKILL.md" && F39N=$((F39N+1)); done
+F39B="$(for s in $F39S; do awk -v h="$F39H" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/skills/$s/SKILL.md" | cksum; done | sort -u | wc -l | tr -d ' ')"
+[ "$F39N" = 3 ] && [ "$F39B" = 1 ] && ok "F39: the three deep skills carry the same severity anchors" \
+  || no "F39: anchors in $F39N of 3 deep skills, $F39B variants"
+# What ships is what was measured: every anchor line in the skill is in the eval's baseline prompt.
+F39M="$(awk -v h="$F39H" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/skills/sec-sast-deep/SKILL.md" \
+  | grep -E '^- \*\*(critical|high|medium|low|info)\*\*' | while IFS= read -r l; do grep -qF -- "$l" "$KIT_SRC/tests/eval/deep_prompt.md" || echo x; done | wc -l | tr -d ' ')"
+[ "$F39M" = 0 ] && ok "F39: the anchors are the ones the deep-review eval measures" || no "F39: $F39M anchor line(s) differ from tests/eval/deep_prompt.md"
 # F43: the same skills load in Codex, so a description must not name one host.
 grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md >/dev/null \
   && no "F38/F43: a skill description names Claude: $(grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md | xargs -n1 basename -a 2>/dev/null | tr '\n' ' ')" \

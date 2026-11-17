@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — F39 measured and implemented (`feat/eval-deep`, unreleased)
+
+The deep-review baseline ran on `claude-opus-4-8` (16/18). The F39 candidate fixed one of the two over-stated cases with no regression in three uncached runs and shipped in three skills; the other case is an open gap. F40/F41 cases are too easy for the baseline to show their value and need harder cases next.
+
 ## 2026-11-17 — F42 reviewed; deep-review eval for F39–F41 (`feat/eval-deep`, unreleased)
 
 An independent review of F42 found a crash, URI syntax reaching `kit.sarif`, non-finite confidence written as invalid JSON and a pre-existing merge bug; all fixed with tests, fixture output unchanged. The existing eval measured only triage, so F39–F41 could not be measured; a deep-review sub-eval now exists, keyless parts tested. The baseline run needs a paid API call and waits for the user.

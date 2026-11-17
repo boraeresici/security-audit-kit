@@ -816,6 +816,17 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - Whether UNCERTAIN carries a severity at all is decided with F12c/F19, not here.
 - Skill text is written independently. No calibration claim is made without an F12 run.
 
+**Status — 2026-11-17:** implemented on `feat/eval-deep` after measurement in the deep-review eval (18 dev cases, `claude-opus-4-8`, three uncached runs per variant, holdout not used):
+
+| Prompt | Correct, each of 3 runs | Regex called RCE | Own quota called privilege | Other 16 cases |
+|---|---|---|---|---|
+| Baseline (skill before F39) | 16/18 | FP 3/3 | FP 3/3 | all correct |
+| Candidate v1 (anchors + "the label does not decide") — shipped | 17/18 | REAL, medium 3/3 | FP 3/3 | all correct |
+| Candidate v2 (v1 + "the verdict answers one question") | 17/18 | REAL 3/3 | FP 3/3 | all correct |
+| v1 + "a bounded impact lowers severity, not the verdict" (one run) | 16/18 | FP | FP | all correct |
+
+The baseline already saw both smaller flaws (ReDoS, a client-only quota) and called them FP because recon's label was wrong. v1 fixes the first; the quota case stays FP in every variant, the model calling a bounded bypass of the actor's own limit not worth raising. The label stays REAL (the skill's Class 3 names an unenforced business rule as a flaw); it is an open gap, not tuned further against one dev case. Before the runs, one dev case (the role-confusion FP twin) was corrected: it did not say that a customer may self-serve a refund up to 50 EUR, which made the model's REAL defensible. A first measurement claimed two identical runs showed low noise; they came from promptfoo's cache, and the table above uses `--no-cache`. `tests/eval/deep_prompt.md` is now the shipped text; e2e checks the anchor lines match. Whether UNCERTAIN carries a severity is still F12c/F19.
+
 ### F40 — `sec-ai-review`: six classes it does not name
 
 **Source — 2026-11-17 (C):** Cloudflare re-read, [`AI-AND-LLM.md`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/AI-AND-LLM.md) at `c1c8a8c`. The kit's skill follows the OWASP LLM ids (`skills/sec-ai-review/SKILL.md:75-113`); memory and MCP output appear only in the surface list (`:115-120`), and the "known attack classes" are jailbreak families (`:122-126`), not code-level defects.
@@ -854,7 +865,7 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - F12 dev cases: one REAL and one FP twin for an unequal sibling guard and for an export that leaks.
 - This is the first slice of R14 and does not wait for its trigger; the other domains (HTTP framing, RPC, mobile/IPC, native) stay in R14.
 
-**Status of F39–F41 — 2026-11-17:** keyless preparation done on `feat/eval-deep`: a deep-review sub-eval (`tests/eval/promptfooconfig.deep.yaml`) with today's skill text as the baseline prompt, a grader that also checks `max_severity`, and 18 dev cases (F39 2, F40 12, F41 4). No paid run yet and no skill text changed. Next: a baseline run on the default backend, then candidate prompts per card, each measured against the baseline before the skill changes.
+**Status of F39–F41 — 2026-11-17:** keyless preparation done on `feat/eval-deep`: a deep-review sub-eval (`tests/eval/promptfooconfig.deep.yaml`) with today's skill text as the baseline prompt, a grader that also checks `max_severity`, and 18 dev cases (F39 2, F40 12, F41 4). No paid run yet and no skill text changed. Baseline measured the same day (see F39). For F40 and F41 the baseline already gets 15 of their 16 cases right; the twins are too easy to show what those cards add, so they need harder cases (e.g. the guard present but weaker on the sibling route, memory written only through a tool the user triggers) before a candidate prompt can be judged.
 
 ### F42 — Judgment parser: safe paths and text limits
 

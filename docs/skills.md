@@ -72,6 +72,15 @@ request can mean either, the skill asks once.
 This matters with the plugin: the host loads a skill from its description, so a skill can load
 for a question that was never a request to audit.
 
+## Severity of a judgment finding
+
+`sec-sast-deep`, `sec-ai-review` and the whole-repo mode of `sec-audit` rate a finding by the impact
+its evidence chain shows, on one shared scale (critical to info), never by what the recon step
+claimed. A path that shows a smaller flaw than recon claimed is still REAL, at the smaller severity:
+a user-supplied regex is a denial of service, not code execution. Someone acting on their own
+resources has not gained privilege. A scanner finding keeps its tool's severity. The scale was
+measured in the deep-review eval before it shipped (`tests/eval/README.md`).
+
 ## When to run which skill (cadence)
 
 | Skill | Cadence | Trigger |

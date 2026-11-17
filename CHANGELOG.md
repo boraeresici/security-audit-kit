@@ -21,6 +21,11 @@ All notable changes to this project are documented here. The format is based on
   it answers in the conversation, starts no scan, writes nothing, and says so. A scan, triage,
   audit or review of the repo still runs the full flow; an ambiguous request gets one question
   (`docs/skills.md`, "Asking versus auditing"). The skill descriptions no longer name one host.
+- `sec-sast-deep`, `sec-ai-review` and `sec-audit`'s whole-repo mode share one severity scale for
+  judgment findings, tied to the impact the evidence shows; a candidate whose claimed impact is
+  wrong but whose path still shows a smaller flaw is REAL at the smaller severity, not FP. Measured
+  first: on the 18 dev cases of the new deep-review eval it fixed one of two over-stated cases with
+  no regression in three runs (`docs/skills.md`, "Severity of a judgment finding").
 
 ### Security
 - The judgment parser treats the model-written findings table as untrusted input. A row whose

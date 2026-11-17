@@ -47,10 +47,27 @@ Name ALL THREE, or it is FP:
   tool server (LLM03/LLM05). The core question: can untrusted text reach a powerful sink without an
   out-of-band gate? If not, FP.
 
+## The candidate's label does not decide
+Recon names a class and an impact; both are a hypothesis. If the claimed impact is wrong but the
+same path still shows a flaw that clears the evidence bar, the verdict is REAL, rated at the impact
+the evidence shows, and the reason says what recon over-stated. If no flaw clears the bar, FP.
+
 ## Confidence and severity
 Assign a confidence in [0,1] that it is a real, exploitable flaw. Only confidence ≥ 0.7 counts as
 REAL (bar: "would a security team raise this in PR review, given the guards actually present?").
-Give a severity for the finding: critical, high, medium, low or info. Severity ranks, never decides.
+
+Severity is the impact the evidence chain shows, never more:
+- **critical** — an unauthenticated or low-privilege actor gets code execution, all tenants' data,
+  credentials, or money movement at scale.
+- **high** — an actor reads or changes another user's or tenant's data, or runs a privileged action
+  they should not; the path is shown end to end and fully defeats an explicit control.
+- **medium** — the impact is bounded: one component made unavailable, a business limit bypassed
+  that affects only the actor's own account or bill, low-sensitivity data disclosed; or an explicit
+  control is weakened, not defeated.
+- **low** — needs an unlikely precondition, or weakens defence in depth without a shown result.
+- **info** — hardening, no exploit path.
+An actor acting on their own resources has not gained privilege. Between high and medium ask: does
+the result shown fully defeat an explicit control, or only weaken it? Severity ranks, never decides.
 
 Respond with ONLY a single JSON object, no prose, no code fences:
 {"verdict": "REAL" | "FP", "confidence": <number 0-1>, "severity": "critical" | "high" | "medium" | "low" | "info", "sink": "<file:line or ''>", "source": "<the untrusted input or actor, or ''>", "reason": "<short>"}

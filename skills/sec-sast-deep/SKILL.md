@@ -199,6 +199,30 @@ lives elsewhere. Run this alongside the 4 classes.
    location | class | severity | confidence | REAL/UNCERTAIN | action. Add a **Suppressed**
    sub-list for what the gates dropped (auditability).
 
+## Severity is what the evidence shows
+
+Recon names a class and an impact for each candidate; both are a hypothesis. If the claimed impact
+is wrong but the same path still shows a flaw that clears the evidence bar, the verdict is REAL,
+rated at the impact the evidence shows, and the record says what recon over-stated. If no flaw
+clears the bar, FP.
+
+Severity is the impact the evidence chain shows, never more:
+- **critical** — an unauthenticated or low-privilege actor gets code execution, all tenants' data,
+  credentials, or money movement at scale.
+- **high** — an actor reads or changes another user's or tenant's data, or runs a privileged action
+  they should not; the path is shown end to end and fully defeats an explicit control.
+- **medium** — the impact is bounded: one component made unavailable, a business limit bypassed
+  that affects only the actor's own account or bill, low-sensitivity data disclosed; or an explicit
+  control is weakened, not defeated.
+- **low** — needs an unlikely precondition, or weakens defence in depth without a shown result.
+- **info** — hardening, no exploit path.
+
+An actor acting on their own resources has not gained privilege. Between high and medium ask: does
+the result shown fully defeat an explicit control, or only weaken it? A scanner finding keeps its
+tool's severity; this scale is for judgment findings. Severity ranks, never decides. (Independently
+written; the idea of anchoring severity to the demonstrated impact is inspired by
+`github.com/cloudflare/security-audit-skill`. Measured in the deep-review eval, `tests/eval`.)
+
 ## Output -> hooking into the kit flow
 This skill **feeds the raw-scan step of `sec-triage` with a deep SAST pass**; the triage/
 allowlist/follow-up promotion rules are the same:
