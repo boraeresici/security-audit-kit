@@ -1309,8 +1309,11 @@ else skip "--with-agent-hook (no python3)"; fi
 
 echo "-- pre-commit framework integration --"
 if have python3; then
-  python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \
-    && ok ".pre-commit-hooks.yaml valid (sec-staged/deps/all -> scan.sh)" || no ".pre-commit-hooks.yaml invalid"
+  # PyYAML is not in every python3 (macOS's system one has none): no parser is a skip, not "invalid".
+  if python3 -c 'import yaml' 2>/dev/null; then
+    python3 -c "import yaml; d=yaml.safe_load(open('$KIT_SRC/.pre-commit-hooks.yaml')); ids={h['id'] for h in d}; assert {'sec-staged','sec-deps','sec-all'} <= ids; assert all(h['entry']=='scan.sh' for h in d)" 2>/dev/null \
+      && ok ".pre-commit-hooks.yaml valid (sec-staged/deps/all -> scan.sh)" || no ".pre-commit-hooks.yaml invalid"
+  else skip ".pre-commit-hooks.yaml parse (no PyYAML in this python3)"; fi
 else skip ".pre-commit-hooks.yaml (no python3)"; fi
 # install --skills-only: skills present, but core.hooksPath NOT set
 TSO="$(mktemp -d)"

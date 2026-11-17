@@ -146,6 +146,8 @@ If there is no exit code or coverage is incomplete, the HTML must not say `clean
 
 ### F05 — Lock lifecycle
 
+**CI note — 2026-11-17 (PR #54):** e2e case 7 (three runs reclaim one stale lock) failed once on `ubuntu-latest` with the counts right (`reclaims=1, lock-less=0`) but the lock directory still present after `wait`; the re-run on the next push passed, and it passes locally every time. Intermittent, timing-sensitive; not investigated further yet. If it recurs: check whether the last holder's release can lag `wait` (a background child of the run), before touching the lock code.
+
 The lock of a live, long-running scan must not be taken solely because of its age. Release must remove only the lock carrying its own token. Dead PID, PID reuse, missing heartbeat, simultaneous stale reclaim and INT/TERM tests must be done. A corrupt lock file must not lead to an infinite wait.
 
 **Status:** done, released in v1.19.0 (PR #34).
