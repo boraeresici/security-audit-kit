@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — F38 implemented (`feat/f38-answer-only`, unreleased)
+
+All five skills carry one identical section: a question is answered in the conversation with the evidence bar and nothing is written; the full flow runs only when a scan, triage, audit or review is asked for. The descriptions no longer say "with Claude" (F43). e2e 322/0, unit 262/0. Next in slot 8e: F42, then F39–F41 with their F12 dev cases.
+
 ## 2026-11-17 — Other agent hosts; F43
 
 On the user's request, Codex, Hermes Agent, OpenClaw and the DeepSeek CLIs were assessed as hosts for the kit. All four read `SKILL.md` folders, so the skills need no fork; only packaging differs per host.

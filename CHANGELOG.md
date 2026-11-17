@@ -11,6 +11,16 @@ All notable changes to this project are documented here. The format is based on
   `scripts/make_icon.py` with no dependencies. e2e checks its size and that the script redraws it.
 - `PRIVACY.md`: the privacy policy the plugin directory asks for. The kit and the plugin collect
   nothing; it summarises what the scanner's lookups send and points at `docs/data-flow.md`.
+- The skills install in Codex from the same plugin, with no separate package:
+  `codex plugin marketplace add` and `codex plugin add` (`docs/install.md`, "The skills in
+  Codex"). e2e installs it in a throwaway `CODEX_HOME` and counts the five skills when `codex` is
+  on PATH. Not yet: the agent hook for Codex and a Codex directory listing.
+
+### Changed
+- Every skill answers a question without running its flow: asked about one finding or the method,
+  it answers in the conversation, starts no scan, writes nothing, and says so. A scan, triage,
+  audit or review of the repo still runs the full flow; an ambiguous request gets one question
+  (`docs/skills.md`, "Asking versus auditing"). The skill descriptions no longer name one host.
 
 ## [1.21.0] - 2026-11-04
 

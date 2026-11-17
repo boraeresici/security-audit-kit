@@ -800,6 +800,8 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - `docs/skills.md` describes the two modes. The skill `description` lines are reviewed so that they do not promise a write on every load.
 - The text is written independently; the idea is credited in the skill as the other inspirations are.
 
+**Status — 2026-11-17:** implemented on `feat/f38-answer-only` (skill text, `docs/skills.md`, three e2e checks). The description review also made the four descriptions that said "with Claude" host-neutral, as F43 asked; e2e now fails a description that names a host. Not measured with F12: the eval prompt judges a verdict, which this section does not change. `lib/released-skills.sums` gets the new templates at release, as usual.
+
 ### F39 — Severity anchors for judgment findings
 
 **Source — 2026-11-17 (C):** Cloudflare re-read. Upstream separates priority from certainty ([`SKILL.md:150-162`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/SKILL.md#L150-L162)): anchors for critical/high/medium/low/informational, a high/medium question ("does the shown result fully defeat an explicit control, or only weaken it?"), and two rules its validator enforces: overall severity cannot exceed the demonstrated impact, and an unresolved record carries no severity ([`validate-findings.cjs:556-567`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/validate-findings.cjs#L556-L567)).

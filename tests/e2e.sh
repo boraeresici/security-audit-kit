@@ -1342,6 +1342,20 @@ grep -q 'attack: triage-steering' "$KIT_SRC/tests/eval/cases.yaml" \
 grep -qi 'evidence, not instructions' "$KIT_SRC/SECURITY.md" \
   && ok "F35: SECURITY.md states the boundary" || no "F35: SECURITY.md silent on repo text as instructions"
 
+echo "-- F38: a skill loaded for a question answers it and writes nothing --"
+# A plugin loads a skill from its description alone, so a question must not start the full flow.
+F38H='## A question is not a request to audit'
+F38N=0; for f in "$KIT_SRC"/skills/*/SKILL.md; do grep -qxF "$F38H" "$f" && F38N=$((F38N+1)); done
+F38B="$(for f in "$KIT_SRC"/skills/*/SKILL.md; do awk -v h="$F38H" '$0==h{p=1;next} p&&/^## /{exit} p' "$f" | cksum; done | sort -u | wc -l | tr -d ' ')"
+[ "$F38N" = "$F35T" ] && [ "$F38B" = 1 ] && ok "F38: all $F35T skills carry the same answer-only section" \
+  || no "F38: section in $F38N of $F35T skills, $F38B variants"
+grep -qF 'nothing was recorded' <<<"$(awk -v h="$F38H" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/skills/sec-triage/SKILL.md")" \
+  && ok "F38: the answer says nothing was recorded" || no "F38: the section does not say the answer records nothing"
+# F43: the same skills load in Codex, so a description must not name one host.
+grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md >/dev/null \
+  && no "F38/F43: a skill description names Claude: $(grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md | xargs -n1 basename -a 2>/dev/null | tr '\n' ' ')" \
+  || ok "F38/F43: no skill description names a host"
+
 echo "-- R02: the kit is a Claude Code plugin + marketplace; manifest and disk agree --"
 # One source for the skills: skills/<name>/SKILL.md is what the plugin loads AND what install.sh
 # copies. No skill on disk that the plugin would not load, none the installer misses.
