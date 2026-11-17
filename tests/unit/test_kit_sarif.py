@@ -321,3 +321,14 @@ class TestMain:
         assert len(run["results"]) == 3
         # Two unique rules, not three
         assert len(run["tool"]["driver"]["rules"]) == 2
+
+
+class TestUntrustedText:
+    def test_uri_is_a_relative_reference(self):
+        r = ks.result_for(_sample_finding(file="docs/read me%2e#1?.md"), 0)
+        uri = r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        assert uri == "docs/read%20me%252e%231%3F.md"
+
+    def test_markdown_link_is_broken(self):
+        r = ks.result_for(_sample_finding(message="[fix here](https://evil.example/a)"), 0)
+        assert "](" not in r["message"]["text"]

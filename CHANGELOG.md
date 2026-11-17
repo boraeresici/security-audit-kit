@@ -29,11 +29,19 @@ All notable changes to this project are documented here. The format is based on
   of reaching `evidence.json` and the `kit.sarif` uploaded to Code Scanning. Free-text cells lose
   control and bidirectional characters and are capped at 2000 characters; a findings file over
   2 MiB skips the judgment layer. Rows are split on newlines only, so U+2028 can no longer cut one
-  in two (`docs/schema/evidence.md`).
+  in two (`docs/schema/evidence.md`). After an independent review, the path rules also refuse a
+  colon (`https:`, `javascript:`), segments Windows would turn into `..`, non-ASCII spaces,
+  private-use characters, fullwidth dots and paths over 1024 characters; `kit.sarif`
+  percent-encodes the path; a confidence of `nan`, `inf` or outside `[0, 1]` is dropped rather than
+  written as invalid JSON; a markdown link in a message is broken apart; at most 20 dropped rows are
+  named. A tool cell of `-` no longer attaches a judgment row to any scanner finding at that
+  location.
 
 ### Fixed
-- A location such as `app.py:²` no longer crashes `scan.sh evidence`: only ASCII digits are read
-  as a line number. A findings file that is not UTF-8 is reported and skipped instead of raising.
+- A location such as `app.py:²`, or a line number of 5000 digits, no longer crashes
+  `scan.sh evidence`. A findings file that is not UTF-8 is reported and skipped instead of raising;
+  one that starts with a BOM is read. `path:line:column` keeps the line, not the column. A
+  scanner's `security-severity` of `NaN` is ignored.
 
 ## [1.21.0] - 2026-11-04
 

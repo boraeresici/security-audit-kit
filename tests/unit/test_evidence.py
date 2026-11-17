@@ -538,6 +538,22 @@ class TestJudgmentInputSafety:
         "src/\u202eyp.exe:8",
         "src/a\u200bpp.py:8",
         "src/a\u2028pp.py:8",
+        # from the review of the first version
+        "https:/evil.example/x.py:3",
+        "javascript:alert(1)",
+        "file:etc/passwd:3",
+        "a.py:" + "9" * 5000,
+        "a.py:99999999999",
+        "src/app.py:10000001",
+        "a/ /b.py:1",
+        "a/\u3000/b.py:1",
+        "a/.. /b.py:1",
+        "a/.../b.py:1",
+        "a/file.:1",
+        "x/\u3164.py:1",
+        "x/\ue000y.py:1",
+        "\uff0e\uff0e/\uff0e\uff0e/x.py:1",
+        "s" * 1025,
     ])
     def test_unsafe_location_is_dropped_and_said(self, tmp_path, loc):
         results, warnings = _one_row(tmp_path, loc)
@@ -556,6 +572,10 @@ class TestJudgmentInputSafety:
         ("src/app.py", "src/app.py", None),
         ("docs/ünïcode/naïve.py:3", "docs/ünïcode/naïve.py", 3),
         (".github/workflows/ci.yml:9", ".github/workflows/ci.yml", 9),
+        ("src/app.py:12:5", "src/app.py", 12),
+        ("cafe\u0301/menu.py:2", "cafe\u0301/menu.py", 2),     # NFD, as macOS writes it
+        ("my docs/read me.md:4", "my docs/read me.md", 4),
+        ("src/%2e%2e/x.py:1", "src/%2e%2e/x.py", 1),          # literal name; encoded at the SARIF sink
     ])
     def test_normal_location_still_passes(self, tmp_path, loc, path, line):
         results, warnings = _one_row(tmp_path, loc)
@@ -563,13 +583,53 @@ class TestJudgmentInputSafety:
         assert warnings == []
 
     def test_non_ascii_digit_is_not_a_line_and_does_not_crash(self, tmp_path):
-        results, _ = _one_row(tmp_path, "src/app.py:²")
-        assert [(r["file"], r["line"]) for r in results] == [("src/app.py:²", None)]
+        results, warnings = _one_row(tmp_path, "src/app.py:²")
+        assert results == [] and any("not a safe" in w for w in warnings)
 
     def test_free_text_loses_control_and_bidi_characters(self, tmp_path):
         results, _ = _one_row(tmp_path, "src/app.py:1", why="see\x1b[31m red\u202e evil\u200b\u2029end")
         assert results[0]["message"] == "see [31m red evil end"
         assert results[0]["evidence"]["note"] == "see [31m red evil end"
+
+    def test_free_text_keeps_joiners_that_belong_to_the_text(self, tmp_path):
+        text = "m\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 \U0001f469\u200d\U0001f4bb co\u00adop"
+        results, _ = _one_row(tmp_path, "src/app.py:1", why=text)
+        assert results[0]["message"] == text
+
+    @pytest.mark.parametrize("loc", ["N/A", "\u2013", "none"])
+    def test_placeholder_location_is_not_a_file(self, tmp_path, loc):
+        results, warnings = _one_row(tmp_path, loc)
+        assert results == [] and warnings == []
+
+    def test_row_warnings_are_capped(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_text("# sec-sast-deep\n\n| Sink (file:line) | Sev |\n|---|---|\n" + "| /x | high |\n" * 500)
+        warnings = []
+        assert evidence.parse_findings_md(str(md), warnings) == []
+        assert len(warnings) == evidence.MAX_ROW_WARNINGS + 1
+        assert "480 more rows dropped" in warnings[-1]
+
+    @pytest.mark.parametrize("conf", ["nan", "inf", "-inf", "1e999", "999", "-0.1", "1_0"])
+    def test_confidence_outside_0_1_is_none_and_said(self, tmp_path, conf):
+        md = tmp_path / "findings.md"
+        md.write_text(f"# sec-sast-deep\n\n| Sink (file:line) | Sev | Conf |\n|---|---|---|\n| a.py:1 | high | {conf} |\n")
+        warnings = []
+        results = evidence.parse_findings_md(str(md), warnings)
+        assert results[0]["confidence"] is None and any("not in [0, 1]" in w for w in warnings)
+        json.dumps(results, allow_nan=False)
+
+    def test_severity_cell_is_capped_in_severity_source(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_text("# sec-sast-deep\n\n| Sink (file:line) | Sev |\n|---|---|\n| a.py:1 | " + "z" * 3000 + " |\n")
+        warnings = []
+        results = evidence.parse_findings_md(str(md), warnings)
+        assert len(results[0]["severity_source"]) <= len("sec-sast-deep:") + 40
+        assert all(len(w) < 200 for w in warnings)
+
+    def test_bom_prefixed_file_is_read(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_bytes("\ufeff| Sink (file:line) | Sev |\n|---|---|\n| a.py:1 | high |\n".encode("utf-8"))
+        assert [r["file"] for r in evidence.parse_findings_md(str(md), [])] == ["a.py"]
 
     def test_free_text_is_capped(self, tmp_path):
         results, _ = _one_row(tmp_path, "src/app.py:1", why="x" * 5000)
@@ -1119,3 +1179,21 @@ class TestRunTimingStaysOut:
         assert evidence.main() == 0
         doc = json.loads(out.read_text())
         assert doc["scan"]["dimensions"] == [{"name": "sast", "status": "pass", "gate": "allow"}]
+
+
+class TestMergeToolTiebreak:
+    def test_dash_tool_cell_does_not_claim_a_scanner_finding(self):
+        scanner = [{"id": "g1", "tool": "gitleaks", "file": "cfg.py", "line": 3, "decision": None},
+                   {"id": "s1", "tool": "semgrep", "file": "cfg.py", "line": 3, "decision": None}]
+        judged = [{"origin": "sec-sast-deep", "tool": "-", "rule_id": "SAK-sast-deep-x", "file": "cfg.py", "line": 3,
+                   "message": "m", "severity": "low", "severity_source": "s", "decision": "suppressed",
+                   "confidence": None, "evidence": {}}]
+        out = evidence.merge_judgment(scanner, judged, [])
+        assert [f["decision"] for f in out[:2]] == [None, None]
+        assert out[2]["dimension"] == "judgment"
+
+
+class TestNumericSeverityFinite:
+    @pytest.mark.parametrize("raw", ["NaN", "nan", "inf", "-Infinity"])
+    def test_non_finite_score_is_ignored(self, raw):
+        assert evidence.numeric_severity({"properties": {"security-severity": raw}}) is None

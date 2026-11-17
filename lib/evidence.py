@@ -12,8 +12,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
-import re
 import sys
 import unicodedata
 
@@ -81,9 +81,10 @@ def numeric_severity(rule: dict):
     if raw is None:
         return None
     try:
-        return float(raw)
+        score = float(raw)
     except (TypeError, ValueError):
         return None
+    return score if math.isfinite(score) else None   # "NaN" from a tool must not reach the JSON
 
 
 def classify(tool: str, result: dict, rule: dict, warnings: list, where: str):
@@ -198,38 +199,60 @@ def is_separator(line: str) -> bool:
 def parse_location(text: str):
     """'path/to/x.py:88' -> ('path/to/x.py', 88). Backticks and stray markdown are tolerated."""
     raw = text.strip().strip("`").strip()
-    if not raw or raw in {"-", "—", "n/a"}:
+    if not raw or raw.lower() in {"-", "—", "–", "n/a", "none"}:
         return None, None
     if ":" in raw:
         head, _, tail = raw.rpartition(":")
-        if head and tail.isascii() and tail.isdigit():   # "²" is a digit to isdigit(), not to int()
+        if head and _is_line(tail):
+            # path:line:column -> the column goes; the line is the number before it
+            h2, _, t2 = head.rpartition(":")
+            if h2 and _is_line(t2):
+                head, tail = h2, t2
             return head.strip(), int(tail)
     return raw, None
+
+
+def _is_line(s: str) -> bool:
+    # ASCII only ("²" is a digit to isdigit(), not to int()), and short: int() refuses 4300+ digits.
+    return s.isascii() and s.isdigit() and len(s) <= 9
 
 
 # The findings table is written by a model that read the scanned repo, so its cells are untrusted
 # input: the path goes on into kit.sarif's artifactLocation, which is uploaded to Code Scanning.
 MAX_FINDINGS_BYTES = 2 * 1024 * 1024
 MAX_CELL_CHARS = 2000
-_DRIVE_RE = re.compile(r"^[A-Za-z]:")
+MAX_PATH_CHARS = 1024
+MAX_LINE = 10_000_000
+MAX_ROW_WARNINGS = 20
+# Bidirectional controls, zero-width space, BOM and tag characters: they reorder or hide text.
+# Other format characters (ZWJ in emoji, ZWNJ in Persian, the soft hyphen) are kept in free text.
+_HIDING = (set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A)) | {0x200B, 0x200E, 0x200F, 0x061C, 0xFEFF}
+           | set(range(0xE0000, 0xE0080)))
 
 
 def _unsafe_char(c: str) -> bool:
-    """Control, format (bidirectional, zero-width) and line/paragraph separator characters."""
-    return unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")
+    """Not in a path: control, format, separator, private-use, unassigned and non-ASCII spaces."""
+    cat = unicodedata.category(c)
+    return cat in ("Cc", "Cf", "Zl", "Zp", "Co", "Cn") or (cat == "Zs" and c != " ")
 
 
 def safe_location(path: str, line):
     """-> the repo-relative path to keep, or None when the location must not be trusted."""
     while path.startswith("./"):
         path = path[2:]
-    if not path or any(_unsafe_char(c) for c in path) or "\\" in path:
+    if not path or len(path) > MAX_PATH_CHARS or any(_unsafe_char(c) for c in path):
         return None
-    if path.startswith(("/", "~")) or _DRIVE_RE.match(path):
+    # A colon is a URI scheme or a drive letter; a backslash is a Windows separator.
+    if "\\" in path or ":" in path or path.startswith(("/", "~")):
         return None
-    if any(seg in ("", ".", "..") for seg in path.split("/")):
+    # Fullwidth "．．" becomes ".." under compatibility normalization; NFD (macOS) names stay valid.
+    if unicodedata.normalize("NFKC", path) != unicodedata.normalize("NFC", path):
         return None
-    if line is not None and line < 1:
+    for seg in path.split("/"):
+        # Windows drops a trailing dot or space, so "..." and ".. " would become "..".
+        if seg in ("", ".", "..") or seg != seg.lstrip(" ") or seg.endswith((".", " ")):
+            return None
+    if line is not None and not 1 <= line <= MAX_LINE:
         return None
     return path
 
@@ -237,7 +260,7 @@ def safe_location(path: str, line):
 def clean_cell(text: str) -> str:
     """Free text bound for evidence.json, kit.sarif and the report: no control or bidi characters."""
     out = "".join(" " if unicodedata.category(c) in ("Cc", "Zl", "Zp") else c
-                  for c in text if unicodedata.category(c) != "Cf")
+                  for c in text if ord(c) not in _HIDING)
     return out if len(out) <= MAX_CELL_CHARS else out[:MAX_CELL_CHARS - 1] + "…"
 
 
@@ -257,7 +280,7 @@ def parse_findings_md(path: str, warnings: list) -> list:
             return []
         # Split on newlines only: splitlines() also breaks at U+2028 and friends, which would cut a
         # row in two before its cells are checked.
-        with open(path, encoding="utf-8", newline="") as fh:
+        with open(path, encoding="utf-8-sig", newline="") as fh:
             lines = [ln.rstrip("\r") for ln in fh.read().split("\n")]
     except FileNotFoundError:
         return []
@@ -266,6 +289,7 @@ def parse_findings_md(path: str, warnings: list) -> list:
         return []
 
     origin = "sec-triage"
+    dropped = 0
     suppressed_section = False
     skip_section = False
     header = None
@@ -305,12 +329,14 @@ def parse_findings_md(path: str, warnings: list) -> list:
             continue
         path_ = safe_location(raw_path, line_no)
         if path_ is None:
-            warnings.append(f"findings file: location {ascii(row['loc'].strip())[:120]} is not a safe "
-                            "repo-relative path:line -> row dropped")
+            dropped += 1
+            if dropped <= MAX_ROW_WARNINGS:
+                warnings.append(f"findings file: location {ascii(row['loc'].strip())[:120]} is not a safe "
+                                "repo-relative path:line -> row dropped")
             continue
         row = {role: clean_cell(value) for role, value in row.items() if role != "loc"}
 
-        sev_raw = row.get("sev", "").strip()
+        sev_raw = row.get("sev", "").strip()[:40]
         severity = SEVERITY_WORDS.get(sev_raw.lower())
         if severity is None:
             if sev_raw:
@@ -323,10 +349,15 @@ def parse_findings_md(path: str, warnings: list) -> list:
             decision = "uncertain" if decision_raw else None
 
         confidence = None
+        conf_raw = row.get("conf", "").strip()
         try:
-            confidence = float(row.get("conf", "").strip())
+            confidence = float(conf_raw)
         except ValueError:
             pass
+        # nan/inf would make evidence.json invalid JSON for strict parsers; "1_0" parses as 10.0.
+        if confidence is not None and not (math.isfinite(confidence) and 0 <= confidence <= 1):
+            warnings.append(f"findings file: confidence {conf_raw[:40]!r} at {path_} is not in [0, 1] -> none")
+            confidence = None
 
         tool = row.get("tool", "").strip() or origin
         cls = row.get("cls", "").strip()
@@ -351,6 +382,8 @@ def parse_findings_md(path: str, warnings: list) -> list:
                 "note": (row.get("action") or row.get("why") or "").strip() or None,
             },
         })
+    if dropped > MAX_ROW_WARNINGS:
+        warnings.append(f"findings file: … and {dropped - MAX_ROW_WARNINGS} more rows dropped for an unsafe location")
     return out
 
 
@@ -368,8 +401,9 @@ def merge_judgment(findings: list, judged: list, warnings: list) -> list:
     for j in judged:
         candidates = by_location.get((j["file"], j["line"]), [])
         match = None
+        prefix = j["tool"].split("-")[0]
         for c in candidates:
-            if c["tool"].startswith(j["tool"].split("-")[0]) or j["tool"] in c["tool"]:
+            if (prefix and c["tool"].startswith(prefix)) or (len(j["tool"]) > 1 and j["tool"] in c["tool"]):
                 match = c
                 break
         if match is None and len(candidates) == 1 and j["origin"] == "sec-triage":

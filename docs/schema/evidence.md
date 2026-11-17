@@ -136,11 +136,20 @@ asked to also emit JSON — two sources of truth drift, and the markdown is the 
   section is skipped entirely — those are bugs in the kit, not findings about your repo.
 - **The table is untrusted input.** A model that read the scanned repo writes it, and its location
   ends up in `kit.sarif`, which Code Scanning ingests. A row is dropped, with a warning that quotes
-  it escaped, unless its location is a repo-relative path: no leading `/`, `~` or drive letter, no
-  backslash, no empty, `.` or `..` segment, no control, format (bidirectional, zero-width) or
-  line-separator character, and a line, if given, of 1 or more. A leading `./` is removed first.
-  The other cells lose those characters too and are cut at 2000 characters. A findings file over
-  2 MiB, or one that is not UTF-8, skips the judgment layer with a warning.
+  it escaped, unless its location is a repo-relative path of at most 1024 characters: no leading
+  `/` or `~`, no colon (a URI scheme or drive letter), no backslash; no empty, `.` or `..` segment,
+  and none that starts with a space or ends with a dot or a space; no control, format, separator,
+  private-use or unassigned character, no space other than U+0020, and nothing that compatibility
+  normalization would turn into something else (fullwidth `．．`). A leading `./` is removed first;
+  `path:line:column` keeps the line. A line, if given, is 1 to 10,000,000. The first 20 dropped
+  rows are named, the rest counted. `kit.sarif` percent-encodes the path, so `%`, `?`, `#` and
+  spaces in a file name stay part of the name.
+- **Free-text cells** lose control characters, bidirectional controls, zero-width spaces and tag
+  characters (joiners that belong to the text, as in emoji or Persian, stay) and are cut at 2000
+  characters; the severity cell at 40. A confidence outside `[0, 1]`, `nan` and `inf` included,
+  becomes `null` with a warning. A `[text](url)` link in the message reaches `kit.sarif` broken
+  apart. A findings file over 2 MiB, or one that is not UTF-8, skips the judgment layer with a
+  warning; a UTF-8 BOM is accepted.
 - **A triage row about a scanner finding fills that finding in** (matched on file + line, with the
   tool name as a tiebreak) rather than becoming a second entry. A deep-pass finding has no scanner
   counterpart, so it becomes a new finding with `dimension: "judgment"` and `tool: "<skill>"`.
