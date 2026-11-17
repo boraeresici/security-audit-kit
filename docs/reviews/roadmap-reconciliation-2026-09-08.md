@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — F42 reviewed; deep-review eval for F39–F41 (`feat/eval-deep`, unreleased)
+
+An independent review of F42 found a crash, URI syntax reaching `kit.sarif`, non-finite confidence written as invalid JSON and a pre-existing merge bug; all fixed with tests, fixture output unchanged. The existing eval measured only triage, so F39–F41 could not be measured; a deep-review sub-eval now exists, keyless parts tested. The baseline run needs a paid API call and waits for the user.
+
 ## 2026-11-17 — F42 implemented (`fix/f42-judgment-parser`, unreleased)
 
 The judgment parser now drops a findings row whose location is not a safe repo-relative path, strips control and bidirectional characters from the other cells, and caps cell and file size. Testing found two more defects in the same parser (a U+2028 row split, a crash on a non-ASCII digit), fixed with it. Output for the existing fixtures is unchanged. Next in slot 8e: F39–F41, which need their F12 dev cases.

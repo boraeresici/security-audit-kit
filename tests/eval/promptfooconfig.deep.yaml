@@ -1,0 +1,24 @@
+# Deep-review eval (dev-only; see README.md, "Deep-review eval"). Measures the verify phase of
+# sec-sast-deep and sec-ai-review against cases.deep.yaml: is a recon candidate REAL or FP, and is
+# a REAL's severity within the impact its evidence shows (F39). Same runner and scorer as the
+# triage eval: EVAL_CONFIG=promptfooconfig.deep.yaml bash tests/eval/run.sh
+#
+# deep_prompt.md is today's skill text, distilled: the BASELINE. A skill change (F39-F41) is
+# measured as a candidate prompt against it on the same cases before it ships.
+description: "deep-review verify eval"
+
+prompts:
+  - file://deep_prompt.md
+
+providers:
+  - id: anthropic:messages:claude-opus-4-8   # same tier as the triage baseline
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: file://grade_deep.mjs
+
+# Dev split only for now: the cases were written alongside F39-F41 and are tuning cases. A holdout
+# for the deep review is written separately, by someone who has not read the candidate prompts.
+tests:
+  - file://cases.deep.yaml

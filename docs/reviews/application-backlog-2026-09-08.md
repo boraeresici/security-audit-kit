@@ -854,6 +854,8 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - F12 dev cases: one REAL and one FP twin for an unequal sibling guard and for an export that leaks.
 - This is the first slice of R14 and does not wait for its trigger; the other domains (HTTP framing, RPC, mobile/IPC, native) stay in R14.
 
+**Status of F39–F41 — 2026-11-17:** keyless preparation done on `feat/eval-deep`: a deep-review sub-eval (`tests/eval/promptfooconfig.deep.yaml`) with today's skill text as the baseline prompt, a grader that also checks `max_severity`, and 18 dev cases (F39 2, F40 12, F41 4). No paid run yet and no skill text changed. Next: a baseline run on the default backend, then candidate prompts per card, each measured against the baseline before the skill changes.
+
 ### F42 — Judgment parser: safe paths and text limits
 
 **Finding — 2026-11-17 (C):** `parse_location` takes the location cell of the model-written findings table as it is (`lib/evidence.py:196`): an absolute path, a `..` segment, a backslash path or a control character is accepted. The value goes into `evidence.json` and from there into the SARIF `artifactLocation.uri` (`lib/kit_sarif.py:77`), which is uploaded to GitHub Code Scanning. `lib/report_html.py:95` escapes HTML, so the report is not an injection path; bidirectional and control characters still pass through. The table is written by a model that read the scanned repo, so its cells are not trusted input (F35 is a rule the model is asked to follow, not a control). No exploit was built; this is a code-read finding.
@@ -869,6 +871,8 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - F19b keeps the rest of the validator (verdict-specific fields, root-cause identity, migration). This card does not change the schema version.
 
 **Status — 2026-11-17:** implemented on `fix/f42-judgment-parser` (`lib/evidence.py`, 27 unit tests, `docs/schema/evidence.md`). Two changes beyond the criteria: a leading `./` is removed rather than rejected, since it names the same file; a line number is required only to be positive when given, since rows without one are valid today. Found while testing: `splitlines()` split a row at U+2028 before its cells were checked, and a non-ASCII digit (`:²`) crashed the parser; both fixed. Old and new parser give identical output on the e2e fixtures and every tracked `.md` file (38 files). Schema version unchanged.
+
+**Review — 2026-11-17:** an independent review (Fable) of `889111b` found a crash (a 5000-digit line), URI syntax that passed into `kit.sarif` (`https:/…`, `javascript:`, percent-encoded `..`), `nan`/`inf` confidence written as invalid JSON, uncapped path and warning volume, a markdown link in the SARIF message, Windows-equivalent `..` segments, and a pre-existing merge bug (a tool cell of `-` attached a row to any scanner finding). All fixed on `feat/eval-deep` with 40 tests; output for the existing fixtures is still identical. Not changed: scanner SARIF paths and messages are not cleaned; they reach only the escaped HTML report.
 
 ### R18 — `npx skills add` as a second install channel (trial)
 

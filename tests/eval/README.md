@@ -125,8 +125,24 @@ kit's own self-audit. Each case needs `metadata: { label, vuln_class, split, dif
   promptfoo renders cases through Nunjucks, and a brace-pair with a colon (e.g. JSX
   `dangerouslySetInnerHTML={{ __html: x }}`) is a template syntax error. Add a space: `={ { … } }`.
 
-Grow coverage: more vuln classes, real-CVE snippets, and (later) separate corpora + prompts for
-`sec-sast-deep` / `sec-ai-review`.
+Grow coverage: more vuln classes and real-CVE snippets.
+
+## Deep-review eval
+`sec-sast-deep` and `sec-ai-review` have their own corpus, prompt and grader, on the same runner
+and scorer. Each case is one recon **candidate** plus the code on its call path; the model runs the
+verify phase and returns a verdict and a severity.
+
+```sh
+EVAL_CONFIG=promptfooconfig.deep.yaml bash tests/eval/run.sh      # -> output.deep.json
+```
+
+- `deep_prompt.md` is the two skills' verify phase **as they ship today**: the baseline. A skill
+  change (F39 severity anchors, F40 AI classes, F41 sibling paths) is written as a candidate prompt
+  and measured against it on the same cases before the skill text changes.
+- `max_severity` on a case is the highest severity its evidence chain supports (F39). The grader
+  fails a REAL rated above it, and `score.mjs` prints a `severity:` line for those cases.
+- Dev split only, 18 cases: F40 and F41 in REAL/FP twins, two F39 over-statement cases. A holdout
+  for the deep review is written by someone who has not read the candidate prompts.
 
 ## Files
 - `cases.yaml` — dev/tuning split (promptfoo tests).
@@ -137,5 +153,7 @@ Grow coverage: more vuln classes, real-CVE snippets, and (later) separate corpor
 - `score.mjs` — precision/recall + **calibration metrics** (Brier, ECE, reliability table, 0.7
   threshold cost) from promptfoo output; excludes provider errors; handles chain-of-thought
   reasoning prefixes (Qwen, GLM); zero deps.
+- `cases.deep.yaml`, `deep_prompt.md`, `grade_deep.mjs`, `promptfooconfig.deep.yaml` — the deep-review eval
+  (see above); `grade_deep.mjs` reuses `grade.mjs` for the verdict.
 - `run.sh` — env-gated orchestration (`EVAL_SPLIT`, `EVAL_CONFIG`, `EVAL_CONCURRENCY`, `EVAL_MIN_*`).
 - `output.json` / `output.holdout.json` — the last run's raw results per split (gitignored).

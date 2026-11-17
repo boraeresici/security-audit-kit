@@ -842,6 +842,26 @@ JSON
     || no "eval: multi-provider scoring wrong"
   rm -f eval_matrix_mock.json
   rm -f eval_mock.json
+  # Deep-review eval (F39-F41): same runner, its own prompt, grader and corpus.
+  ( cd tools/security-audit-kit && env ANTHROPIC_API_KEY= EVAL_CONFIG=promptfooconfig.deep.yaml bash tests/eval/run.sh >/dev/null 2>&1 ) \
+    && ok "eval: the deep-review config skips cleanly without a key" || no "eval: deep-review run.sh should exit 0 when key absent"
+  cat > eval_deep_mock.json <<'JSON'
+{"config":{"description":"deep-review verify eval"},"results":{"results":[
+ {"vars":{"expected":"REAL","max_severity":"medium"},"response":{"output":"reasoning first {\"verdict\":\"REAL\",\"severity\":\"critical\"}"}},
+ {"vars":{"expected":"REAL","max_severity":"medium"},"response":{"output":"{\"verdict\":\"REAL\",\"severity\":\"medium\"}"}},
+ {"vars":{"expected":"FP"},"response":{"output":"{\"verdict\":\"FP\",\"severity\":\"info\"}"}}
+]}}
+JSON
+  DOUT="$(node tools/security-audit-kit/tests/eval/score.mjs eval_deep_mock.json 2>/dev/null)"
+  grep -q '== deep-review verify eval' <<<"$DOUT" && grep -q 'severity:   1/2 REALs within .*critical>medium' <<<"$DOUT" \
+    && ok "eval: deep-review scoring names itself and catches an over-stated severity (F39)" || no "eval: deep-review severity scoring wrong"
+  rm -f eval_deep_mock.json
+  # The corpus: every twin label is used exactly twice (one REAL, one FP); every case is dev split.
+  DC="tools/security-audit-kit/tests/eval/cases.deep.yaml"
+  DTW="$(grep -oE 'twin: [a-z-]+' "$DC" | grep -v 'twin: none' | sort | uniq -c | awk '$1!=2' | wc -l | tr -d ' ')"
+  DSP="$(grep -c 'split: dev' "$DC")"; DN="$(grep -c '^- description:' "$DC")"
+  [ "$DTW" = 0 ] && [ "$DSP" = "$DN" ] && [ "$DN" -ge 18 ] \
+    && ok "eval: deep corpus has $DN dev cases, each twin a REAL/FP pair" || no "eval: deep corpus shape (unpaired twins: $DTW, dev $DSP of $DN)"
 else
   skip "eval harness (node unavailable)"
 fi
