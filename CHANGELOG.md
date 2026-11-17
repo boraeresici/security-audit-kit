@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format is based on
   (`DISABLE_TELEMETRY=1`); `docs/data-flow.md` has its row.
 
 ### Changed
+- ShellCheck's word-splitting checks (SC2086, SC2046) are on again. They were off for the whole kit,
+  which is how the space-splitting bugs above got in; the few places that split on purpose
+  (space-separated flags from the config) say so on the line.
 - Python 3.9 is the documented minimum (macOS's own `python3`); CI now also runs the unit tests on
   Python 3.9 and 3.13 on Linux and macOS, and the offline e2e on macOS (bash 3.2, BSD tools). These
   are new, non-required checks. WSL2 is marked "not verified" in `docs/install.md` until a run is
@@ -61,6 +64,12 @@ All notable changes to this project are documented here. The format is based on
   evidence` crashed under a repo root with a space. Lists from git are now one path per line and
   reach each tool as one argument (bash 3.2 arrays). The lists in `.security-audit.conf`
   (`SAST_PATHS`, `JS_DIRS`) stay space-separated; `docs/install.md` says so.
+- In a git worktree whose main repo path has a space, the extra read-only mount for gitleaks was
+  split into several `docker run` arguments, so the `secret` dimensions failed there. The mount is an
+  argument array now.
+- A shallow clone was scanned as "full history". `secret` now says how many commits were fetched and
+  that older history was not scanned (in the dimension's reason, so it reaches `summary.json` and the
+  report), and `doctor` says the same. `doctor` no longer calls WSL2 "full support".
 - `scan.sh allowlist` read a `.trivyignore.yaml` expiry under `expiredAt`, but Trivy's key is
   `expired_at`: an expired Trivy deferral was counted as one with no expiry and passed. Both are read
   now, and osv-scanner's newer `effectiveUntil` next to `ignoreUntil`. The `sec-triage` skill named

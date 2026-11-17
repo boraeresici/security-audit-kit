@@ -1,6 +1,6 @@
-# Intentional in this kit: word-splitting is used deliberately to pass multiple
-# flags/paths (e.g. $SEMGREP_CONFIGS, $SAST_PATHS, $flags) to the underlying tools.
-disable=SC2086,SC2046
+# SC2086/SC2046 (word splitting) are ON: a list built from git must reach a tool as one argument per
+# path (F18). Where splitting is the point (space-separated config flags such as $SEMGREP_CONFIGS),
+# the line says so with its own `# shellcheck disable=` and the reason.
 # SC2015: `have x && ok || miss` — the middle branch (printf) never fails here, so the
 #         A && B || C caveat does not apply.
 disable=SC2015

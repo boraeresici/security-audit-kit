@@ -201,6 +201,7 @@ else
   else
     # This repo already runs hooks: chain them instead of silencing them.
     rm -rf "$CHAIN_DIR"; mkdir -p "$CHAIN_DIR"
+    # shellcheck disable=SC2086  # $own: hook names (no spaces), one per word
     names="$(printf '%s\n' pre-commit pre-push $own | sort -u | tr '\n' ' ')"
     for n in $names; do chain_wrapper "$n" "$prev"; done
     git config core.hooksPath "$CHAIN_DIR"

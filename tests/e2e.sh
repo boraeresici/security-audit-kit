@@ -209,6 +209,27 @@ echo '# sec-triage' > "$F18S/docs/security/scan-findings/findings-$(date +%F).md
 (cd "$F18S" && bash "$KIT_SRC/scan.sh" evidence >/dev/null 2>&1); [ -f "$F18S/docs/security/scan-findings/evidence.json" ] \
   && ok "F18: scan.sh evidence works under a repo root with spaces" || no "F18: scan.sh evidence failed under a root with spaces"
 rm -rf "$(dirname "$F18S")"
+# Repo states: no commit yet, a decomposed (NFD) name, a staged rename, a shallow clone.
+F18CT='git(){ command git -c core.quotepath=off "$@"; }; record_rel(){ echo docs/security/scan-findings; }; BASE_REF=""
+  eval "$(sed -n "/^changed_files()/,/^}/p; /^changed_targets()/,/^}/p" "$1/scan.sh")"; changed_targets ""'
+F18U="$(mktemp -d)"; git -C "$F18U" init -q
+echo x > "$F18U/yeni dosya.py"; echo y > "$F18U/$(printf 'gu\314\210venlik.py')"   # "ü" as u + U+0308
+git -C "$F18U" add -A >/dev/null 2>&1
+F18O="$(cd "$F18U" && bash -c "$F18CT" _ "$KIT_SRC" 2>&1)"
+[ "$(grep -c . <<<"$F18O")" = 2 ] && grep -qx 'yeni dosya.py' <<<"$F18O" \
+  && ok "F18: an unborn repo lists its staged files, an NFD-named one included" || no "F18: unborn/NFD staged list wrong: $(tr '\n' '|' <<<"$F18O")"
+(cd "$F18U" && bash "$KIT_SRC/scan.sh" doctor >/dev/null 2>&1) && ok "F18: doctor runs in a repo with no commit yet" || no "F18: doctor fails on an unborn repo"
+git -C "$F18U" -c user.email=e2e@test -c user.name=e2e commit -qm base >/dev/null 2>&1
+git -C "$F18U" mv "yeni dosya.py" "taşındı dosya.py" >/dev/null 2>&1
+F18O="$(cd "$F18U" && bash -c "$F18CT" _ "$KIT_SRC" 2>&1)"
+[ "$F18O" = "taşındı dosya.py" ] && ok "F18: a staged rename is scanned under its new name only" || no "F18: staged rename listed as: $(tr '\n' '|' <<<"$F18O")"
+F18C="$(mktemp -d)"; git -C "$F18U" -c user.email=e2e@test -c user.name=e2e commit -qm two >/dev/null 2>&1
+git clone -q --depth 1 "file://$F18U" "$F18C/c" >/dev/null 2>&1
+grep -q 'shallow clone: only 1 commit(s) fetched' <<<"$(cd "$F18C/c" && bash "$KIT_SRC/scan.sh" doctor 2>/dev/null)" \
+  && ok "F18: a shallow clone is named, so 'full history' is not claimed" || no "F18: shallow clone not reported by doctor"
+grep -q 'shallow clone' <<<"$(cd "$F18U" && bash "$KIT_SRC/scan.sh" doctor 2>/dev/null)" \
+  && no "F18: a full clone reported as shallow" || ok "F18: a full clone is not reported as shallow"
+rm -rf "$F18U" "$F18C"
 
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
@@ -990,6 +1011,7 @@ SH
   F01FD="$F01/docs/security/scan-findings"
   F01LOCK="$F01/.git/security-audit-cache/scan.lock"
   # Run a scan in the F01 repo: f01run <marker> [extra env...]
+  # shellcheck disable=SC2086  # F01SCAN is a command line (bash + path), split on purpose
   f01run(){ local m="$1"; shift; ( cd "$F01" && exec env PATH="$F01BIN:$PATH" SARIF=1 F01_MARK="$m" "$@" $F01SCAN zizmor ); }
   # One fingerprint over the whole shared record: summary, sarif/, evidence, report.
   f01snap(){ ( cd "$F01FD" && find summary.json evidence.json sarif report-*.html -type f 2>/dev/null \
@@ -1081,6 +1103,7 @@ SH
   # Not via f01run: a backgrounded function is a subshell of its own, and `wait` would return as
   # soon as THAT dies, before scan.sh has finished cleaning up. Here the job's pid is scan.sh.
   set -m
+  # shellcheck disable=SC2086  # F01SCAN is a command line, split on purpose
   ( cd "$F01" && exec env PATH="$F01BIN:$PATH" SARIF=1 F01_MARK=C F01_SLEEP=20 $F01SCAN zizmor ) > "$F01.c.out" 2>&1 &
   CPID=$!
   set +m

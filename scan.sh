@@ -343,12 +343,12 @@ scan_py_deps_no_env(){
     warn deps "INDETERMINATE — no project venv, and no docker to read the manifests with osv-scanner. Nothing was inspected; this is NOT a clean result."
     return "$RC_INDETERMINATE"
   fi
-  local f targets=()
-  while IFS= read -r f; do [ -n "$f" ] && targets+=(-L "/repo/$f"); done <<<"$man"
+  local f osv_targets=()
+  while IFS= read -r f; do [ -n "$f" ] && osv_targets+=(-L "/repo/$f"); done <<<"$man"
   say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed): $(printf '%s' "$man" | tr '\n' ',' | sed 's/,$//;s/,/, /g')"
   # shellcheck disable=SC2086
   docker run --rm -v "$ROOT:/repo:ro" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
-    scan source "${targets[@]}"
+    scan source "${osv_targets[@]}"
   local rc=$?
   case "$rc" in
     0) return 0 ;;
@@ -412,17 +412,21 @@ scan_js_deps(){
   elif [ "$skipped" -gt 0 ]; then
     dim_mark "" "$skipped of $n JS project(s) not audited (no installed package manager for the lockfile)"
   fi
-  return $rc
+  return "$rc"
 }
 
 # Extra docker mounts so gitleaks can reach git history in a git WORKTREE — whose .git is a
 # FILE pointing to a gitdir OUTSIDE the worktree (else gitleaks silently scans 0 commits and
 # reports "no leaks", a false-clean). No-op for a normal repo (.git is a directory).
-git_extra_mounts(){
+# git_mounts -> fills GITM, an argument array: in a worktree, the main repo's git dir, read-only. An
+# array, not a printed string: a path with a space would otherwise split the -v argument (F18).
+git_mounts(){
+  GITM=()
   [ -f "$ROOT/.git" ] || return 0
   local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
   case "$common" in /*) ;; *) common="$ROOT/$common" ;; esac
-  [ -n "$common" ] && [ -d "$common" ] && printf -- '-v %s:%s:ro' "$common" "$common"
+  if [ -n "$common" ] && [ -d "$common" ]; then GITM=(-v "$common:$common:ro"); fi
+  return 0
 }
 
 # Docker scanners read the repo READ-ONLY (F11): a scanner is handed attacker-controllable files
@@ -433,14 +437,24 @@ git_extra_mounts(){
 out_mount(){ OUTM=(); [ -n "${1:-}" ] || return 0; mkdir -p "$1" && OUTM=(-v "$1:/out"); }
 
 # ---- secret, full history (gitleaks detect) ----
+# A shallow clone has only the fetched commits: "full history" would be a claim the scan cannot back.
+shallow_note(){
+  [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ] || return 0
+  printf 'shallow clone: only %s commit(s) fetched -> secrets in older history were NOT scanned (git fetch --unshallow)' \
+    "$(git rev-list --count HEAD 2>/dev/null || echo '?')"
+}
+
 scan_secret(){
   docker_ok || { dim_skip secret "no docker -> gitleaks skipped"; return 0; }
   local cfg=""; [ -f .gitleaks.toml ] && cfg="--config /repo/.gitleaks.toml"
   local rep="" OUTM=()
   if [ "$SARIF" = "1" ]; then rep="--report-format sarif --report-path /out/gitleaks.sarif"; out_mount "$SARIF_DIR"; fi
-  say secret "gitleaks detect (full history)"
+  local sh; sh="$(shallow_note)"
+  if [ -n "$sh" ]; then say secret "gitleaks detect (fetched history only) — $sh"; dim_mark "" "$sh"
+  else say secret "gitleaks detect (full history)"; fi
+  git_mounts
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" "${GITM[@]+"${GITM[@]}"}" "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     detect --source /repo $cfg $rep --redact --exit-code 1 --verbose
 }
 
@@ -456,8 +470,9 @@ scan_secret_staged(){
     warn secret "merge in progress, but no python3 to tell incoming lines from yours -> every staged finding blocks"
   fi
   say secret "gitleaks protect --staged"
+  git_mounts
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" "${GITM[@]+"${GITM[@]}"}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     protect --staged --source /repo $cfg --redact --exit-code 1 --verbose
 }
 
@@ -470,8 +485,9 @@ scan_secret_merge(){
   from="$(git name-rev --name-only --exclude='tags/*' MERGE_HEAD 2>/dev/null || git rev-parse --short MERGE_HEAD)"
   out_mount "$od"
   say secret "gitleaks protect --staged (merge of $from in progress: what it brings in vs. what you add)"
+  git_mounts
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo:ro" $(git_extra_mounts) "${OUTM[@]}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
+  docker run --rm -v "$ROOT:/repo:ro" "${GITM[@]+"${GITM[@]}"}" "${OUTM[@]}" -w /repo "$(img ghcr.io/gitleaks/gitleaks "$GITLEAKS_VER" "$GITLEAKS_DIGEST")" \
     protect --staged --source /repo $cfg --redact --exit-code 0 --report-format json --report-path /out/staged.json >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] && [ -f "$od/staged.json" ] || { rm -rf "$od"; dim_error secret "gitleaks exit $rc (staged scan of a merge failed)"; return 1; }
@@ -784,7 +800,7 @@ EOF
   done <<EOF
 $npmpkgs
 EOF
-  return $rc
+  return "$rc"
 }
 
 # ---- pkgcheck — ONE named package, BEFORE it is installed (agent hook / ad-hoc) ----
@@ -905,7 +921,7 @@ scan_pkgcheck(){
   done <<EOF
 $targets
 EOF
-  return $rc
+  return "$rc"
 }
 
 # ---- zizmor — GitHub Actions security, OPTIONAL (not in 'all') ----
@@ -919,9 +935,11 @@ scan_zizmor(){
   say zizmor "zizmor --offline (.github, ==$ZIZMOR_VER)"
   local rc
   if [ "$SARIF" = "1" ]; then
+    # shellcheck disable=SC2086  # ZIZMOR_ARGS: flags, space-separated by contract
     pyrun zizmor "$ZIZMOR_VER" zizmor --offline --format sarif $ZIZMOR_ARGS .github/ > "$SARIF_DIR/zizmor.sarif"
     rc=$?
   else
+    # shellcheck disable=SC2086  # ZIZMOR_ARGS: flags, space-separated by contract
     pyrun zizmor "$ZIZMOR_VER" zizmor --offline $ZIZMOR_ARGS .github/
     rc=$?
   fi
@@ -955,7 +973,7 @@ scan_rules_test(){
     pyrun semgrep "$SEMGREP_VER" semgrep --test --config "$p" "$p" \
       || { [ $? -eq 127 ] && { warn rules-test "no uvx/pipx -> skipped"; return 0; }; rc=1; }
   done
-  return $rc
+  return "$rc"
 }
 
 # ---- doctor: report environment, pins and detected projects (no scan) ----
@@ -973,11 +991,12 @@ scan_doctor(){
       printf '          or use WSL2, which is the supported Windows path.\n\n' ;;
     Linux)
       if grep -qi microsoft /proc/version 2>/dev/null; then
-        printf 'platform: WSL2 — full support (docker via Docker Desktop WSL integration).\n\n'
+        printf 'platform: WSL2 — expected to work, not yet verified (docker via Docker Desktop WSL integration); please report what you see.\n\n'
       fi ;;
   esac
   local hp_warn gf; hp_warn="$(hookspath_check)"
   gf="$(git_freshness_line "$(git_freshness)" doctor)"; [ -n "$gf" ] && printf '!!  %s\n\n' "$gf"
+  gf="$(shallow_note)"; [ -n "$gf" ] && printf '!!  %s\n\n' "$gf"
   if [ -n "$hp_warn" ]; then printf '!!  %s\n\n' "$hp_warn"; fi
   printf 'toolchain (a missing one only skips that dimension):\n'
   docker_ok && echo "  ok  docker        (gitleaks/trivy/syft)" || echo "  --  docker        MISSING/not running -> secret/container/sbom skipped"
@@ -1046,6 +1065,7 @@ scan_doctor(){
       # this line you would believe a rule guards you while it silently never fails a scan.
       printf '  !!  %s rule(s) NOT at ERROR -> WILL NOT GATE: %s\n' "$nogate" "$names"
     fi
+    # shellcheck disable=SC2046  # the rule anchors: space-separated by contract (SEMGREP_LOCAL_RULES)
     if [ -n "$(local_rules_files)" ] && [ -n "$(find $(local_rules_paths) -type f ! -name '*.yml' ! -name '*.yaml' -print -quit 2>/dev/null)" ]; then
       printf '  ok  rule tests present -> verify with: scan.sh rules-test\n'
     else
@@ -1216,7 +1236,7 @@ EOF
   fi
   [ -z "$present" ] && printf '  (no allowlists in this repo — nothing to audit)\n'
   [ "$rc" = 0 ] && printf '  clean: nothing expired, no exact-id gap across the dependency paths\n'
-  return $rc
+  return "$rc"
 }
 
 # ---- integrity: CHECKSUMS manifest + verify (Tier S Layer 2) ----
@@ -1345,7 +1365,7 @@ scan_evidence(){
     fi
   fi
   if [ "$REPORT" = "html" ]; then scan_report || rc=1; fi
-  return $rc
+  return "$rc"
 }
 
 # One self-contained HTML file to attach, mail, or print to PDF — opt-in via REPORT=html, or
@@ -1715,7 +1735,7 @@ scan_warm(){
   say warm "trivy vulnerability DB -> $TRIVY_CACHE (~130 MiB, refreshed after ${TRIVY_DB_MAX_AGE_H}h)"
   # shellcheck disable=SC2046
   docker run --rm $(trivy_cache_mount) "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" image --download-db-only --no-progress || rc=1
-  return $rc
+  return "$rc"
 }
 case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "warm" ]      && { scan_warm; exit $?; }
@@ -1768,7 +1788,7 @@ run_scans(){
     read -r rec entry _ <<<"$row"
     _dim "$rec" "$entry" || rc=1
   done
-  return $rc
+  return "$rc"
 }
 
 # Every scan: write raw output to a per-day file (persistent trail) + a machine-readable
