@@ -1412,6 +1412,19 @@ if have claude; then
   R02O="$(claude plugin validate --strict "$KIT_SRC/.claude-plugin/marketplace.json" 2>&1)" && ok "R02: claude plugin validate --strict (marketplace)" \
     || no "R02: validate marketplace: $(tail -5 <<<"$R02O")"
 else skip "R02: claude plugin validate (no claude CLI; CI runs it)"; fi
+# F43a: Codex reads the same marketplace. A throwaway CODEX_HOME keeps the user's config out of
+# it; `debug prompt-input` renders the prompt without a model call, so the skills can be counted.
+if have codex; then
+  F43H="$(mktemp -d)"; mkdir -p "$F43H/home" "$F43H/proj"; git -C "$F43H/proj" init -q
+  F43O="$(cd "$F43H/proj" && export CODEX_HOME="$F43H/home" \
+    && codex plugin marketplace add "$KIT_SRC" >/dev/null 2>&1 \
+    && codex plugin add security-audit-kit@security-audit-kit >/dev/null 2>&1 \
+    && codex debug prompt-input hi 2>/dev/null)"
+  F43N="$(grep -oE '\\n- security-audit-kit:sec-[a-z-]+' <<<"$F43O" | sort -u | wc -l | tr -d ' ')"
+  [ "$F43N" = "$F35T" ] && ok "F43a: Codex installs the plugin and loads all $F35T skills as security-audit-kit:sec-*" \
+    || no "F43a: Codex loaded $F43N of $F35T skills"
+  rm -rf "$F43H"
+else skip "F43a: Codex install (no codex CLI)"; fi
 # install.sh --no-skills: a plugin user who vendors the scanner gets no second copy of the skills,
 # and the copies an install left behind go too, but only the ones provably the kit's: recorded at
 # install, identical to this kit's template, or identical to a RELEASED template (lib/released-skills.sums,

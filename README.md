@@ -192,6 +192,8 @@ conversation. In the VS Code extension, run **Developer: Reload Window** from th
   remembered, so later upgrades keep it; `--with-skills` copies the skills again.
 - **Skill names:** plugin skills are namespaced: `/security-audit-kit:sec-triage`,
   `/security-audit-kit:sec-audit`, and so on.
+- **Codex:** the same plugin installs there with `codex plugin marketplace add` and
+  `codex plugin add`; see [the skills in Codex](docs/install.md#the-skills-in-codex).
 - **What the plugin never does:** it never downloads the scanner, never edits hooks or
   `.security-audit.conf`, and never runs its own copy of `scan.sh`. A skill that finds no vendored
   scanner says so and tells you how to add it.

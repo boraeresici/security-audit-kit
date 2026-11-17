@@ -1,6 +1,6 @@
 # Install, update and platforms
 
-Other install paths, making the skills visible, the pre-commit framework, updates, reachability, platform notes and requirements. Start with the [README](../README.md).
+Other install paths, making the skills visible, the skills in Codex, the pre-commit framework, updates, reachability, platform notes and requirements. Start with the [README](../README.md).
 
 ## Other ways to install
 
@@ -60,6 +60,29 @@ git commit -m "chore(sec): add security-audit-kit"
 that repo's `core.hooksPath`, `.security-audit.conf` carries that repo's SAST paths, and
 findings land in that repo's `docs/security/scan-findings/`. A backend and a frontend in
 two repos need two installs — there is no cross-repo mode.
+
+## The skills in Codex
+
+Codex reads the same plugin, so the skills install there with no separate package. From a
+terminal:
+
+```bash
+codex plugin marketplace add boraeresici/security-audit-kit --ref v1.21.0
+codex plugin add security-audit-kit@security-audit-kit
+```
+
+`--ref` pins a release; without it Codex follows the default branch. A local checkout works in
+place of `boraeresici/security-audit-kit`. Start a new Codex session afterwards. The skills load as
+`security-audit-kit:sec-triage`, `security-audit-kit:sec-audit`, and so on, the same names as in
+Claude Code. Undo: `codex plugin remove security-audit-kit@security-audit-kit`, then
+`codex plugin marketplace remove security-audit-kit`.
+
+The scanner contract is the same as with the Claude Code plugin: the skills use the repo's vendored
+scanner and never download one, so vendor it too (`bash bootstrap.sh <tag> --no-skills`).
+
+What is not there yet: `install.sh --with-agent-hook` wires the package pre-install check for
+Claude Code only, and the kit is not listed in the Codex plugin directory. Codex copies the whole
+repo into its plugin cache, not just the skills, until the plugin moves into its own folder.
 
 ## Using the pre-commit framework (alternative to the kit's own hooks)
 

@@ -4,6 +4,16 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — Other agent hosts; F43
+
+On the user's request, Codex, Hermes Agent, OpenClaw and the DeepSeek CLIs were assessed as hosts for the kit. All four read `SKILL.md` folders, so the skills need no fork; only packaging differs per host.
+
+- **Codex, first:** it installs the current plugin unchanged, from `.claude-plugin/marketplace.json`, and loads all five skills (tried with `codex-cli 0.145.0`, details in F43). Its hook payload and exit-code contract match Claude Code's. Card **F43**, slot 8f.
+- **DeepSeek CLIs:** Deep Code CLI reads skills from `~/.agents/skills/`, the path Codex uses; DeepSeek Harness has its own plugin API, in preview. No card. R18's trial records whether the Skills CLI covers these paths.
+- **OpenClaw, Hermes:** both are personal assistants, not repo tools, and the kit's core use (scan a repo, gate a push) fits them poorly. ClawHub publishes everything as MIT-0. Hermes plugins are Python. No card without a request from a user of either.
+
+Only Codex was tried; the others were read from their docs, and their formats were not re-verified beyond that.
+
 ## 2026-11-17 — Cloudflare skill re-read from a clone; F38–F42 and R18
 
 The 2026-10-11 comparison (local note `docs/compare/cloudflare-security-audit-skill.local.md`) read upstream's documents on the web. On the user's request the repo was cloned and read in full at `c1c8a8c`, including `validate-findings.cjs`, `validate-coverage-ledger.cjs` and their tests, against `main @ af39eac` (v1.21.0, plugin released). Upstream has no commit after 2026-09-14. Nothing was installed or run, and upstream's tests were not executed.

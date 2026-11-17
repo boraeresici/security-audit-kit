@@ -161,6 +161,8 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
   skill'leri yeniden kopyalar.
 - **Skill adlari:** plugin skill'leri ad alaniyla gelir: `/security-audit-kit:sec-triage`,
   `/security-audit-kit:sec-audit` ve digerleri.
+- **Codex:** ayni plugin Codex'e `codex plugin marketplace add` ve `codex plugin add` ile kurulur;
+  bkz. [the skills in Codex](docs/install.md#the-skills-in-codex) (Ingilizce).
 - **Plugin'in asla yapmadiklari:** tarayiciyi indirmez, hook'lara ya da `.security-audit.conf`'a
   dokunmaz, `scan.sh`'in kendi kopyasini calistirmaz. Vendor'lanmis tarayici bulamayan bir skill
   bunu soyler ve nasil eklenecegini anlatir.

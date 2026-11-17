@@ -874,6 +874,26 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 
 **Decision after the trial:** document it in `docs/install.md` as a third path, or record why not. The CLI is a third-party tool that downloads from GitHub: if documented, it gets a row in `docs/data-flow.md`. Not a release gate. F38 goes first.
 
+### F43 — Codex as a second plugin host
+
+**Record — 2026-11-17:** tried with `codex-cli 0.145.0` in a throwaway `CODEX_HOME`, on a clone of `791f18c`, with no change to the repo:
+- `codex plugin marketplace add <clone>` reads `.claude-plugin/marketplace.json`; `codex plugin add security-audit-kit@security-audit-kit` installs 1.21.0. `codex debug prompt-input`, which renders the prompt without a model call, lists all five skills as `security-audit-kit:sec-*`, loaded from the plugin cache.
+- The install copies the whole repo, `.git` included (17 MB), into `$CODEX_HOME/plugins/cache/`. Same cause as R17: `source: "./"`.
+- `lib/pkgcheck.py --parse` reads a Codex-shaped `PreToolUse` payload (`tool_input.command`) and returns its npm and PyPI targets.
+- Not tried: the hook inside a Codex session (needs a model call and the user's trust step), and the desktop app.
+
+**From the Codex docs (read 2026-11-17: `developers.openai.com/codex/plugins/build`, `/codex/hooks`, `/plugins/deploy/submission`):** Claude-compatible manifests are accepted. Plugin hook commands get `PLUGIN_ROOT` and also `CLAUDE_PLUGIN_ROOT`; exit 2 with stderr blocks, as in Claude Code. Plugin hooks are skipped until the user reviews and trusts them. The public directory, shared by ChatGPT and Codex, takes a ZIP at `platform.openai.com/plugins` from a verified developer identity. It wants `.codex-plugin/plugin.json` with an `interface` block (`displayName` and `shortDescription` at most 30 characters, `capabilities`, `composerIcon`, `logo`), and it refuses packages that contain lifecycle hooks.
+
+**Consequence for F33:** a `hooks/hooks.json` at the plugin root is found by both hosts by default discovery, and it would keep the package out of the Codex directory. Decide with F33 whether the Codex package is built without hooks or names its hooks explicitly.
+
+**Acceptance criteria:**
+- **F43a — the channel that works today:** `docs/install.md` gets a Codex section: the two commands, the skill names, and that the scanner contract is the same (the skills use the repo's vendored copy and never download one). e2e: when `codex` is on PATH, the throwaway-`CODEX_HOME` check above runs (marketplace add, plugin add, the five skills in `prompt-input`); otherwise it is skipped, as the `claude plugin validate` check is.
+- **F43b — Codex public directory, after R17:** `.codex-plugin/plugin.json` whose version `release.sh` checks as it checks `plugin.json`; the `interface` block, with the listing icon reused; a ZIP built from the R17 plugin folder only, with no lifecycle hooks. The developer identity is the user's decision, as in R07.
+- **F43c — the agent hook in vendored installs:** `install.sh --with-agent-hook` can also write `.codex/hooks.json`, under the same rule as F10 (existing hooks are kept, removed on uninstall). The docs name the trust step. Run once in a real Codex session before it is documented.
+- Four skill descriptions say "with Claude". Make them host-neutral in F38's description review, in one change with the released sums.
+
+**Order:** F43a any time; F43b after R17; F43c with the F33 decision. Not a release gate.
+
 ## Current delivery order — primary planning source
 
 The order below is the suggested default for a single team; items on the same row do not have to be a single PR. Conditional items that are not opened do not hold up the next independent item. The earlier Package A/B/C order was replaced by this table.
@@ -898,6 +918,7 @@ The order below is the suggested default for a single team; items on the same ro
 | 8c | **F33a → F33b → F34** plugin hook set and `pkgcheck` signals | Added on 2026-11-03 (Phoenix comparison). Comes after R02 because hooks come with the plugin's `hooks.json` file. F34 waits for F06's cache policy. Not in scope for the plugin-ready release |
 | 8d | **F36** STRIDE-per-element completeness check | Added on 2026-11-03. A small skill text change with no dependencies; can be slotted in |
 | 8e | **F38 → F42 → F39 + F40 + F41**; **R18** trial alongside | Added on 2026-11-17 (Cloudflare re-read). F38 first: the plugin is public and its skills load from their descriptions. F42 is a parser check with no dependency. F39–F41 are skill text and go in one change with their F12 dev cases; no prompt change ships unmeasured. None of them waits for F19/F27 |
+| 8f | **F43a**; **F43b** after R17; **F43c** with F33 | Added on 2026-11-17. Codex installs the plugin as it is today; F43a documents and tests that. The public Codex listing needs the R17 folder and refuses lifecycle hooks, so F33's hooks decide its shape |
 | 9 | **F19b** (F19a moved to 8a on 2026-11-03) finding/decision and evidence contract | Stable identity, uncertainty, schema validation and backward compatibility; JSONL/resume only with a measured need |
 | 9a | **F27 → F28a → F28b if the condition is met** deep review quality | Coverage record followed by an independent validation pilot; F28 also waits for F12c. This AI track does not block the independent F20/F21 work |
 | 10 | **F20 → F31b + F14b → F21a** measurement, parallel dimensions, quiet output and opt-in dimension cache | No cache without measuring speed gain and invalidation equivalence. F31b only gives a meaningful gain after F30; F14b uses the same output infrastructure |
