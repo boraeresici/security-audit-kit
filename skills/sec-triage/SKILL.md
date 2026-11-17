@@ -186,7 +186,7 @@ the vendored copy. The only files you write are the project's own: the findings 
    you did not re-run is a hypothesis.
 
    **Give every deferral an exit.** Record the fixing version and an expiry in the entry
-   (`ignoreUntil` in `osv-scanner.toml`, `expiredAt` in `.trivyignore.yaml`, a
+   (`ignoreUntil` in `osv-scanner.toml`, `expired_at` in `.trivyignore.yaml`, a
    `# expires YYYY-MM-DD — fixed in <ver>` comment in the others). Hand-synced allowlists decay:
    when the fix lands the entry must be deleted from *all* of them, and a forgotten one silently
    suppresses a future, real CVE in that package.

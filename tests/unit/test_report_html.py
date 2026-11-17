@@ -420,3 +420,27 @@ class TestScanTimeIgnoresDurations:
         summary = {"dimensions": [{"name": "sast", "status": "pass", "seconds": 2.5}], "artifacts": [],
                    "provenance": {"commit": "c"}, "timestamp": "2026-11-02T10:00:00", "run_id": "r"}
         assert rh.scan_time(summary, scan) == ("2026-11-02T10:00:00", "r")
+
+
+class TestVerdictFindingsWithoutRows:
+    """F16: a dimension with findings but no per-finding rows must not be reported as 0 findings."""
+
+    def test_iac_findings_with_no_rows_are_named_not_counted_as_zero(self):
+        dims = [{"name": "sast", "status": "pass"}, {"name": "iac", "status": "findings"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 0, set())
+        assert cls == "findings" and "iac" in text and "0 finding" not in text
+
+    def test_rows_listed_alongside_an_unlisted_dimension(self):
+        dims = [{"name": "sast", "status": "findings"}, {"name": "py-deps", "status": "findings"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 3, {"sast"})
+        assert "py-deps" in text and "sast" not in text.split("findings in")[1].split(",")[0] and "3 more listed" in text
+
+    def test_alias_dimension_counts_as_listed(self):
+        dims = [{"name": "staged", "status": "findings"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 1, {"secret"})
+        assert text == "passed (exit 0) — 1 finding(s) present, none blocking"
+
+    def test_old_callers_without_row_dims_keep_their_header_when_rows_exist(self):
+        dims = [{"name": "sast", "status": "findings"}]
+        _, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 2, {"sast"})
+        assert text == "passed (exit 0) — 2 finding(s) present, none blocking"

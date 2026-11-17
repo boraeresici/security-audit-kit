@@ -174,8 +174,11 @@ nothing needed changing there — and GitHub's upload step validates the documen
 - **An empty run is never written.** Zero judgment findings usually means no judgment pass ran, not
   that the findings are gone — and an empty upload closes every open kit alert. With nothing to
   report the previous `kit.sarif` is left untouched.
-- Results carry `partialFingerprints.sakFindingId` (the evidence `id`), so re-running a scan updates
-  an alert instead of creating a new one.
+- Results carry `partialFingerprints.sakFindingId` (the evidence `id`). GitHub does not match alerts
+  on it: Code Scanning uses only `primaryLocationLineHash`, which `upload-sarif` computes from the
+  source when the file does not carry one. The kit's id changes when a finding moves to another
+  line (it hashes the line number, F19), so it is a stable key for the kit's own records within one
+  version of the code, not across edits.
 
 ## `report-<date>.html` — the human-readable rendering
 

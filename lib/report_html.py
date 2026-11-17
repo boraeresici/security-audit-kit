@@ -154,7 +154,11 @@ def table(findings: list) -> str:
 NOT_INSPECTED = ("skipped", "error", "indeterminate")
 
 
-def verdict(scan: dict, reported: int) -> tuple:
+# Dimensions recorded under another name in evidence.json (scan.sh runs the same tool over a scope).
+DIMENSION_ALIASES = {"staged": "secret", "changed": "sast", "sast-changed": "sast"}
+
+
+def verdict(scan: dict, reported: int, row_dims=None) -> tuple:
     """(css class, text) for the report header — F04. "clean" only when the gate passed, every
     dimension that applies inspected something, and nothing was reported. Everything short of that
     says what it is: unknown, blocked (and by what), incomplete, or passed with findings."""
@@ -177,6 +181,14 @@ def verdict(scan: dict, reported: int) -> tuple:
     if missing:
         named = ", ".join(f'{d.get("name")} ({d.get("status")})' for d in missing)
         return "incomplete", f"passed (exit 0) — NOT complete: {named} not inspected"
+    # A dimension can have findings and still write no per-finding rows (no adapter yet, F16): its
+    # findings are in the scan log, so the header must not count them as 0.
+    rows = set(row_dims or ())
+    unlisted = [d.get("name") for d in dims if d.get("status") == "findings"
+                and d.get("name") not in rows and DIMENSION_ALIASES.get(d.get("name")) not in rows]
+    if unlisted:
+        return "findings", (f"passed (exit 0) — findings in {', '.join(unlisted)}, not listed below (no per-finding "
+                            f"rows; see the scan log)" + (f"; {reported} more listed" if reported else "") + ", none blocking")
     if reported or any(d.get("status") == "findings" for d in dims):
         return "findings", f"passed (exit 0) — {reported} finding(s) present, none blocking"
     return "clean", "clean (exit 0) — every dimension that applies was inspected"
@@ -247,7 +259,7 @@ def main() -> int:
         for d in dimensions
     ) or '<span class="chip">no dimensions recorded</span>'
 
-    gate_cls, gate = verdict(scan, len(reported))
+    gate_cls, gate = verdict(scan, len(reported), {f.get("dimension") for f in findings})
     repo = args.repo or "this repository"
     generated = args.date or datetime.date.today().isoformat()
     summary = None

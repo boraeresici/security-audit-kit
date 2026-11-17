@@ -4,6 +4,15 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-17 — Research for F16, F18 and the UI track; four fixes that needed no decision (`fix/f16-silent-zero`)
+
+Three read-only research passes (an independent model, Fable) on prior art and the code. The recommendations and the decisions they leave to the user are in the session report; none is taken here. Fixed now because each is a false-clean or a wrong claim with only one right answer:
+
+- **Non-ASCII paths (F18):** git's default `core.quotepath` quoted `güvenlik/requirements.txt`, so the dimension was skipped as not applicable. `scan.sh` and the pre-commit hook now read paths unquoted; e2e covers it. Paths with spaces are still split in `py_manifests`, `js_dirs`, `changed_targets` and `scan.sh evidence` (which crashes under a root with spaces): F18 slice 1, with a CI OS matrix.
+- **"0 findings" for a dimension with no adapter (F16):** checkov, pip-audit, the JS audit and guarddog write no rows; the report header now names them instead of counting 0, and `evidence.json` warns.
+- **Expired allowlist entries:** `.trivyignore.yaml` expiry is `expired_at`, not `expiredAt`; osv-scanner also accepts `effectiveUntil`. Expired Trivy deferrals passed as undated.
+- **`sakFindingId` claim:** GitHub matches alerts on `primaryLocationLineHash`, not on the kit's id; the spec said otherwise.
+
 ## 2026-11-17 — R18 trial: documented; an install.sh bug fixed
 
 The Skills CLI installs the five skills pinned to a tag, with a lockfile; telemetry is on by default. The trial found that `install.sh` deleted through the CLI's `.claude/skills` links. Fixed and covered by e2e; the CLI path is documented with pins and telemetry off.

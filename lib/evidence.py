@@ -509,6 +509,10 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
         for dim, st in sorted(status.items()):
             if st in INSPECTED and dim in by_dim and by_dim[dim][0] not in listed:
                 warnings.append(f"{dim}: inspected, but wrote no SARIF in this run -> no per-finding rows")
+            elif st in ("findings", "fail") and dim not in by_dim:
+                # pip-audit, the JS audit, checkov, guarddog: no adapter yet (F16b)
+                warnings.append(f"{dim}: has findings, but the kit reads no per-finding output for it yet "
+                                "-> not in evidence.json; see the scan log")
     return out
 
 

@@ -82,7 +82,7 @@ def result_for(finding: dict, rule_index: int) -> dict:
                 **({"region": {"startLine": finding["line"]}} if finding.get("line") else {}),
             }
         }],
-        # Stable across runs, so an alert is not re-created every scan.
+        # The kit's id, for consumers other than GitHub (which matches on primaryLocationLineHash).
         "partialFingerprints": {"sakFindingId": finding["id"]},
     }
     if finding.get("decision") == "suppressed":

@@ -38,6 +38,10 @@
 #   pins: GITLEAKS_VER/_DIGEST, TRIVY_VER/_DIGEST, SYFT_VER/_DIGEST,
 #         SEMGREP_VER, CHECKOV_VER, PIP_AUDIT_VER, GUARDDOG_VER, ZIZMOR_VER.
 set -uo pipefail
+# Paths as git stores them: by default (core.quotepath) a non-ASCII name comes back quoted and
+# octal-escaped ("g\303\274venlik/..."), so a manifest in a Turkish-named folder matched no pattern
+# and its dimension was skipped as "not applicable" (F18).
+git(){ command git -c core.quotepath=off "$@"; }
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 1
@@ -1106,7 +1110,7 @@ scan_doctor(){
 # This audits the FILES, offline — no scan, no network.
 #
 # The three dependency-CVE paths carry advisory ids; each supports an expiry natively
-# (`ignoreUntil` in osv-scanner.toml, `expiredAt` in .trivyignore.yaml) or by the kit's convention
+# (`ignoreUntil` or `effectiveUntil` in osv-scanner.toml, `expired_at` in .trivyignore.yaml) or by the kit's convention
 # (`# expires YYYY-MM-DD` in .pip-audit-ignore and anywhere else). Dates are ISO, so a lexical
 # compare against `date +%F` is exact — no date arithmetic, no locale.
 allowlist_entries(){   # <file> -> "<id>\t<expiry|->" per entry
@@ -1126,14 +1130,14 @@ allowlist_entries(){   # <file> -> "<id>\t<expiry|->" per entry
       awk '
         /^[[:space:]]*\[\[IgnoredVulns\]\]/ { if (id != "") print id "\t" xpiry; id = ""; xpiry = "-"; next }
         /^[[:space:]]*id[[:space:]]*=/ { id = $0; gsub(/.*=[[:space:]]*"?/, "", id); gsub(/".*/, "", id); gsub(/[[:space:]]+$/, "", id) }
-        /ignoreUntil/ { if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) xpiry = substr($0, RSTART, 10) }
+        /(ignoreUntil|effectiveUntil)/ { if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) xpiry = substr($0, RSTART, 10) }
         END { if (id != "") print id "\t" (xpiry == "" ? "-" : xpiry) }
       ' "$f" ;;
     .trivyignore.yaml)
       awk '
         /^[[:space:]]*-[[:space:]]*id:/ { if (id != "") print id "\t" xpiry; xpiry = "-"
           id = $0; gsub(/.*id:[[:space:]]*/, "", id); gsub(/["'"'"']/, "", id); gsub(/[[:space:]]+$/, "", id); next }
-        /expiredAt:/ { if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) xpiry = substr($0, RSTART, 10) }
+        /(expired_at|expiredAt):/ { if (match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/)) xpiry = substr($0, RSTART, 10) }
         END { if (id != "") print id "\t" (xpiry == "" ? "-" : xpiry) }
       ' "$f" ;;
     *)

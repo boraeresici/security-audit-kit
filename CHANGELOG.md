@@ -46,6 +46,20 @@ All notable changes to this project are documented here. The format is based on
   location.
 
 ### Fixed
+- A project in a folder with a non-ASCII name (`güvenlik/requirements.txt`) was not scanned: git
+  quotes such paths by default, so no manifest pattern matched, `py-deps` reported "not applicable"
+  and `p/python` was not selected, and the pre-commit dependency gate did not fire. `scan.sh` and
+  the pre-commit hook now read paths with `core.quotepath=off`. Paths with spaces are still split in
+  places; that is F18's next slice.
+- `scan.sh allowlist` read a `.trivyignore.yaml` expiry under `expiredAt`, but Trivy's key is
+  `expired_at`: an expired Trivy deferral was counted as one with no expiry and passed. Both are read
+  now, and osv-scanner's newer `effectiveUntil` next to `ignoreUntil`. The `sec-triage` skill named
+  the wrong key too.
+- The HTML report said "0 finding(s) present" when a dimension with no per-finding adapter yet
+  (checkov, pip-audit, the JS audit, guarddog) had findings. The header now names those dimensions
+  and points at the scan log, and `evidence.json` warns about each of them.
+- `docs/schema/evidence.md` claimed `sakFindingId` keeps a Code Scanning alert across runs; GitHub
+  matches on `primaryLocationLineHash`, and the kit's id changes with the line.
 - `install.sh` no longer writes or deletes through a link. The Skills CLI (`npx skills add`) links
   `.claude/skills/<name>` to `.agents/skills/<name>`; `--no-skills` and `--uninstall` used to delete
   the `SKILL.md` behind the link, the copy Codex and other agents read, while reporting "removed the

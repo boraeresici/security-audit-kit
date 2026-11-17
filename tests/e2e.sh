@@ -154,6 +154,18 @@ grep -qE '(AVD-DS-0002|LGPL-3.0-or-later) is suppressed' <<<"$TOUT" \
   && no "allowlist: non-advisory ids (misconfig/license) compared across paths" \
   || ok "allowlist: only package-advisory namespaces are cross-checked (no misconfig/license noise)"
 rm -f .trivyignore.yaml
+# Trivy's expiry key is expired_at (the kit's docs once said expiredAt, which the check also reads);
+# osv-scanner's newer key is effectiveUntil. A decayed entry under either must not pass as undated.
+for TK in expired_at expiredAt; do
+  printf 'vulnerabilities:\n  - id: CVE-2020-1111\n    %s: 2020-01-01\n' "$TK" > .trivyignore.yaml
+  grep -q 'EXPIRED CVE-2020-1111' <<<"$($SCAN allowlist 2>&1)" \
+    && ok "allowlist: an expired .trivyignore.yaml entry ($TK) is caught" || no "allowlist: .trivyignore.yaml $TK expiry ignored"
+done
+rm -f .trivyignore.yaml
+printf '[[IgnoredVulns]]\nid = "GHSA-7777-7777-7777"\neffectiveUntil = 2020-01-01\n' > osv-scanner.toml
+grep -q 'EXPIRED GHSA-7777-7777-7777' <<<"$($SCAN allowlist 2>&1)" \
+  && ok "allowlist: an expired osv-scanner.toml entry (effectiveUntil) is caught" || no "allowlist: osv effectiveUntil expiry ignored"
+rm -f osv-scanner.toml
 # In sync + unexpired -> clean and quiet.
 cat > .pip-audit-ignore <<'EOF'
 GHSA-dddd-eeee-ffff  # no fix yet; expires 2099-01-01
@@ -162,6 +174,17 @@ $SCAN allowlist >/dev/null 2>&1 && ok "allowlist: clean when every path agrees a
 grep -q 'audit: nothing expired' <<<"$($SCAN doctor 2>/dev/null)" \
   && ok "allowlist: doctor carries a one-line verdict" || no "allowlist: doctor summary missing"
 rm -f .pip-audit-ignore osv-scanner.toml
+
+echo "-- F18: a non-ASCII path is not skipped --"
+# git quotes non-ASCII names by default ("g\303\274venlik/..."), so a Python project in a Turkish-named
+# folder used to match no pattern: py-deps went "not applicable" and p/python was never selected.
+F18R="$(mktemp -d)"; git -C "$F18R" init -q; mkdir -p "$F18R/güvenlik"
+echo 'requests==2.0.0' > "$F18R/güvenlik/requirements.txt"; printf 'def f(): pass\n' > "$F18R/güvenlik/şifre.py"
+git -C "$F18R" add -A >/dev/null 2>&1
+grep -q 'semgrep cfg.*p/python' <<<"$(cd "$F18R" && bash "$KIT_SRC/scan.sh" doctor 2>/dev/null)" \
+  && ok "F18: a Python project in a non-ASCII folder is detected (core.quotepath off)" \
+  || no "F18: non-ASCII path still quoted — the Python stack was not detected"
+rm -rf "$F18R"
 
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.

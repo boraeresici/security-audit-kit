@@ -1197,3 +1197,13 @@ class TestNumericSeverityFinite:
     @pytest.mark.parametrize("raw", ["NaN", "nan", "inf", "-Infinity"])
     def test_non_finite_score_is_ignored(self, raw):
         assert evidence.numeric_severity({"properties": {"security-severity": raw}}) is None
+
+
+class TestNoAdapterWarning:
+    def test_findings_dimension_without_an_adapter_is_said(self, tmp_path):
+        summary = {"schema": 2, "sarif": True, "artifacts": {},
+                   "dimensions": [{"name": "iac", "status": "findings"}, {"name": "py-deps", "status": "pass"}]}
+        warnings = []
+        evidence.select_sources(summary, str(tmp_path), warnings)
+        assert any(w.startswith("iac: has findings, but the kit reads no per-finding output") for w in warnings)
+        assert not any(w.startswith("py-deps:") for w in warnings)
