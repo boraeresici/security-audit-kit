@@ -302,6 +302,9 @@ Narrow/wide screen, keyboard, basic screen reader flow, use with JS disabled and
 
 ### F16 — Full evidence coverage
 
+**Decision (user, 2026-11-17, on the research recommendations):** native JSON per tool, normalised in `lib/` (option B), checkov included; a finding with no severity gets `unknown` with `severity_source: "<tool>:none"`; new adapters' rows stay out of Code Scanning until alias dedup exists; JS audit starts with npm only, pnpm/yarn shown honestly as "no per-finding rows"; tool-native suppressions: read what SARIF already carries now, the rest in F19. The trivy/uv.lock recording needs Docker and network and is run by the user. Slice 0's "silent 0" header fix shipped in `aab7b38`.
+
+
 **F16a validation:** A command → native output → evidence → HTML/SARIF matrix must be published. The third trivy/uv.lock suppression path left open in old plan #12 must be validated with the relevant advisory/package fixture; it must not be assumed that the same CVE exists in every tool. **F16b adapters:** pip-audit, JS audit, checkov and GuardDog adapters must be implemented as separate small items. Each adapter must be tested with clean/with-findings/erroring native fixtures. For a dimension with no output, missing evidence must be shown instead of “0 findings”. The severity source must be preserved and CVSS must not be fabricated.
 
 ### F17 — Modular maintenance
@@ -318,9 +321,17 @@ First, the status/exit code/output contract must be pinned down. Adapters, disco
 
 ### F18 — Platform and paths
 
+**Decision (user, 2026-11-17, on the research recommendations):** minimum Python 3.9; WSL2 marked "not verified" now, a `setup-wsl` spike after slices 1–3; space-separated config lists stay and are documented; NFD names are documented and pinned by a fixture, not normalised; slice 1 ships as a fix.
+
+**Slice 1 — 2026-11-17 (`fix/f18-paths-with-spaces`):** git paths read with `core.quotepath=off` (previous commit); `py_manifests`, `js_dirs`, `changed_targets`, the osv-scanner targets, semgrep's output and targets, the Terraform directory and `scan.sh evidence`'s arguments carry paths with spaces whole (bash 3.2 arrays, `${a[@]+"${a[@]}"}` for empty ones). e2e: a repo root and folders with spaces and Turkish letters. Unit tests pass on Python 3.9.6. CI: new non-required jobs `pytest-versions` (Linux/macOS × 3.9/3.13) and `e2e-macos`; the required `pytest`/`e2e` checks keep their names. Remaining: repo-state fixtures (unborn, shallow, rename, NFD), shallow-history notice, `-z` for file names with newlines, the `.shellcheckrc` global SC2086/SC2046 disables, the WSL2 spike.
+
+
 Automated Linux and macOS smoke tests; for WSL2 there must be an actually executed result or an explicit “not verified” state. The minimum Python version must be documented. Repo and file paths containing spaces/Turkish characters, worktrees, unborn/shallow repos and deleted/renamed files must be tested. Arguments split on spaces must be moved to array/NUL-safe handling.
 
 ### F19 — Finding / decision lifecycle
+
+**Decision (user, 2026-11-17, on the research recommendations):** one writer per layer (option C) — AI decisions stay in the markdown findings file, human decisions and exceptions only in a CLI-written, committed `docs/security/decisions.json`, scanner records in `evidence.json`; OpenVEX as an export only (`scan.sh vex`, later); package identity from the tools' native JSON (F16b); the package version is a precondition, not part of the identity. Identity: code findings hash the normalised line content plus an occurrence index (GitHub's method), dependency findings `advisory + ecosystem + package + manifest`; the old `id` stays one version beside the new `fingerprint`.
+
 
 A line shift must not needlessly reopen the same finding; two different packages with the same CVE in the same manifest must not be lost. Fixtures must be prepared for package identity and tool fingerprint. The decision record must carry owner/rationale/due date/verification conditions. The alias mapping source and applicable scanners must be specified; an ambiguous match must not produce automatic suppression. A backward compatibility/migration design must be done. The JSONL event history left over from T3.1 and the Phase A SQLite/checkpoint idea are a conditional continuation of this model: two separate persistent storage systems must not be added without measuring the re-run cost of interrupted long AI runs; if needed, start with a single format and test crash/resume and idempotent replay.
 
@@ -538,6 +549,9 @@ The security of skill packages loaded into the agent is a concrete candidate tha
 - Reporting only at the start. The baseline is not bulk-accepted automatically; a pre-install/hard gate is opened only with a separate policy decision and a false positive/miss measurement. If LLM mode is added, quality and uncertainty are evaluated separately with F12.
 
 ### R13 — Local UI that starts scans (planned, after F26 → F19a)
+
+**Decision (user, 2026-11-17, on the research recommendations):** session by a one-time URL token exchanged for an `HttpOnly; SameSite=Strict` cookie (works without JS); loopback only, exact Host check, Origin and `Sec-Fetch-Site` on every POST, fixed command table, no file serving; exceptions through the CLI with a maximum lifetime (180 days proposed). F26's filter script is checked by hand in a browser until a headless check is justified.
+
 
 **Direction — 2026-11-03 (user decision):** No longer conditional. As the product grows, it needs control a static report cannot give: new vs resolved findings, approving a time-bound exception, seeing expiries and starting a scan. The UI track is **F26 → F19a → R13**. F19a comes first because, without a stable finding identity, a line shift shows the same finding as new and the UI would be wrong about the one thing it exists to show. Shape:
 - `scan.sh ui` starts a localhost server built only on the Python standard library. It adds no new dependency and no install step. This settles the framework question left open below.

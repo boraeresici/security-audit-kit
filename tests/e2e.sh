@@ -185,6 +185,30 @@ grep -q 'semgrep cfg.*p/python' <<<"$(cd "$F18R" && bash "$KIT_SRC/scan.sh" doct
   && ok "F18: a Python project in a non-ASCII folder is detected (core.quotepath off)" \
   || no "F18: non-ASCII path still quoted — the Python stack was not detected"
 rm -rf "$F18R"
+# Spaces: the lists scan.sh builds from git (manifests, JS dirs, changed files, the .tf dir) are one
+# path per line and reach each tool as one argument. A space-separated string split them in two.
+F18S="$(mktemp -d)/proje ğüş İ deneme"; mkdir -p "$F18S/güvenlik modülü" "$F18S/src dir" "$F18S/infra dir"
+git -C "$F18S" init -q
+echo 'requests==2.0.0' > "$F18S/güvenlik modülü/requirements.txt"
+echo '{}' > "$F18S/src dir/package.json"; echo '{}' > "$F18S/src dir/package-lock.json"
+echo 'resource "x" "y" {}' > "$F18S/infra dir/main.tf"; echo 'x=1' > "$F18S/a b.py"
+git -C "$F18S" add -A >/dev/null 2>&1
+F18O="$(cd "$F18S" && bash -c '
+  set -uo pipefail
+  git(){ command git -c core.quotepath=off "$@"; }
+  ROOT="$PWD"; KIT_DIR="$1"; JS_DIRS=""; JS_SKIP_RE="(^|/)(node_modules|vendor)/"; BASE_REF=""
+  record_rel(){ echo docs/security/scan-findings; }
+  eval "$(sed -n "/^py_manifests()/,/^}/p; /^js_dirs()/,/^}/p; /^changed_files()/,/^}/p; /^changed_targets()/,/^}/p" "$1/scan.sh")"
+  py_manifests; js_dirs; changed_targets ""' _ "$KIT_SRC" 2>&1)"
+grep -qx 'güvenlik modülü/requirements.txt' <<<"$F18O" && grep -qx 'src dir' <<<"$F18O" && grep -qx 'a b.py' <<<"$F18O" \
+  && ! grep -qx 'güvenlik' <<<"$F18O" && ! grep -qx 'dir' <<<"$F18O" \
+  && ok "F18: manifests, JS dirs and changed files keep paths with spaces whole" || no "F18: a path with spaces was split: $(tr '\n' '|' <<<"$F18O")"
+mkdir -p "$F18S/docs/security/scan-findings/sarif"
+echo '{"schema":2,"dimensions":[]}' > "$F18S/docs/security/scan-findings/summary.json"
+echo '# sec-triage' > "$F18S/docs/security/scan-findings/findings-$(date +%F).md"
+(cd "$F18S" && bash "$KIT_SRC/scan.sh" evidence >/dev/null 2>&1); [ -f "$F18S/docs/security/scan-findings/evidence.json" ] \
+  && ok "F18: scan.sh evidence works under a repo root with spaces" || no "F18: scan.sh evidence failed under a root with spaces"
+rm -rf "$(dirname "$F18S")"
 
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.

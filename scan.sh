@@ -269,16 +269,14 @@ real_dir(){ (cd -P -- "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
 # ---- python deps (pip-audit) ----
 # Tracked python dependency manifests osv-scanner can read STATICALLY, minus the vendored kit's own
 # fixtures (material for a test, not this project's dependencies).
-py_manifests(){
-  local kit_rel="" f out=""
+py_manifests(){   # -> one path per line (a path may contain spaces, F18)
+  local kit_rel="" f
   case "$KIT_DIR" in "$ROOT"/*) kit_rel="${KIT_DIR#"$ROOT"/}/" ;; esac
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     if [ -n "$kit_rel" ]; then case "$f" in "$kit_rel"*) continue ;; esac; fi
-    out="$out $f"
+    printf '%s\n' "$f"
   done <<<"$(git ls-files -- '*requirements*.txt' '*uv.lock' '*Pipfile.lock' '*poetry.lock' '*pdm.lock' 2>/dev/null)"
-  # shellcheck disable=SC2086
-  printf '%s\n' $out
 }
 
 scan_py_deps(){
@@ -345,13 +343,12 @@ scan_py_deps_no_env(){
     warn deps "INDETERMINATE — no project venv, and no docker to read the manifests with osv-scanner. Nothing was inspected; this is NOT a clean result."
     return "$RC_INDETERMINATE"
   fi
-  local f targets=""
-  for f in $man; do targets="$targets -L /repo/$f"; done
-  # shellcheck disable=SC2086
-  say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed):$(printf ' %s' $man)"
+  local f targets=()
+  while IFS= read -r f; do [ -n "$f" ] && targets+=(-L "/repo/$f"); done <<<"$man"
+  say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed): $(printf '%s' "$man" | tr '\n' ',' | sed 's/,$//;s/,/, /g')"
   # shellcheck disable=SC2086
   docker run --rm -v "$ROOT:/repo:ro" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
-    scan source $targets
+    scan source "${targets[@]}"
   local rc=$?
   case "$rc" in
     0) return 0 ;;
@@ -374,16 +371,15 @@ scan_py_deps_no_env(){
 js_dirs(){
   # shellcheck disable=SC2086  # word splitting is the point: a space-separated list -> one per line
   [ -n "$JS_DIRS" ] && { printf '%s\n' $JS_DIRS; return 0; }
-  local pj dir out=""
+  local pj dir seen=$'\n'
   while IFS= read -r pj; do
     [ -n "$pj" ] || continue
     grep -qE "$JS_SKIP_RE" <<<"$pj" && continue
     dir="$(dirname "$pj")"
     [ -f "$ROOT/$dir/pnpm-lock.yaml" ] || [ -f "$ROOT/$dir/yarn.lock" ] || [ -f "$ROOT/$dir/package-lock.json" ] || continue
-    case " $out " in *" $dir "*) ;; *) out="$out $dir" ;; esac
+    case "$seen" in *$'\n'"$dir"$'\n'*) continue ;; esac
+    seen="$seen$dir"$'\n'; printf '%s\n' "$dir"   # one per line: a directory may contain spaces (F18)
   done <<<"$(git ls-files '*package.json' 2>/dev/null)"
-  # shellcheck disable=SC2086
-  printf '%s\n' $out
 }
 
 scan_js_deps(){
@@ -538,10 +534,11 @@ scan_sast(){
     dim_mark "" "SAST_PATHS:$missing not found -> not scanned (fix SAST_PATHS in .security-audit.conf)"
     warn sast "SAST_PATHS:$missing not found -> skipped; scanning $paths"
   fi
-  local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
+  local out=(); [ "$SARIF" = "1" ] && out=(--sarif --output "$SARIF_DIR/semgrep.sarif")
   say sast "semgrep ($paths, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
+  # SEMGREP_CONFIGS and SAST_PATHS are space-separated by contract (no spaces inside a path).
   # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $paths
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" ${out[@]+"${out[@]}"} $paths
   semgrep_rc $?
 }
 
@@ -586,22 +583,25 @@ changed_targets(){   # changed files that exist, minus the scan record (explicit
   done
 }
 scan_sast_changed(){
-  local files ref vs
+  local ref vs f files=()
   ref="${BASE_REF:-$(default_base_ref)}"
   vs="vs ${ref:-uncommitted changes only (no base: no origin default branch; set BASE_REF)}"
-  files="$(changed_targets "$ref")"
-  [ -z "$files" ] && { dim_na sast "no changed files $vs -> semgrep skipped"; return 0; }
-  local out=""; [ "$SARIF" = "1" ] && out="--sarif --output $SARIF_DIR/semgrep.sarif"
+  while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done <<<"$(changed_targets "$ref")"
+  [ "${#files[@]}" -eq 0 ] && { dim_na sast "no changed files $vs -> semgrep skipped"; return 0; }
+  local out=(); [ "$SARIF" = "1" ] && out=(--sarif --output "$SARIF_DIR/semgrep.sarif")
   say sast "semgrep (changed files $vs, ==$SEMGREP_VER) [$SEMGREP_CONFIGS]"
-  # shellcheck disable=SC2086
-  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" $out $files
+  # shellcheck disable=SC2086  # SEMGREP_CONFIGS only: flags, space-separated by contract
+  pyrun semgrep "$SEMGREP_VER" semgrep scan $SEMGREP_CONFIGS --metrics off --error --severity ERROR --exclude "$(record_rel)" ${out[@]+"${out[@]}"} "${files[@]}"
   semgrep_rc $?
 }
 
 # ---- iac (checkov) ----
 scan_iac(){
   local tf="${TF_DIR:-}"
-  [ -z "$tf" ] && tf="$(git ls-files '*.tf' | head -1 | xargs -r dirname)"
+  if [ -z "$tf" ]; then
+    tf="$(git ls-files '*.tf' 2>/dev/null)"; tf="${tf%%$'\n'*}"   # first one; read to the end, no pipe
+    [ -n "$tf" ] && tf="$(dirname "$tf")"
+  fi
   [ -z "$tf" ] && { dim_na iac "no terraform"; return 0; }
   say iac "checkov ($tf, ==$CHECKOV_VER)"
   # Soft: --soft-fail keeps the gate open, so the exit code no longer says whether checks failed;
@@ -1326,12 +1326,11 @@ scan_evidence(){
   [ -d "$SARIF_DIR" ] || { warn evidence "no SARIF output yet (re-run with SARIF=1) -> evidence.json NOT written"; return 1; }
   # The judgment layer's decisions live in the findings file a human reads; fold them in when it
   # exists so evidence.json carries both halves (what the tools found, what we decided).
-  local fargs=""
-  [ -f "$FINDINGS_MD" ] && fargs="--findings $FINDINGS_MD"
+  local fargs=()
+  [ -f "$FINDINGS_MD" ] && fargs=(--findings "$FINDINGS_MD")
   # Write-then-rename, like summary.json: a builder that dies (or is cancelled) mid-write must
   # leave the previous file whole, never half of a new one.
-  # shellcheck disable=SC2086
-  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" $fargs | py_say \
+  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" ${fargs[@]+"${fargs[@]}"} | py_say \
     && mv -f "$EVIDENCE.$$.tmp" "$EVIDENCE" \
     || { rm -f "$EVIDENCE.$$.tmp"; warn evidence "builder failed -> evidence.json NOT updated"; return 1; }
   # The skills' own findings have no other SARIF home -> put them on the same review surface.

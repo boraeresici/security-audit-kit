@@ -217,8 +217,8 @@ The kit is bash-first. Linux and macOS are native; on Windows the supported path
 | Environment | Status | Notes |
 |---|---|---|
 | Linux | ✓ full | native |
-| macOS | ✓ full | native (bash 3.2 — the scripts stay POSIX-ish on purpose) |
-| **WSL2** | ✓ full | run everything *inside* the WSL filesystem; docker dimensions work through Docker Desktop's WSL integration |
+| macOS | ✓ full | native (bash 3.2 — the scripts stay POSIX-ish on purpose); CI runs the offline e2e on `macos-latest` |
+| **WSL2** | Expected, **not verified** | should work *inside* the WSL filesystem, with docker dimensions through Docker Desktop's WSL integration; no WSL2 run has been recorded yet (see below) |
 | Git Bash / MSYS | Partial | `uvx`/`pipx` dimensions and the git hooks work; **docker** dimensions (secret, container, sbom, osv) are unreliable — MSYS rewrites the `/repo` mount into a Windows path before docker sees it. Prefix `MSYS_NO_PATHCONV=1`, or move to WSL2 |
 | PowerShell / cmd | ✗ | not supported — no bash |
 
@@ -240,8 +240,14 @@ debugged. Two WSL2 habits that matter:
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)
 - **uvx or pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (no install, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (whichever the project uses)
-- **python3** *(optional)* — `evidence.json`, `kit.sarif` and the HTML report; stdlib only, no
-  packages to install. Without it the scan runs exactly as before, minus those artifacts.
+- **python3** *(optional)*, **3.9 or newer** (macOS's own `/usr/bin/python3` is 3.9) —
+  `evidence.json`, `kit.sarif` and the HTML report; stdlib only, no packages to install. Without it
+  the scan runs exactly as before, minus those artifacts. CI tests 3.9 and 3.13.
+
+**Paths.** File and folder names with spaces or non-ASCII characters (`güvenlik modülü/`) are
+scanned like any other. The lists you write in `.security-audit.conf` (`SAST_PATHS`, `JS_DIRS`,
+`DEP_ALLOWLISTS`) are space-separated, so a path in them cannot contain a space; name a parent
+folder instead.
 
 You don't need to permanently install any tool. Every version is pinned — Python tools
 (semgrep/checkov/pip-audit) by version, docker tools (gitleaks/trivy/syft) by **immutable

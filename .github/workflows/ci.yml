@@ -46,6 +46,36 @@ jobs:
       - name: e2e (offline — no docker, no uvx; external-tool assertions skip gracefully)
         run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh
 
+  # Platform coverage (F18). Separate jobs, not a matrix on `pytest`/`e2e`: a matrix renames those
+  # checks, and branch protection requires them by name.
+  pytest-versions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.9', '3.13']   # 3.9: the oldest supported, macOS's own /usr/bin/python3
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: install pytest
+        run: pip install pytest
+      - name: pytest (lib/ unit tests)
+        run: python -m pytest tests/unit/ --tb=short
+
+  e2e-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          persist-credentials: false
+      - name: e2e on macOS (bash 3.2, BSD tools, system python3; offline like the Linux job)
+        run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh
+
   plugin:
     runs-on: ubuntu-latest
     steps:

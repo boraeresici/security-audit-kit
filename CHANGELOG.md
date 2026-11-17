@@ -20,6 +20,10 @@ All notable changes to this project are documented here. The format is based on
   (`DISABLE_TELEMETRY=1`); `docs/data-flow.md` has its row.
 
 ### Changed
+- Python 3.9 is the documented minimum (macOS's own `python3`); CI now also runs the unit tests on
+  Python 3.9 and 3.13 on Linux and macOS, and the offline e2e on macOS (bash 3.2, BSD tools). These
+  are new, non-required checks. WSL2 is marked "not verified" in `docs/install.md` until a run is
+  recorded.
 - Every skill answers a question without running its flow: asked about one finding or the method,
   it answers in the conversation, starts no scan, writes nothing, and says so. A scan, triage,
   audit or review of the repo still runs the full flow; an ambiguous request gets one question
@@ -51,6 +55,12 @@ All notable changes to this project are documented here. The format is based on
   and `p/python` was not selected, and the pre-commit dependency gate did not fire. `scan.sh` and
   the pre-commit hook now read paths with `core.quotepath=off`. Paths with spaces are still split in
   places; that is F18's next slice.
+- Paths with spaces were split: a manifest in `güvenlik modülü/` reached osv-scanner as two
+  arguments, a JS project in `src dir/` was audited as `src` and `dir`, changed files with spaces
+  were dropped from `sast-changed`, the Terraform directory was cut at the space, and `scan.sh
+  evidence` crashed under a repo root with a space. Lists from git are now one path per line and
+  reach each tool as one argument (bash 3.2 arrays). The lists in `.security-audit.conf`
+  (`SAST_PATHS`, `JS_DIRS`) stay space-separated; `docs/install.md` says so.
 - `scan.sh allowlist` read a `.trivyignore.yaml` expiry under `expiredAt`, but Trivy's key is
   `expired_at`: an expired Trivy deferral was counted as one with no expiry and passed. Both are read
   now, and osv-scanner's newer `effectiveUntil` next to `ignoreUntil`. The `sec-triage` skill named
