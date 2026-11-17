@@ -53,7 +53,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ['3.9', '3.13']   # 3.9: the oldest supported, macOS's own /usr/bin/python3
+        python: ['3.9', '3.13']
+        # 3.9 is the documented minimum because it is macOS's own /usr/bin/python3; setup-python
+        # no longer ships it for current Ubuntu images, so Linux tests its oldest available instead.
+        exclude:
+          - os: ubuntu-latest
+            python: '3.9'
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5

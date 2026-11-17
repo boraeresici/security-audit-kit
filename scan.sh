@@ -636,16 +636,17 @@ scan_iac(){
 }
 
 # ---- trivy DB cache (F30) ----
+# trivy_cache_mount -> fills TCM, an argument array (a TRIVY_CACHE path may contain a space, F18).
 trivy_cache_mount(){
   case "$TRIVY_CACHE" in /*) mkdir -p "$TRIVY_CACHE" 2>/dev/null ;; esac
-  printf -- '-v %s:/root/.cache/trivy' "$TRIVY_CACHE"
+  TCM=(-v "$TRIVY_CACHE:/root/.cache/trivy")
 }
 # The cached DB as "UpdatedAt<TAB>DownloadedAt", or nothing when the cache holds no DB. Read with
 # trivy itself (`version` reports the DB it would use), so no other image is involved.
 trivy_db_meta(){
-  local out db u d
-  # shellcheck disable=SC2046
-  out="$(docker run --rm $(trivy_cache_mount) "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" version --format json 2>/dev/null)" || return 0
+  local out db u d TCM
+  trivy_cache_mount
+  out="$(docker run --rm "${TCM[@]}" "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" version --format json 2>/dev/null)" || return 0
   db="$(sed -n 's/.*"VulnerabilityDB":{\([^}]*\)}.*/\1/p' <<<"$out")"
   [ -n "$db" ] || return 0
   u="$(sed -n 's/.*"UpdatedAt":"\([^"]*\)".*/\1/p' <<<"$db")"
@@ -692,8 +693,9 @@ scan_container(){
   # TRIVY_FINDINGS_RC on findings and that code is recorded as findings, then mapped back to 0.
   local out="--exit-code $TRIVY_FINDINGS_RC" OUTM=()
   if [ "$SARIF" = "1" ]; then out="$out --format sarif --output /out/trivy.sarif"; out_mount "$SARIF_DIR"; fi
-  # shellcheck disable=SC2086,SC2046
-  docker run --rm -v "$ROOT:/repo:ro" $(trivy_cache_mount) "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
+  local TCM; trivy_cache_mount
+  # shellcheck disable=SC2086  # upd, out, ign, skip: flag strings built above
+  docker run --rm -v "$ROOT:/repo:ro" "${TCM[@]}" "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" fs \
     --no-progress $upd --scanners vuln,secret,misconfig,license --severity CRITICAL,HIGH --ignore-unfixed $out $ign $skip /repo
   local rc=$?
   # Which DB this result came from: identity -> provenance, age -> summary.json (see the summary).
@@ -1733,8 +1735,8 @@ scan_warm(){
     docker pull -q "$i" >/dev/null || { warn warm "pull failed: $i"; rc=1; }
   done
   say warm "trivy vulnerability DB -> $TRIVY_CACHE (~130 MiB, refreshed after ${TRIVY_DB_MAX_AGE_H}h)"
-  # shellcheck disable=SC2046
-  docker run --rm $(trivy_cache_mount) "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" image --download-db-only --no-progress || rc=1
+  local TCM; trivy_cache_mount
+  docker run --rm "${TCM[@]}" "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" image --download-db-only --no-progress || rc=1
   return "$rc"
 }
 case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac

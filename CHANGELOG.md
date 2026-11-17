@@ -74,6 +74,9 @@ All notable changes to this project are documented here. The format is based on
 - In a git worktree whose main repo path has a space, the extra read-only mount for gitleaks was
   split into several `docker run` arguments, so the `secret` dimensions failed there. The mount is an
   argument array now.
+- A `TRIVY_CACHE` path with a space broke the `container` dimension and `scan.sh warm`: the cache
+  mount was one printed string, split so that docker read part of the path as the image name. It is
+  an argument array now.
 - A shallow clone was scanned as "full history". `secret` now says how many commits were fetched and
   that older history was not scanned (in the dimension's reason, so it reaches `summary.json` and the
   report), and `doctor` says the same. `doctor` no longer calls WSL2 "full support".

@@ -210,6 +210,7 @@ echo '# sec-triage' > "$F18S/docs/security/scan-findings/findings-$(date +%F).md
   && ok "F18: scan.sh evidence works under a repo root with spaces" || no "F18: scan.sh evidence failed under a root with spaces"
 rm -rf "$(dirname "$F18S")"
 # Repo states: no commit yet, a decomposed (NFD) name, a staged rename, a shallow clone.
+# shellcheck disable=SC2016  # a script for bash -c: it expands in that shell, not here
 F18CT='git(){ command git -c core.quotepath=off "$@"; }; record_rel(){ echo docs/security/scan-findings; }; BASE_REF=""
   eval "$(sed -n "/^changed_files()/,/^}/p; /^changed_targets()/,/^}/p" "$1/scan.sh")"; changed_targets ""'
 F18U="$(mktemp -d)"; git -C "$F18U" init -q
@@ -230,6 +231,13 @@ grep -q 'shallow clone: only 1 commit(s) fetched' <<<"$(cd "$F18C/c" && bash "$K
 grep -q 'shallow clone' <<<"$(cd "$F18U" && bash "$KIT_SRC/scan.sh" doctor 2>/dev/null)" \
   && no "F18: a full clone reported as shallow" || ok "F18: a full clone is not reported as shallow"
 rm -rf "$F18U" "$F18C"
+# TRIVY_CACHE with a space: the mount was printed as one "-v a b:/root/..." string and split, so
+# docker read part of the path as the image name (container and warm failed).
+# shellcheck disable=SC2016  # the bash -c script expands in that shell
+F18T="$(TRIVY_CACHE="$(mktemp -d)/trivy cache" bash -c 'eval "$(sed -n "/^trivy_cache_mount()/,/^}/p" "$1/scan.sh")"
+  trivy_cache_mount; printf "%s\n" "${#TCM[@]}" "${TCM[1]}"' _ "$KIT_SRC")"
+[ "$(sed -n 1p <<<"$F18T")" = 2 ] && grep -q 'trivy cache:/root/.cache/trivy$' <<<"$F18T" \
+  && ok "F18: a TRIVY_CACHE path with a space stays one mount argument" || no "F18: TRIVY_CACHE mount split: $(tr '\n' '|' <<<"$F18T")"
 
 echo "-- stack-aware semgrep config --"
 # A bash/markdown repo -> base packs only (owasp-top-ten + secrets), no language packs.
