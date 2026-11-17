@@ -344,7 +344,7 @@
     code: |
       # billing/views.py
       @api_view(["PATCH"])
-      @permission_classes([IsAuthenticated])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])   # role check + allowed transition
       def update_invoice(request, pk):
           inv = get_object_or_404(Invoice, pk=pk, org=request.user.org)
           inv.status = request.data["status"]
@@ -352,7 +352,7 @@
           return Response(status=204)
 
       @api_view(["POST"])
-      @permission_classes([IsAuthenticated])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])
       def bulk_update_invoices(request):
           ids = request.data["ids"]
           Invoice.objects.filter(pk__in=ids).update(status=request.data["status"])   # line 19
@@ -429,7 +429,7 @@
           return Invoice.objects.filter(org=user.org)
 
       @api_view(["PATCH"])
-      @permission_classes([IsAuthenticated])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])   # role check + allowed transition
       def update_invoice(request, pk):
           inv = get_object_or_404(scoped_invoices(request.user), pk=pk)
           inv.status = request.data["status"]
@@ -437,7 +437,7 @@
           return Response(status=204)
 
       @api_view(["POST"])
-      @permission_classes([IsAuthenticated])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])
       def bulk_update_invoices(request):
           scoped_invoices(request.user).filter(pk__in=request.data["ids"]).update(status=request.data["status"])   # line 19
           return Response(status=204)
@@ -745,7 +745,7 @@
           return Invoice.objects.filter(org=user.org)
 
       @api_view(["PATCH"])
-      @permission_classes([IsAuthenticated])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])   # role check + allowed transition
       def update_invoice(request, pk):
           inv = get_object_or_404(scoped_invoices(request.user), pk=pk)
           inv.status = request.data["status"]
@@ -753,7 +753,7 @@
           return Response(status=204)
 
       @api_view(["POST"])
-      @permission_classes([IsAuthenticated])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])
       def bulk_update_invoices(request):
           scoped_invoices(request.user).filter(pk__in=request.data["ids"]).update(status=request.data["status"])   # line 19
           return Response(status=204)
