@@ -1496,19 +1496,21 @@ grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md >/dev/null \
   && no "F38/F43: a skill description names Claude: $(grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md | xargs -n1 basename -a 2>/dev/null | tr '\n' ' ')" \
   || ok "F38/F43: no skill description names a host"
 
-echo "-- F16: the evidence matrix matches the registry and the SARIF sources --"
+echo "-- F16: the evidence matrix matches the registry and the sources evidence.py reads --"
 # Every registry unit has a row; the units marked as having rows are exactly those evidence.py reads.
 EMD="$KIT_SRC/docs/evidence-matrix.md"
 EMU="$(sed -n "/^DIM_UNITS='/,/^'/p" "$KIT_SRC/scan.sh" | awk 'NF>=5{print $1}' | sort)"
+# shellcheck disable=SC2016  # the backticks are literal markdown, matched by grep
 EMM="$(grep -oE '^\| `[a-z-]+`' "$EMD" | tr -d '|` ' | sort -u)"
 EMX="$(comm -23 <(printf '%s\n' "$EMU") <(printf '%s\n' "$EMM") | tr '\n' ' ')"
 [ -z "$EMX" ] && ok "F16: every registry unit has a row in docs/evidence-matrix.md" || no "F16: units missing from the evidence matrix: $EMX"
-EMY="$(grep -E '^\| `[a-z-]+`' "$EMD" | awk -F'|' '$5 ~ /\*\*yes\*\*/{print $2}' | tr -d '` ' | grep -v '^judgment$' | sort -u | tr '\n' ' ')"
-# The units whose summary record is a dimension evidence.py reads SARIF for (staged records itself).
-EMD2="$(python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import evidence as e; print(' '.join(sorted({d for _, d in e.SARIF_SOURCES.values()})))" "$KIT_SRC/lib" 2>/dev/null)"
+# shellcheck disable=SC2016  # the backticks are literal markdown, matched by grep
+EMY="$(grep -E '^\| `[a-z-]+`' "$EMD" | awk -F'|' '$5 ~ /\*\*yes\*\*/ && match($2, /`[a-z-]+`/){print substr($2, RSTART+1, RLENGTH-2)}' | grep -v '^judgment$' | sort -u | tr '\n' ' ')"
+# The units whose summary record is a dimension evidence.py reads output for (staged records itself).
+EMD2="$(python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import evidence as e; print(' '.join(sorted({d for _, d in e.SOURCES.values()})))" "$KIT_SRC/lib" 2>/dev/null)"
 EMS="$(sed -n "/^DIM_UNITS='/,/^'/p" "$KIT_SRC/scan.sh" | awk -v ds=" $EMD2 " 'NF>=5 && index(ds, " "$2" "){print $1}' | sort | tr '\n' ' ')"
-[ "$EMY" = "$EMS" ] && ok "F16: the matrix's 'rows: yes' units are the ones evidence.py reads SARIF for" \
-  || no "F16: matrix rows ($EMY) != evidence.py SARIF sources ($EMS)"
+[ "$EMY" = "$EMS" ] && ok "F16: the matrix's 'rows: yes' units are the ones evidence.py reads output for" \
+  || no "F16: matrix rows ($EMY) != evidence.py sources ($EMS)"
 
 echo "-- R02: the kit is a Claude Code plugin + marketplace; manifest and disk agree --"
 # One source for the skills: skills/<name>/SKILL.md is what the plugin loads AND what install.sh
@@ -1805,6 +1807,46 @@ grep -q 'PY_VENV.*no bin/python' <<<"$F29OUT" && [ "$F29RC" -ne 0 ] \
 grep -q '"name": "py-deps", "exit_code": 1, "status": "error"' "$PYR/docs/security/scan-findings/summary.json" 2>/dev/null \
   && ok "F29+F02: a broken PY_VENV is recorded as error, not findings" || no "F29+F02: broken PY_VENV not recorded as error"
 rm -rf "$F29"
+# F16b — the pip-audit adapter. A uvx shim plays pip-audit: it writes the recorded JSON (or nothing,
+# or something else) to --output and exits 1, which is what pip-audit does for findings AND crashes.
+if have python3; then
+  F16B="$(mktemp -d)"; mkdir -p "$PYR/.venv/bin"; printf '#!/bin/sh\nexit 0\n' > "$PYR/.venv/bin/python"; chmod +x "$PYR/.venv/bin/python"
+  cat > "$F16B/uvx" <<'SH'
+#!/bin/sh
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--output" ] && out="$2"; shift; done
+case "$F16B_MODE" in
+  findings) [ -n "$out" ] && cp "$F16B_JSON" "$out" ;;
+  garbage)  [ -n "$out" ] && printf '{"not": "pip-audit"}\n' > "$out" ;;
+esac
+exit 1
+SH
+  chmod +x "$F16B/uvx"
+  f16b(){ (cd "$PYR" && env PATH="$F16B:$PATH" F16B_JSON="$KIT_SRC/tests/fixtures/native/uvlock/pip-audit-2.10.1-exported.json" \
+    F16B_MODE="$1" SARIF=1 VIRTUAL_ENV= bash tools/security-audit-kit/scan.sh deps 2>&1; \
+    bash tools/security-audit-kit/scan.sh evidence >/dev/null 2>&1); }
+  F16O="$(f16b findings)"
+  grep -q 'urllib3 1.26.4: PYSEC-2021-108, fixed in 1.26.5' <<<"$F16O" \
+    && ok "F16b: the scan log lists pip-audit's findings from its JSON" || no "F16b: no readable pip-audit list in the log"
+  python3 - "$PYR/docs/security/scan-findings" <<'PY' && ok "F16b: pip-audit findings are rows in evidence.json (unknown severity, aliases, one per advisory)" || no "F16b: pip-audit rows missing or wrong in evidence.json"
+import json, os, sys
+d = sys.argv[1]
+s = json.load(open(os.path.join(d, "summary.json")))
+assert "sarif/pip-audit.native.json" in [a["path"] for a in s["artifacts"]]
+assert [x["status"] for x in s["dimensions"] if x["name"] == "py-deps"] == ["findings"]
+rows = [f for f in json.load(open(os.path.join(d, "evidence.json")))["findings"] if f["tool"] == "pip-audit"]
+r = [f for f in rows if f["rule_id"] == "PYSEC-2021-108"]
+assert len(r) == 1 and r[0]["severity"] == "unknown" and r[0]["severity_source"] == "pip-audit:none"
+assert "CVE-2021-33503" in r[0]["aliases"] and r[0]["package"]["name"] == "urllib3"
+assert len(rows) == len({f["rule_id"] for f in rows})          # pip-audit lists some advisories twice
+PY
+  f16b crash >/dev/null
+  grep -q '"name": "py-deps", "exit_code": 1, "status": "error"' "$PYR/docs/security/scan-findings/summary.json" \
+    && ok "F16b: pip-audit exit 1 with no output is a scan error, not findings" || no "F16b: a pip-audit crash was recorded as findings"
+  f16b garbage >/dev/null
+  grep -q '"name": "py-deps", "exit_code": 1, "status": "error"' "$PYR/docs/security/scan-findings/summary.json" \
+    && ok "F16b: output that is not pip-audit JSON is a scan error" || no "F16b: unreadable pip-audit output recorded as findings"
+  rm -rf "$F16B" "$PYR/.venv"
+else skip "F16b: pip-audit adapter (no python3)"; fi
 # (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
 #     build a venv and install it, i.e. run the dependency tree's build scripts).
 printf 'requests==2.19.0\n' > "$PYR/requirements.txt"

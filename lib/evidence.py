@@ -17,6 +17,8 @@ import os
 import sys
 import unicodedata
 
+import native
+
 SCHEMA = "security-audit-kit/evidence@1"
 
 # SARIF file -> (tool name, scan.sh dimension). The dimension is what lets us include only the
@@ -28,6 +30,9 @@ SARIF_SOURCES = {
     "osv.sarif": ("osv-scanner", "osv"),
     "zizmor.sarif": ("zizmor", "zizmor"),
 }
+
+# Every per-finding output the builder reads: SARIF, and the native JSON of tools without it (F16b).
+SOURCES = {**SARIF_SOURCES, **native.NATIVE_SOURCES}
 
 # A dimension alias runs the same tool over a different scope, so its SARIF is the same file.
 DIMENSION_ALIASES = {"staged": "secret", "changed": "sast"}
@@ -45,7 +50,8 @@ TOOL_DEFAULT = {
 CVSS_TOOLS = {"trivy", "osv-scanner"}
 
 LEVEL_TO_SEVERITY = {"error": "high", "warning": "medium", "note": "low", "none": "info"}
-SEVERITIES = ("critical", "high", "medium", "low", "info")
+# `unknown`: the tool gave no severity (pip-audit) — never guessed, never folded into `info`.
+SEVERITIES = ("critical", "high", "medium", "low", "unknown", "info")
 
 
 def band(score: float) -> str:
@@ -453,7 +459,7 @@ def sha256_file(path: str) -> str:
 
 
 def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
-    """The SARIF files that are THIS run's findings, as (path, tool, dimension).
+    """The output files (SARIF or native JSON) that are THIS run's findings, as (path, tool, dimension).
 
     The SARIF directory outlives a run, so "the file is on disk" proves nothing about when it was
     written. summary.json lists what this run produced (`artifacts`, with sha256), and each
@@ -464,8 +470,8 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
     status = {}
     for d in dimensions:
         status[DIMENSION_ALIASES.get(d.get("name"), d.get("name"))] = d.get("status")
-    by_dim = {dim: (fname, tool) for fname, (tool, dim) in SARIF_SOURCES.items()}
-    on_disk = sorted(f for f in SARIF_SOURCES if os.path.exists(os.path.join(sarif_dir, f)))
+    by_dim = {dim: (fname, tool) for fname, (tool, dim) in SOURCES.items()}
+    on_disk = sorted(f for f in SOURCES if os.path.exists(os.path.join(sarif_dir, f)))
 
     artifacts = summary.get("artifacts")
     if artifacts is None:
@@ -478,16 +484,16 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
         else:
             warnings.append("no summary.json dimensions -> included every SARIF file on disk, which may be stale")
             ran = set(by_dim)
-        return [(os.path.join(sarif_dir, f), *SARIF_SOURCES[f]) for f in on_disk if SARIF_SOURCES[f][1] in ran]
+        return [(os.path.join(sarif_dir, f), *SOURCES[f]) for f in on_disk if SOURCES[f][1] in ran]
 
     listed = {}
     for a in artifacts:
         listed[os.path.basename(a.get("path") or "")] = a.get("sha256")
     out = []
     for fname in sorted(listed):
-        if fname not in SARIF_SOURCES:
+        if fname not in SOURCES:
             continue
-        tool, dim = SARIF_SOURCES[fname]
+        tool, dim = SOURCES[fname]
         path = os.path.join(sarif_dir, fname)
         st = status.get(dim)
         if st not in INSPECTED:
@@ -508,9 +514,9 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
     if summary.get("sarif"):
         for dim, st in sorted(status.items()):
             if st in INSPECTED and dim in by_dim and by_dim[dim][0] not in listed:
-                warnings.append(f"{dim}: inspected, but wrote no SARIF in this run -> no per-finding rows")
+                warnings.append(f"{dim}: inspected, but wrote no per-finding output in this run -> no per-finding rows")
             elif st in ("findings", "fail") and dim not in by_dim:
-                # pip-audit, the JS audit, checkov, guarddog: no adapter yet (F16b)
+                # the JS audit, checkov, guarddog: no adapter yet (F16b)
                 warnings.append(f"{dim}: has findings, but the kit reads no per-finding output for it yet "
                                 "-> not in evidence.json; see the scan log")
     return out
@@ -576,7 +582,10 @@ def main() -> int:
 
     findings: list = []
     for path, tool, dimension in select_sources(summary, args.sarif_dir, warnings):
-        findings.extend(collect(path, tool, dimension, warnings))
+        if os.path.basename(path) in native.NATIVE_SOURCES:
+            findings.extend(native.PARSERS[tool](read_json(path, warnings, os.path.basename(path)), warnings))
+        else:
+            findings.extend(collect(path, tool, dimension, warnings))
 
     if args.findings:
         judged = parse_findings_md(args.findings, warnings)

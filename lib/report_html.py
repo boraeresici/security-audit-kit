@@ -22,7 +22,7 @@ import html
 import json
 import sys
 
-SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+SEVERITY_ORDER = ["critical", "high", "medium", "low", "unknown", "info"]
 SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITY_ORDER)}
 DECISION_LABEL = {
     "real": "REAL", "fp": "false positive", "uncertain": "uncertain",

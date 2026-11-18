@@ -1133,7 +1133,7 @@ class TestSelectSources:
     def test_inspecting_dimension_without_sarif_is_said(self, tmp_path):
         w = []
         evidence.select_sources(self._summary([{"name": "secret", "status": "pass"}], []), str(tmp_path), w)
-        assert any("secret" in x and "no SARIF" in x for x in w)
+        assert any("secret" in x and "no per-finding output" in x for x in w)
 
     def test_alias_dimension_uses_its_tools_file(self, tmp_path):
         p = self._sarif(tmp_path, "gitleaks.sarif")
@@ -1202,11 +1202,11 @@ class TestNumericSeverityFinite:
 class TestNoAdapterWarning:
     def test_findings_dimension_without_an_adapter_is_said(self, tmp_path):
         summary = {"schema": 2, "sarif": True, "artifacts": {},
-                   "dimensions": [{"name": "iac", "status": "findings"}, {"name": "py-deps", "status": "pass"}]}
+                   "dimensions": [{"name": "iac", "status": "findings"}, {"name": "js-deps", "status": "pass"}]}
         warnings = []
         evidence.select_sources(summary, str(tmp_path), warnings)
         assert any(w.startswith("iac: has findings, but the kit reads no per-finding output") for w in warnings)
-        assert not any(w.startswith("py-deps:") for w in warnings)
+        assert not any(w.startswith("js-deps:") for w in warnings)
 
 
 class TestToolSuppression:

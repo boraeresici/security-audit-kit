@@ -83,7 +83,7 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 | `file` | string | Repo-relative path. |
 | `line` | int\|null | 1-indexed start line; `null` when the tool reports no location. |
 | `message` | string | The tool's message, single-line, trimmed. |
-| `severity` | enum | Normalized: `critical` · `high` · `medium` · `low` · `info`. |
+| `severity` | enum | Normalized: `critical` · `high` · `medium` · `low` · `unknown` · `info`. `unknown`: the tool gave none (pip-audit), never guessed or folded into `info`. |
 | `severity_source` | string | The tool's own value, verbatim, e.g. `semgrep:level=error`, `trivy:security-severity=8.8`. |
 | `cvss` | float\|null | Passthrough **only** where the tool supplied a CVSS-derived score. |
 | `decision` | enum\|null | `real` · `fp` · `uncertain` · `suppressed` · `null` (not yet judged). Written by the judgment layer, not the scan. |
@@ -116,11 +116,16 @@ Numeric first, then the SARIF level, then a tool-specific default:
 
 ### Dimensions without per-finding rows (known gap)
 
-`checkov` (iac), `guarddog`, `pip-audit` (py-deps) and the JS audits write no per-finding output the
-kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
+`checkov` (iac), `guarddog` and the JS audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
 entries; `warnings` names each one that had findings, and the report header says so. Their findings
 reach a human through `raw-<date>.log` and triage. The per-unit picture, and the adapters that close
 this, are in the [evidence matrix](../evidence-matrix.md).
+
+**Dependency rows from native JSON (F16b).** pip-audit writes JSON, not SARIF (`pip-audit.native.json`,
+listed in the run's `artifacts` like a SARIF file); `lib/native.py` turns it into rows with
+`file`/`line` null and three more fields: `package` (`{ecosystem, name, version}`), `aliases` (the
+advisory's other ids) and `fixed_in`. The `id` hashes dimension, advisory and package name, so the same
+advisory in two packages is two findings, and a version change keeps the id.
 
 A finding the tool itself marked as suppressed in its SARIF (semgrep's `# nosemgrep`, written with
 `suppressions: [{kind: inSource}]`) is recorded with `decision: "suppressed"` and the tool's note, so

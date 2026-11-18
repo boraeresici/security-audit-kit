@@ -17,7 +17,7 @@ listed below"), and `evidence.json` carries a warning for it. The findings thems
 | `staged` | gitleaks `protect --staged` | log only | no | — | same as `secret` | not in the output |
 | `sast` | semgrep, `--severity ERROR` | `semgrep.sarif` | **yes** | SARIF `level` | `# nosemgrep` | in the SARIF with `suppressions`; recorded as **suppressed** (measured, 1.166.0) |
 | `sast-changed` | semgrep on changed files | `semgrep.sarif` | **yes**, as `sast` | SARIF `level` | `# nosemgrep` | as `sast` |
-| `py-deps` (project venv) | pip-audit `--strict` | log only | no | — | `.pip-audit-ignore` (`--ignore-vuln`) | not in the output |
+| `py-deps` (project venv) | pip-audit `--strict` | `pip-audit.native.json` (with `SARIF=1`) | **yes**, via `lib/native.py` | none from the tool: `unknown` | `.pip-audit-ignore` (`--ignore-vuln`) | not in the output |
 | `py-deps` (no venv) | osv-scanner `-L` on lockfiles | log only | no | — | `osv-scanner.toml` | not in the output |
 | `js-deps` | pnpm / yarn / npm `audit` | log only | no | — | none in the kit | — |
 | `iac` | checkov `--soft-fail` | log only (failed count read from it) | no | — | `#checkov:skip=` | not in the output |
@@ -30,18 +30,22 @@ listed below"), and `evidence.json` carries a warning for it. The findings thems
 
 "Measured" means run against the pinned version and recorded; the rest is read from `scan.sh` and
 `lib/evidence.py`. e2e checks that every unit in the registry has a row here and that the units
-marked **yes** are exactly the ones `lib/evidence.py` reads SARIF for.
+marked **yes** are exactly the ones whose output (SARIF or native JSON) `lib/evidence.py` reads.
 
 ## Known gaps, in the order they close (F16b)
 
-- **No rows for pip-audit, the JS audits, checkov and guarddog.** Each gets an adapter that reads the
-  tool's native JSON and normalises it in `lib/`, keeping package, version and aliases. Until alias
-  deduplication exists, their rows go to `evidence.json` and the report, not to Code Scanning.
+- **No rows for the JS audits, checkov and guarddog.** Each gets an adapter that reads the tool's
+  native JSON and normalises it in `lib/native.py`, keeping package, version and aliases, as
+  pip-audit's does now. These rows go to `evidence.json` and the report, not to Code Scanning: the
+  native files are not SARIF, and a CI job uploads `sarif/*.sarif`.
 - **One advisory, three ids.** trivy reports `CVE-2021-33503` where osv-scanner and pip-audit report
   `PYSEC-2021-108`, and `.trivyignore.yaml` matches trivy's own id only
   ([recording](../tests/fixtures/native/uvlock/README.md)). `scan.sh allowlist` compares ids
   literally until F19's alias map exists.
 - **trivy 0.58.0 does not read `uv.lock`.** In a uv project, `container` says nothing about Python
   dependencies; `py-deps` and `osv` do.
-- **A severity the tool does not give** (pip-audit, checkov without a platform key) will be
-  `unknown` with `severity_source: "<tool>:none"`, not a guess.
+- **A severity the tool does not give** is `unknown`, with `severity_source: "<tool>:none"`, not a
+  guess: pip-audit gives none, and checkov gives none without a platform key.
+- **pip-audit repeats advisories.** 2.10.1 lists most of them twice per package (43 entries for 23
+  advisories, measured); the adapter keeps one row per package and advisory, and the scan log says
+  how many entries pip-audit listed.

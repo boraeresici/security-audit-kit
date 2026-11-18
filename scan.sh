@@ -317,8 +317,23 @@ scan_py_deps(){
   case "$rv" in "$rr"/*) label="${rv#"$rr"/}" ;; esac
   export PIPAPI_PYTHON_LOCATION="$venv/bin/python"
   say deps "pip-audit --strict (==$PIP_AUDIT_VER, env $label — $why)"
-  # shellcheck disable=SC2086
-  pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags || { [ $? -eq 127 ] && { dim_skip deps "no uvx/pipx -> pip-audit skipped"; return 0; }; return 1; }
+  # With SARIF=1 pip-audit writes its JSON beside the SARIF files (F16b): lib/native.py turns it into
+  # evidence rows, and the log gets a readable list instead of pip-audit's own table.
+  local nat="$SARIF_DIR/pip-audit.native.json" out=() rc
+  [ "$SARIF" = "1" ] && { rm -f "$nat"; out=(--format json --output "$nat"); }
+  # shellcheck disable=SC2086  # flags: --ignore-vuln pairs from .pip-audit-ignore
+  pyrun pip-audit "$PIP_AUDIT_VER" pip-audit --strict $flags ${out[@]+"${out[@]}"}; rc=$?
+  [ "$rc" -eq 127 ] && { dim_skip deps "no uvx/pipx -> pip-audit skipped"; return 0; }
+  if [ "$SARIF" = "1" ]; then
+    # pip-audit exits 1 for findings AND for its own failures; with JSON the two can be told apart.
+    if [ -s "$nat" ] && have python3 && [ -f "$KIT_DIR/lib/native.py" ]; then
+      python3 "$KIT_DIR/lib/native.py" summary pip-audit "$nat" | py_say \
+        || { dim_error deps "pip-audit exit $rc, output unreadable (scan error, not a finding)"; return 1; }
+    elif [ "$rc" -ne 0 ] && [ ! -s "$nat" ]; then
+      dim_error deps "pip-audit exit $rc and no output (scan error, not a finding)"; return 1
+    fi
+  fi
+  return "$rc"
 }
 
 # No environment to inspect — the normal shape for a project that runs in a container. Auditing the
@@ -1937,7 +1952,7 @@ artifacts_json(){
   local f first=1
   printf '['
   if [ "$SARIF" = "1" ]; then
-    for f in "$SARIF_DIR"/*.sarif; do
+    for f in "$SARIF_DIR"/*.sarif "$SARIF_DIR"/*.native.json; do
       [ -f "$f" ] || continue
       [ "$first" = 1 ] || printf ', '; first=0
       printf '{"path": "sarif/%s", "sha256": %s}' "${f##*/}" "$(json_str "$(sha256_of "$f" 2>/dev/null)")"

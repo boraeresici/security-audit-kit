@@ -37,6 +37,14 @@ All notable changes to this project are documented here. The format is based on
   first: on the 18 dev cases of the new deep-review eval it fixed one of two over-stated cases with
   no regression in three runs (`docs/skills.md`, "Severity of a judgment finding").
 
+### Added
+- pip-audit findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, pip-audit
+  writes its JSON beside the SARIF files and `lib/native.py` turns it into one row per package and
+  advisory, with `package`, `aliases` and `fixed_in`; the severity is `unknown` (pip-audit gives none,
+  and the kit does not guess). The scan log lists them instead of pip-audit's own table. pip-audit
+  exits 1 for findings and for its own failures; now an exit 1 with no readable output is recorded as
+  a scan error, not as findings. The rows do not go to Code Scanning.
+
 ### Documented
 - `docs/evidence-matrix.md`: per scan unit, the tool, its native output, whether it writes rows to
   `evidence.json`, where its severity comes from and what happens to a suppressed finding; e2e checks
