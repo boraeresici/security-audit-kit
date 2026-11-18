@@ -116,10 +116,16 @@ Numeric first, then the SARIF level, then a tool-specific default:
 
 ### Dimensions without per-finding rows (known gap)
 
-`checkov` (iac), `guarddog`, `pip-audit` (py-deps) and the JS audits do not emit SARIF in the kit
-today, so they appear in `scan.dimensions` with a status but contribute no `findings`
-entries. Their findings still reach a human through `raw-<date>.log` and triage. Closing this gap
-means adding SARIF output per tool — tracked separately, not part of this schema.
+`checkov` (iac), `guarddog`, `pip-audit` (py-deps) and the JS audits write no per-finding output the
+kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
+entries; `warnings` names each one that had findings, and the report header says so. Their findings
+reach a human through `raw-<date>.log` and triage. The per-unit picture, and the adapters that close
+this, are in the [evidence matrix](../evidence-matrix.md).
+
+A finding the tool itself marked as suppressed in its SARIF (semgrep's `# nosemgrep`, written with
+`suppressions: [{kind: inSource}]`) is recorded with `decision: "suppressed"` and the tool's note, so
+it is on record and not counted as reported. A suppression whose `status` is `rejected` or
+`underReview` leaves the finding live.
 
 ## The judgment half — how decisions get in
 

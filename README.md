@@ -54,7 +54,7 @@ dimensions, and a missing one is skipped out loud ([Requirements](docs/install.m
 | [Your own rules and suppressions](docs/rules.md) | repo-local semgrep/gitleaks rules; suppressing a finding everywhere it is reported |
 | [The judgment skills](docs/skills.md) | `/sec-sast-deep`, `/sec-ai-review`, `/sec-threat-model`, `/sec-audit`, cadence |
 | [Configuration](docs/configuration.md) | `.security-audit.conf`, the config check, triage exclusions |
-| [What leaves the machine](docs/data-flow.md) · [Privacy](PRIVACY.md) · [Threat model](docs/threat-model.md) · [`summary.json`](docs/schema/summary.md) | trust and contracts |
+| [What leaves the machine](docs/data-flow.md) · [Privacy](PRIVACY.md) · [Threat model](docs/threat-model.md) · [`summary.json`](docs/schema/summary.md) · [Evidence matrix](docs/evidence-matrix.md) | trust and contracts |
 
 ## Lifecycle (install → update → scan)
 

@@ -516,6 +516,18 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
     return out
 
 
+def tool_suppression(result: dict):
+    """The tool's own suppression of a result, as a note, or None. A SARIF suppression counts unless
+    its status says otherwise (absent = accepted, SARIF 2.1.0 §3.35.3); semgrep writes `nosemgrep`
+    hits this way, so without this they were counted as live findings in evidence and the report."""
+    for s in result.get("suppressions") or []:
+        if not isinstance(s, dict) or (s.get("status") or "accepted") != "accepted":
+            continue
+        why = " ".join(str(s.get("justification") or "").split())
+        return f"suppressed by the tool ({s.get('kind') or 'unspecified'}){': ' + why if why else ''}"
+    return None
+
+
 def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
     doc = read_json(sarif_path, warnings, os.path.basename(sarif_path))
     if not doc:
@@ -528,6 +540,7 @@ def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
             path, line = location_of(result)
             where = f"{os.path.basename(sarif_path)}:{rule_id}"
             severity, source, cvss = classify(tool, result, rules.get(rule_id, {}), warnings, where)
+            suppressed = tool_suppression(result)
             findings.append({
                 "id": finding_id(dimension, rule_id, path or "", line),
                 "dimension": dimension,
@@ -539,9 +552,9 @@ def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
                 "severity": severity,
                 "severity_source": source,
                 "cvss": cvss,
-                "decision": None,
+                "decision": "suppressed" if suppressed else None,
                 "confidence": None,
-                "evidence": None,
+                "evidence": {"sink": f"{path}:{line}" if line else path, "source": None, "note": suppressed} if suppressed else None,
             })
     return findings
 

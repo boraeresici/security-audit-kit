@@ -1207,3 +1207,32 @@ class TestNoAdapterWarning:
         evidence.select_sources(summary, str(tmp_path), warnings)
         assert any(w.startswith("iac: has findings, but the kit reads no per-finding output") for w in warnings)
         assert not any(w.startswith("py-deps:") for w in warnings)
+
+
+class TestToolSuppression:
+    """semgrep writes `nosemgrep` hits into its SARIF with suppressions: [{kind: inSource}]."""
+
+    def _sarif(self, tmp_path, suppressions):
+        result = {"ruleId": "R", "level": "error", "message": {"text": "m"},
+                  "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app.py"}, "region": {"startLine": 2}}}]}
+        if suppressions is not None:
+            result["suppressions"] = suppressions
+        p = tmp_path / "semgrep.sarif"
+        p.write_text(json.dumps({"runs": [{"tool": {"driver": {"name": "semgrep", "rules": []}}, "results": [result]}]}))
+        return evidence.collect(str(p), "semgrep", "sast", [])[0]
+
+    def test_in_source_suppression_is_recorded_as_suppressed(self, tmp_path):
+        f = self._sarif(tmp_path, [{"kind": "inSource"}])
+        assert f["decision"] == "suppressed" and "inSource" in f["evidence"]["note"]
+
+    def test_justification_is_kept(self, tmp_path):
+        f = self._sarif(tmp_path, [{"kind": "external", "justification": "test fixture"}])
+        assert f["evidence"]["note"].endswith(": test fixture")
+
+    @pytest.mark.parametrize("status", ["rejected", "underReview"])
+    def test_a_suppression_not_accepted_leaves_the_finding_live(self, tmp_path, status):
+        assert self._sarif(tmp_path, [{"kind": "inSource", "status": status}])["decision"] is None
+
+    def test_no_suppression_is_unchanged(self, tmp_path):
+        f = self._sarif(tmp_path, None)
+        assert f["decision"] is None and f["evidence"] is None

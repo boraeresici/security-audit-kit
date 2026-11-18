@@ -38,6 +38,9 @@ All notable changes to this project are documented here. The format is based on
   no regression in three runs (`docs/skills.md`, "Severity of a judgment finding").
 
 ### Documented
+- `docs/evidence-matrix.md`: per scan unit, the tool, its native output, whether it writes rows to
+  `evidence.json`, where its severity comes from and what happens to a suppressed finding; e2e checks
+  it against the dimension registry and the SARIF sources.
 - Measured with the pinned tools (`tests/fixtures/native/uvlock/`): trivy 0.58.0 does not read
   `uv.lock`, so in a uv project the `container` dimension reports nothing about Python dependencies;
   `py-deps` and `osv` cover them. The same advisory is `CVE-2021-33503` to trivy and
@@ -60,6 +63,11 @@ All notable changes to this project are documented here. The format is based on
   location.
 
 ### Fixed
+- A finding suppressed with `# nosemgrep` was counted as a live finding in `evidence.json` and the
+  HTML report. semgrep (1.166.0, measured) writes such hits into its SARIF with
+  `suppressions: [{kind: inSource}]`, which the evidence builder ignored. A tool suppression is now
+  recorded as `decision: "suppressed"` with the tool's note, so it is on record and not reported; one
+  whose status is `rejected` or `underReview` stays live. The gate was never affected.
 - **The run lock was not exclusive on Ubuntu 25.10 and later.** Its atomic step was `mkdir`, and the
   uutils coreutils `mkdir` those releases ship (0.10.0) lets several concurrent callers all "create"
   the same directory: in 200 rounds of four racers, 319 won. Two scans could both hold the lock and

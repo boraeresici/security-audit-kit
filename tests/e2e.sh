@@ -1496,6 +1496,20 @@ grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md >/dev/null \
   && no "F38/F43: a skill description names Claude: $(grep -lE '^description:.*\bClaude\b' "$KIT_SRC"/skills/*/SKILL.md | xargs -n1 basename -a 2>/dev/null | tr '\n' ' ')" \
   || ok "F38/F43: no skill description names a host"
 
+echo "-- F16: the evidence matrix matches the registry and the SARIF sources --"
+# Every registry unit has a row; the units marked as having rows are exactly those evidence.py reads.
+EMD="$KIT_SRC/docs/evidence-matrix.md"
+EMU="$(sed -n "/^DIM_UNITS='/,/^'/p" "$KIT_SRC/scan.sh" | awk 'NF>=5{print $1}' | sort)"
+EMM="$(grep -oE '^\| `[a-z-]+`' "$EMD" | tr -d '|` ' | sort -u)"
+EMX="$(comm -23 <(printf '%s\n' "$EMU") <(printf '%s\n' "$EMM") | tr '\n' ' ')"
+[ -z "$EMX" ] && ok "F16: every registry unit has a row in docs/evidence-matrix.md" || no "F16: units missing from the evidence matrix: $EMX"
+EMY="$(grep -E '^\| `[a-z-]+`' "$EMD" | awk -F'|' '$5 ~ /\*\*yes\*\*/{print $2}' | tr -d '` ' | grep -v '^judgment$' | sort -u | tr '\n' ' ')"
+# The units whose summary record is a dimension evidence.py reads SARIF for (staged records itself).
+EMD2="$(python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import evidence as e; print(' '.join(sorted({d for _, d in e.SARIF_SOURCES.values()})))" "$KIT_SRC/lib" 2>/dev/null)"
+EMS="$(sed -n "/^DIM_UNITS='/,/^'/p" "$KIT_SRC/scan.sh" | awk -v ds=" $EMD2 " 'NF>=5 && index(ds, " "$2" "){print $1}' | sort | tr '\n' ' ')"
+[ "$EMY" = "$EMS" ] && ok "F16: the matrix's 'rows: yes' units are the ones evidence.py reads SARIF for" \
+  || no "F16: matrix rows ($EMY) != evidence.py SARIF sources ($EMS)"
+
 echo "-- R02: the kit is a Claude Code plugin + marketplace; manifest and disk agree --"
 # One source for the skills: skills/<name>/SKILL.md is what the plugin loads AND what install.sh
 # copies. No skill on disk that the plugin would not load, none the installer misses.
