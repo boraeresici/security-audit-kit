@@ -1,0 +1,328 @@
+{
+ "check_type": "terraform",
+ "results": {
+  "passed_checks": [
+   {
+    "bc_check_id": "BC_AWS_S3_24",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/bc-aws-s3-24",
+    "check_id": "CKV_AWS_93",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure S3 bucket policy does not lockout all but root user. (Prevent lockouts needing root account fixes)",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_67",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/ensure-aws-security-groups-do-not-allow-ingress-from-00000-to-port-80",
+    "check_id": "CKV_AWS_260",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 80",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_78",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/ensure-aws-security-group-does-not-allow-all-traffic-on-all-ports",
+    "check_id": "CKV_AWS_277",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port -1",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_2",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/networking-2",
+    "check_id": "CKV_AWS_25",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 3389",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_IAM_93",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/bc-aws-382",
+    "check_id": "CKV_AWS_382",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure no security groups allow egress from 0.0.0.0:0 to port -1",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_S3_1",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-1-acl-read-permissions-everyone",
+    "check_id": "CKV_AWS_20",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "S3 Bucket has an ACL defined which allows public READ access.",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_S3_14",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-14-data-encrypted-at-rest",
+    "check_id": "CKV_AWS_19",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure all data stored in the S3 bucket is securely encrypted at rest",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_S3_2",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "PASSED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-2-acl-write-permissions-everyone",
+    "check_id": "CKV_AWS_57",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "S3 Bucket has an ACL defined which allows public WRITE access.",
+    "file_path": "/main.tf"
+   }
+  ],
+  "failed_checks": [
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_1",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/networking-1-port-security",
+    "check_id": "CKV_AWS_24",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure no security groups allow ingress from 0.0.0.0:0 to port 22",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_31",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/networking-31",
+    "check_id": "CKV_AWS_23",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure every security group and rule has a description",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_51",
+    "severity": null,
+    "resource": "aws_security_group.web",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     6,
+     14
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/ensure-that-security-groups-are-attached-to-ec2-instances-or-elastic-network-interfaces-enis",
+    "check_id": "CKV2_AWS_5",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure that Security Groups are attached to another resource",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_LOGGING_36",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-logging-policies/bc-aws-2-62",
+    "check_id": "CKV2_AWS_62",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure S3 buckets should have event notifications enabled",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_NETWORKING_52",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-networking-policies/s3-bucket-should-have-public-access-blocks-defaults-to-false-if-the-public-access-block-is-not-attached",
+    "check_id": "CKV2_AWS_6",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure that S3 bucket has a Public Access block",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_LOGGING_35",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-logging-policies/bc-aws-2-61",
+    "check_id": "CKV2_AWS_61",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure that an S3 bucket has a lifecycle configuration",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_GENERAL_72",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-general-policies/ensure-that-s3-bucket-has-cross-region-replication-enabled",
+    "check_id": "CKV_AWS_144",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure that S3 bucket has cross-region replication enabled",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_GENERAL_56",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/aws-general-policies/ensure-that-s3-buckets-are-encrypted-with-kms-by-default",
+    "check_id": "CKV_AWS_145",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure that S3 buckets are encrypted with KMS by default",
+    "file_path": "/main.tf"
+   },
+   {
+    "bc_check_id": "BC_AWS_S3_16",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "FAILED"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-16-enable-versioning",
+    "check_id": "CKV_AWS_21",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure all data stored in the S3 bucket have versioning enabled",
+    "file_path": "/main.tf"
+   }
+  ],
+  "skipped_checks": [
+   {
+    "bc_check_id": "BC_AWS_S3_13",
+    "severity": null,
+    "resource": "aws_s3_bucket.logs",
+    "check_result": {
+     "result": "SKIPPED",
+     "suppress_comment": "access logging is the logs bucket itself"
+    },
+    "file_line_range": [
+     1,
+     4
+    ],
+    "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-13-enable-logging",
+    "check_id": "CKV_AWS_18",
+    "repo_file_path": "/infra/main.tf",
+    "check_name": "Ensure the S3 bucket has access logging enabled",
+    "file_path": "/main.tf"
+   }
+  ],
+  "parsing_errors": []
+ },
+ "summary": {
+  "passed": 8,
+  "failed": 9,
+  "skipped": 1,
+  "parsing_errors": 0,
+  "resource_count": 2,
+  "checkov_version": "3.3.1"
+ },
+ "url": "Add an api key '--bc-api-key <api-key>' to see more detailed insights via https://bridgecrew.cloud"
+}

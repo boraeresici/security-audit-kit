@@ -782,8 +782,12 @@ scan_iac(){
   say iac "checkov ($tf, ==$CHECKOV_VER)"
   # Soft: --soft-fail keeps the gate open, so the exit code no longer says whether checks failed;
   # the summary line does. Read it, so failed checks are recorded as findings and not as a pass.
-  local out rc failed
-  out="$(pyrun checkov "$CHECKOV_VER" checkov --directory "$tf" --framework terraform --soft-fail --external-checks-dir "$nochecks")"; rc=$?
+  # With SARIF=1 checkov also writes its JSON beside the SARIF files (F16b): lib/native.py turns it
+  # into evidence rows, a `#checkov:skip` among them as suppressed. The table still goes to the log,
+  # where the failed count below is read.
+  local out rc failed nat="$SARIF_DIR/checkov.native.json" oargs=()
+  [ "$SARIF" = "1" ] && { rm -f "$nat"; oargs=(-o cli -o json --output-file-path "console,$nat"); }
+  out="$(pyrun checkov "$CHECKOV_VER" checkov --directory "$tf" --framework terraform --soft-fail --external-checks-dir "$nochecks" ${oargs[@]+"${oargs[@]}"})"; rc=$?
   rmdir "$nochecks" 2>/dev/null
   [ -n "$out" ] && printf '%s\n' "$out"
   case "$rc" in

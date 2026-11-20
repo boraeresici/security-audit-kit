@@ -1860,6 +1860,42 @@ PY
     && ok "F16b: output that is not pip-audit JSON is a scan error" || no "F16b: unreadable pip-audit output recorded as findings"
   rm -rf "$F16B" "$PYR/.venv"
 else skip "F16b: pip-audit adapter (no python3)"; fi
+# F16b — the checkov adapter. The shim plays checkov: the table on stdout (where the kit reads the
+# failed count) and, when asked with `--output-file-path console,<file>`, the recorded JSON in <file>.
+if have python3; then
+  F16C="$(mktemp -d)"; F16CB="$(mktemp -d)"; git -C "$F16C" init -q; mkdir -p "$F16C/infra"
+  cp "$KIT_SRC/tests/fixtures/native/checkov/main.tf.fixture" "$F16C/infra/main.tf"
+  git -C "$F16C" -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -C "$F16C" -c user.email=e2e@test -c user.name=e2e commit -qm tf >/dev/null 2>&1
+  cat > "$F16CB/uvx" <<'SH'
+#!/bin/sh
+out=""; while [ $# -gt 0 ]; do [ "$1" = "--output-file-path" ] && out="${2#console,}"; shift; done
+[ -n "$out" ] && cp "$F16C_JSON" "$out"
+echo "Passed checks: 8, Failed checks: 9, Skipped checks: 1"
+exit 0
+SH
+  chmod +x "$F16CB/uvx"
+  f16c(){ (cd "$F16C" && env PATH="$F16CB:$PATH" F16C_JSON="$KIT_SRC/tests/fixtures/native/checkov/checkov-3.3.1.json" \
+    "$@" bash "$KIT_SRC/scan.sh" iac >/dev/null 2>&1); }
+  f16c SARIF=1; (cd "$F16C" && bash "$KIT_SRC/scan.sh" evidence >/dev/null 2>&1)
+  python3 - "$F16C/docs/security/scan-findings" <<'PY2' && ok "F16b: checkov failed checks are rows, a #checkov:skip is suppressed with its reason" || no "F16b: checkov rows missing or wrong in evidence.json"
+import json, os, sys
+d = sys.argv[1]
+s = json.load(open(os.path.join(d, "summary.json")))
+assert "sarif/checkov.native.json" in [a["path"] for a in s["artifacts"]]
+assert [x["status"] for x in s["dimensions"] if x["name"] == "iac"] == ["findings"]
+rows = [f for f in json.load(open(os.path.join(d, "evidence.json")))["findings"] if f["tool"] == "checkov"]
+sup = [f for f in rows if f["decision"] == "suppressed"]
+assert len(rows) == 10 and len(sup) == 1 and sup[0]["rule_id"] == "CKV_AWS_18"
+assert "logs bucket itself" in sup[0]["evidence"]["note"] and all(f["file"] == "infra/main.tf" for f in rows)
+PY2
+  rm -rf "$F16C/docs"; f16c SARIF=0
+  [ ! -e "$F16C/docs/security/scan-findings/sarif/checkov.native.json" ] \
+    && grep -q '"name": "iac".*"status": "findings"' "$F16C/docs/security/scan-findings/summary.json" \
+    && ok "F16b: without SARIF=1 checkov writes no JSON and the failed count still makes iac findings" \
+    || no "F16b: checkov JSON written without SARIF=1, or the failed count was lost"
+  rm -rf "$F16C" "$F16CB"
+else skip "F16b: checkov adapter (no python3)"; fi
 # (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
 #     build a venv and install it, i.e. run the dependency tree's build scripts).
 printf 'requests==2.19.0\n' > "$PYR/requirements.txt"

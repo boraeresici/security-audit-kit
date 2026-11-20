@@ -59,6 +59,11 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- checkov findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, checkov
+  writes its JSON beside the SARIF files as well as its table in the log, and each failed check
+  becomes a row with its file, line, resource and guideline. A check skipped with
+  `#checkov:skip=<id>:<reason>` is recorded as suppressed, with the reason. Severity is `unknown`
+  unless checkov gives one (it gives none without a platform key).
 - **`policy_changes` (NEW-3).** Every run names what the change under review does to the gate
   itself: config, exclusions, scanner allowlists and configs, package-manager configs, repo-local
   rules, any file of the vendored kit, and added `nosemgrep` / `gitleaks:allow` / `checkov:skip` /

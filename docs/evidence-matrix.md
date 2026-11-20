@@ -20,7 +20,7 @@ listed below"), and `evidence.json` carries a warning for it. The findings thems
 | `py-deps` (project venv) | pip-audit `--strict` | `pip-audit.native.json` (with `SARIF=1`) | **yes**, via `lib/native.py` | none from the tool: `unknown` | `.pip-audit-ignore` (`--ignore-vuln`) | not in the output |
 | `py-deps` (no venv) | osv-scanner `-L` on lockfiles | log only | no | — | `osv-scanner.toml` | not in the output |
 | `js-deps` | pnpm / yarn / npm `audit` | log only | no | — | none in the kit | — |
-| `iac` | checkov `--soft-fail` | log only (failed count read from it) | no | — | `#checkov:skip=` | not in the output |
+| `iac` | checkov `--soft-fail` | `checkov.native.json` (with `SARIF=1`); the table stays in the log | **yes**, via `lib/native.py` | checkov's, if any; without a platform key `unknown` | `#checkov:skip=` | in the JSON with its reason; recorded as **suppressed** (measured, 3.3.1) |
 | `container` | trivy `fs` (vuln, secret, misconfig, license) | `trivy.sarif` | **yes** | `security-severity` (CVSS) | `.trivyignore.yaml`, trivy's own ids only | not in the output (measured, 0.58.0) |
 | `sbom` | syft | CycloneDX + SPDX JSON | artifact, no findings | — | — | — |
 | `osv` | osv-scanner `scan source` | `osv.sarif` | **yes** | `security-severity` | `osv-scanner.toml` | not in the output (not measured) |
@@ -34,9 +34,9 @@ marked **yes** are exactly the ones whose output (SARIF or native JSON) `lib/evi
 
 ## Known gaps, in the order they close (F16b)
 
-- **No rows for the JS audits, checkov and guarddog.** Each gets an adapter that reads the tool's
+- **No rows for the JS audits and guarddog.** Each gets an adapter that reads the tool's
   native JSON and normalises it in `lib/native.py`, keeping package, version and aliases, as
-  pip-audit's does now. These rows go to `evidence.json` and the report, not to Code Scanning: the
+  pip-audit's and checkov's do now. These rows go to `evidence.json` and the report, not to Code Scanning: the
   native files are not SARIF, and a CI job uploads `sarif/*.sarif`.
 - **One advisory, three ids.** trivy reports `CVE-2021-33503` where osv-scanner and pip-audit report
   `PYSEC-2021-108`, and `.trivyignore.yaml` matches trivy's own id only

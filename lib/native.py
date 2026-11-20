@@ -16,6 +16,7 @@ import sys
 # native output file (in the run's sarif/ directory) -> (tool, scan.sh dimension)
 NATIVE_SOURCES = {
     "pip-audit.native.json": ("pip-audit", "py-deps"),
+    "checkov.native.json": ("checkov", "iac"),
 }
 
 
@@ -66,7 +67,52 @@ def parse_pip_audit(doc, warnings: list) -> list:
     return out
 
 
-PARSERS = {"pip-audit": parse_pip_audit}
+def parse_checkov(doc, warnings: list) -> list:
+    """checkov `-o json` -> rows. One object per framework, or a list of them. checkov gives no severity
+    without a platform key: `unknown`. A `#checkov:skip=` check is kept as suppressed, with its reason."""
+    docs = doc if isinstance(doc, list) else [doc]
+    if not docs or not all(isinstance(d, dict) and isinstance(d.get("results"), dict) for d in docs):
+        warnings.append("checkov.native.json: not checkov JSON (no results) -> no rows")
+        return []
+    out = []
+    for d in docs:
+        res = d["results"]
+        for kind in ("failed_checks", "skipped_checks"):
+            for c in res.get(kind) or []:
+                if not isinstance(c, dict) or not c.get("check_id"):
+                    continue
+                path = str(c.get("repo_file_path") or c.get("file_path") or "").lstrip("/") or None
+                lines = c.get("file_line_range") or [None]
+                line = lines[0] if isinstance(lines[0], int) and lines[0] > 0 else None
+                resource = str(c.get("resource") or "")
+                skipped = kind == "skipped_checks"
+                why = " ".join(str((c.get("check_result") or {}).get("suppress_comment") or "").split())
+                sev = str(c.get("severity") or "").lower()
+                out.append({
+                    "id": _id("iac", c["check_id"], f"{path}|{resource}"),
+                    "dimension": "iac",
+                    "tool": "checkov",
+                    "rule_id": c["check_id"],
+                    "file": path,
+                    "line": line,
+                    "message": f"{resource}: {c.get('check_name') or c['check_id']}",
+                    "severity": sev if sev in ("critical", "high", "medium", "low") else "unknown",
+                    "severity_source": f"checkov:{sev or 'none'}",
+                    "cvss": None,
+                    "decision": "suppressed" if skipped else None,
+                    "confidence": None,
+                    "evidence": ({"sink": f"{path}:{line}" if line else path, "source": None,
+                                  "note": "suppressed in source (#checkov:skip)" + (f": {why}" if why else "")}
+                                 if skipped else None),
+                    "resource": resource,
+                    "guideline": c.get("guideline"),
+                })
+        for e in res.get("parsing_errors") or []:
+            warnings.append(f"checkov could not parse {str(e)[:200]} -> not checked")
+    return out
+
+
+PARSERS = {"pip-audit": parse_pip_audit, "checkov": parse_checkov}
 
 
 def summary(tool: str, path: str) -> int:
@@ -95,7 +141,7 @@ def summary(tool: str, path: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4 and sys.argv[1] == "summary" and sys.argv[2] in PARSERS:
+    if len(sys.argv) == 4 and sys.argv[1] == "summary" and sys.argv[2] == "pip-audit":
         sys.exit(summary(sys.argv[2], sys.argv[3]))
-    print("usage: native.py summary <" + "|".join(PARSERS) + "> <file>", file=sys.stderr)
+    print("usage: native.py summary pip-audit <file>", file=sys.stderr)
     sys.exit(2)

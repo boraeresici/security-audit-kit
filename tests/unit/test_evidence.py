@@ -1202,11 +1202,11 @@ class TestNumericSeverityFinite:
 class TestNoAdapterWarning:
     def test_findings_dimension_without_an_adapter_is_said(self, tmp_path):
         summary = {"schema": 2, "sarif": True, "artifacts": {},
-                   "dimensions": [{"name": "iac", "status": "findings"}, {"name": "js-deps", "status": "pass"}]}
+                   "dimensions": [{"name": "js-deps", "status": "findings"}, {"name": "guarddog", "status": "pass"}]}
         warnings = []
         evidence.select_sources(summary, str(tmp_path), warnings)
-        assert any(w.startswith("iac: has findings, but the kit reads no per-finding output") for w in warnings)
-        assert not any(w.startswith("js-deps:") for w in warnings)
+        assert any(w.startswith("js-deps: has findings, but the kit reads no per-finding output") for w in warnings)
+        assert not any(w.startswith("guarddog:") for w in warnings)
 
 
 class TestToolSuppression:

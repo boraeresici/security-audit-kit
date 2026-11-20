@@ -116,7 +116,7 @@ Numeric first, then the SARIF level, then a tool-specific default:
 
 ### Dimensions without per-finding rows (known gap)
 
-`checkov` (iac), `guarddog` and the JS audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
+`guarddog` and the JS audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
 entries; `warnings` names each one that had findings, and the report header says so. Their findings
 reach a human through `raw-<date>.log` and triage. The per-unit picture, and the adapters that close
 this, are in the [evidence matrix](../evidence-matrix.md).
@@ -126,6 +126,11 @@ listed in the run's `artifacts` like a SARIF file); `lib/native.py` turns it int
 `file`/`line` null and three more fields: `package` (`{ecosystem, name, version}`), `aliases` (the
 advisory's other ids) and `fixed_in`. The `id` hashes dimension, advisory and package name, so the same
 advisory in two packages is two findings, and a version change keeps the id.
+
+**checkov rows (F16b).** With `SARIF=1` checkov also writes `checkov.native.json`; each failed check
+is a row with the repo-relative `file` and first `line` of the resource, plus `resource` and
+`guideline`. A check skipped with `#checkov:skip=<id>:<reason>` is a row with `decision: "suppressed"`
+and the reason in `evidence.note`. checkov gives no severity without a platform key: `unknown`.
 
 A finding the tool itself marked as suppressed in its SARIF (semgrep's `# nosemgrep`, written with
 `suppressions: [{kind: inSource}]`) is recorded with `decision: "suppressed"` and the tool's note, so

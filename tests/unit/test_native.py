@@ -73,3 +73,41 @@ class TestSummary:
     def test_json_that_is_not_pip_audit_is_2(self, tmp_path):
         p = tmp_path / "x.json"; p.write_text('{"not": "pip-audit"}')
         assert native.summary("pip-audit", str(p)) == 2
+
+
+CHECKOV = os.path.join(os.path.dirname(__file__), "..", "fixtures", "native", "checkov", "checkov-3.3.1.json")
+
+
+class TestParseCheckov:
+    def test_recorded_output_gives_failed_and_skipped_checks(self):
+        rows = native.parse_checkov(json.load(open(CHECKOV)), [])
+        assert len(rows) == 10 and sum(r["decision"] == "suppressed" for r in rows) == 1
+        r = [x for x in rows if x["rule_id"] == "CKV_AWS_24"][0]
+        assert r["file"] == "infra/main.tf" and r["line"] == 6 and r["dimension"] == "iac"
+        assert r["severity"] == "unknown" and r["severity_source"] == "checkov:none" and r["decision"] is None
+        assert r["resource"] == "aws_security_group.web" and r["message"].startswith("aws_security_group.web: ")
+
+    def test_a_checkov_skip_is_suppressed_with_its_reason(self):
+        s = [x for x in native.parse_checkov(json.load(open(CHECKOV)), []) if x["decision"]][0]
+        assert s["rule_id"] == "CKV_AWS_18"
+        assert s["evidence"]["note"] == "suppressed in source (#checkov:skip): access logging is the logs bucket itself"
+
+    def test_a_list_of_frameworks_is_read(self):
+        doc = json.load(open(CHECKOV))
+        assert len(native.parse_checkov([doc, doc], [])) == 20
+
+    def test_a_severity_checkov_gives_is_kept(self):
+        doc = {"results": {"failed_checks": [{"check_id": "CKV_X", "severity": "HIGH", "repo_file_path": "/a.tf",
+                                              "file_line_range": [3, 4], "resource": "r"}]}}
+        r = native.parse_checkov(doc, [])[0]
+        assert r["severity"] == "high" and r["severity_source"] == "checkov:high"
+
+    def test_parsing_errors_are_said(self):
+        w = []
+        native.parse_checkov({"results": {"failed_checks": [], "parsing_errors": ["/bad.tf"]}}, w)
+        assert any("could not parse /bad.tf" in x for x in w)
+
+    @pytest.mark.parametrize("doc", [None, {}, {"results": []}, [{"x": 1}], []])
+    def test_not_checkov_json_gives_no_rows_and_a_warning(self, doc):
+        w = []
+        assert native.parse_checkov(doc, w) == [] and w
