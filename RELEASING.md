@@ -38,7 +38,8 @@ git checkout -b chore/release-vX.Y.Z
 Then, on that branch:
 ```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
-#    and set the same version in .claude-plugin/plugin.json (release.sh refuses a mismatch)
+#    and set the same version in .claude-plugin/plugin.json AND .codex-plugin/plugin.json
+#    (release.sh refuses a mismatch in either)
 #    then record the skill templates being released (install.sh uses them to recognise its own
 #    copies on upgrade; release.sh refuses if they are missing):
 bash scripts/skill-sums.sh
@@ -222,3 +223,33 @@ has to be findable without reading every diff.
 - Keep `CHANGELOG.md` the source of truth for release notes; the promote step extracts that section.
 - Always regenerate `CHECKSUMS` (`scan.sh checksums`) whenever kit files change, before tagging —
   a stale manifest makes `scan.sh verify` fail for consumers.
+
+## The OpenAI plugin directory (ChatGPT and Codex) — F43b
+
+The OpenAI directory takes an uploaded ZIP, not a repository path, so nothing in the repo moves for
+it. After a final release:
+
+```bash
+python3 scripts/build_codex_zip.py          # -> dist/security-audit-kit-codex-<version>.zip
+```
+
+The script checks what the OpenAI pages state (name, version equal to `.claude-plugin/plugin.json`,
+listing field lengths, icons, no hooks, no apps, no MCP) and packages only the manifest, the icon,
+the five skills and the licence. The same commit gives the same bytes. e2e builds it and checks its
+contents.
+
+What only the account owner can do, at platform.openai.com/plugins:
+
+1. Be the organization owner, or have an owner grant **Apps Management Write**.
+2. Complete individual or business **verification** in the organization settings; the directory
+   shows the verified developer identity chosen at upload.
+3. Upload the ZIP, choose the identity, fix anything the automated "Metadata & Skills" checks report,
+   then **Submit for review** with the policy attestations. One review per plugin at a time.
+4. After approval, **publish** it (it does not publish itself). Every later version is a new ZIP with
+   its own checks and review outcome.
+
+Not in the ZIP, on purpose: the scanner (the skills drive the repo's own vendored copy), the docs,
+the test fixtures, and `hooks/`: the directory refuses lifecycle hooks, so the edit check stays with
+the Claude Code plugin and manual Codex installs. Not stated by OpenAI, so not assumed here: fees,
+verification documents, review times, a ZIP size limit.
+

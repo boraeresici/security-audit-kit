@@ -1645,6 +1645,31 @@ if have codex; then
     || no "F43a: Codex loaded $F43N of $F35T skills"
   rm -rf "$F43H"
 else skip "F43a: Codex install (no codex CLI)"; fi
+# F43b: the ZIP for the OpenAI plugin directory holds the plugin and nothing else, and a manifest
+# that breaks the directory's stated limits is refused before anything is written.
+if have python3; then
+  F43Z="$(mktemp -d)"
+  python3 "$KIT_SRC/scripts/build_codex_zip.py" "$F43Z/p.zip" >/dev/null 2>&1 \
+    && python3 - "$F43Z/p.zip" "$KIT_SRC" <<'PY' && ok "F43b: the Codex ZIP holds the manifest, the icon, the five skills and LICENSE — no hooks, no scanner" || no "F43b: the Codex ZIP is missing or holds the wrong files"
+import json, os, sys, zipfile
+z, kit = zipfile.ZipFile(sys.argv[1]), sys.argv[2]
+names = sorted(z.namelist())
+skills = sorted(f"skills/{d}/SKILL.md" for d in os.listdir(os.path.join(kit, "skills")))
+assert names == sorted([".codex-plugin/plugin.json", ".claude-plugin/icon.png", "LICENSE"] + skills), names
+assert not any(n.startswith("hooks/") for n in names)
+m = json.loads(z.read(".codex-plugin/plugin.json"))
+assert m["version"] == json.load(open(os.path.join(kit, ".claude-plugin/plugin.json")))["version"]
+PY
+  mkdir -p "$F43Z/k/.codex-plugin" "$F43Z/k/.claude-plugin" "$F43Z/k/scripts"
+  cp -R "$KIT_SRC/skills" "$KIT_SRC/LICENSE" "$F43Z/k/"; cp "$KIT_SRC/.claude-plugin/"* "$F43Z/k/.claude-plugin/"
+  cp "$KIT_SRC/scripts/build_codex_zip.py" "$F43Z/k/scripts/"
+  python3 -c "import json,sys; m=json.load(open(sys.argv[1])); m['interface']['displayName']='x'*31; json.dump(m, open(sys.argv[2],'w'))" \
+    "$KIT_SRC/.codex-plugin/plugin.json" "$F43Z/k/.codex-plugin/plugin.json"
+  F43O="$(python3 "$F43Z/k/scripts/build_codex_zip.py" "$F43Z/bad.zip" 2>&1)"
+  grep -q 'interface.displayName' <<<"$F43O" && [ ! -e "$F43Z/bad.zip" ] \
+    && ok "F43b: a listing field over the directory's limit is refused, and no ZIP is written" || no "F43b: an over-long displayName was packaged: $F43O"
+  rm -rf "$F43Z"
+else skip "F43b: Codex ZIP (no python3)"; fi
 # install.sh --no-skills: a plugin user who vendors the scanner gets no second copy of the skills,
 # and the copies an install left behind go too, but only the ones provably the kit's: recorded at
 # install, identical to this kit's template, or identical to a RELEASED template (lib/released-skills.sums,

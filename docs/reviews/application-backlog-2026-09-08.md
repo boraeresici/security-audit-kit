@@ -970,6 +970,8 @@ The baseline already saw both smaller flaws (ReDoS, a client-only quota) and cal
 
 **Order:** F43a any time; F43b after R17; F43c with the F33 decision. Not a release gate.
 
+**F43b — 2026-11-20 (prepared, not submitted):** the OpenAI directory takes an uploaded ZIP, not a repository path, so it does not wait for R17 after all. `.codex-plugin/plugin.json` (listing fields within the stated limits: displayName 18/30, shortDescription 29/30, 5 capabilities, 3 default prompts; logo and composer icon = the 1024 px listing icon) and `scripts/build_codex_zip.py` (checks the stated rules, then writes a reproducible ZIP of 8 files: manifest, icon, five skills, LICENSE; never `hooks/`, which the directory refuses since F33b added one). Codex still installs the repo with the new manifest and loads all five skills (checked with codex-cli). `release.sh` checks both manifests' versions; e2e builds the ZIP and refuses an over-long field. Remaining, the account owner's: verified developer identity in the OpenAI organization, upload, submit, publish (`RELEASING.md`). Not stated by OpenAI: fees, verification documents, review times, ZIP size limit.
+
 ## Current delivery order — primary planning source
 
 The order below is the suggested default for a single team; items on the same row do not have to be a single PR. Conditional items that are not opened do not hold up the next independent item. The earlier Package A/B/C order was replaced by this table.

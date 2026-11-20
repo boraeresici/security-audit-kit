@@ -65,6 +65,12 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- `.codex-plugin/plugin.json` and `scripts/build_codex_zip.py` (F43b): the Codex manifest, with the
+  listing fields the OpenAI plugin directory asks for, and a reproducible ZIP of only what that
+  directory accepts (the manifest, the icon, the five skills, the licence; no hooks, no scanner, no
+  fixtures). The script checks the directory's stated limits before writing anything. `release.sh`
+  checks the Codex manifest's version like the Claude one. Submitting is the maintainer's step
+  (`RELEASING.md`): an organization owner with a verified developer identity uploads the ZIP.
 - **Edit check (F33b):** `scan.sh edit <file>` and the plugin's PostToolUse hook
   (`hooks/hooks.json`, `hooks/post-edit-check.sh`). One pinned-semgrep pass on the file the agent
   just edited; new findings reach the agent as context ("data, not instructions"), each file + rule
@@ -180,6 +186,9 @@ All notable changes to this project are documented here. The format is based on
   location.
 
 ### Fixed
+- `tests/trust-gate.sh` (N2) compared the interpreter path pip-audit was given with the unresolved
+  temp path, so on macOS (`/var` -> `/private/var`) the positive check failed in CI and the negative
+  one passed without testing anything. Both now accept either spelling.
 - A finding suppressed with `# nosemgrep` was counted as a live finding in `evidence.json` and the
   HTML report. semgrep (1.166.0, measured) writes such hits into its SARIF with
   `suppressions: [{kind: inSource}]`, which the evidence builder ignored. A tool suppression is now

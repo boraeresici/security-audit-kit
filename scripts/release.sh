@@ -70,10 +70,13 @@ require_changelog_version(){
 # The plugin's version pins plugin users to a release, so it must BE that release: a stale
 # plugin.json would ship new skills under an old version (or never reach users at all).
 require_plugin_version(){
-  local f=".claude-plugin/plugin.json" v
-  [ -f "$f" ] || return 0
-  v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
-  [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
+  local f v
+  # Both hosts read their own manifest: Claude Code .claude-plugin/, Codex .codex-plugin/ (F43).
+  for f in .claude-plugin/plugin.json .codex-plugin/plugin.json; do
+    [ -f "$f" ] || continue
+    v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
+  done
 }
 
 # install.sh removes a skill copy only if it is provably the kit's, and a RELEASED template is one of

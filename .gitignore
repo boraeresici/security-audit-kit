@@ -23,3 +23,5 @@ tests/eval/output*.json
 **.env**
 __pycache__/
 
+# scripts/build_codex_zip.py output
+dist/
