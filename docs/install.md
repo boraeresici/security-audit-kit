@@ -135,7 +135,8 @@ Why this shape (consistent with the kit's own ethos):
 - **Pinning is required in practice.** A moving ref (`main`) breaks the "no drift vs.
   CI" promise; bootstrap warns if you don't pass a tag/SHA. It writes a `.kit-version`
   (ref + resolved SHA) you can commit so the whole team shares one pinned version. Pass
-  `--expect=<sha>` — the **commit** the tag resolves to, not the annotated tag's own object id
+  `--expect=<sha>` — the **full** commit id the tag resolves to (40 hex characters; a prefix is
+  refused since 1.22), not the annotated tag's own object id
   (`git rev-parse <tag>^{commit}`) — to **enforce** the pin (refuse if the ref resolves elsewhere), and a
   re-vendor of an already-pinned ref that now points to a different commit is refused
   (tag-repoint guard) unless you pass `--allow-ref-change`.

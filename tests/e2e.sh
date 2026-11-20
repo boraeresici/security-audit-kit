@@ -590,6 +590,14 @@ if ( cd "$T1" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v99.0.0-rc.99 
 else
   [ -d "$T1/tools/security-audit-kit" ] && no "bootstrap: refused but still vendored" || ok "bootstrap: wrong --expect refused (no vendor)"
 fi
+# a PREFIX of the right commit -> refused (NEW-2: exact match only)
+TP="$(mktemp -d)"; ( cd "$TP" && git init -q )
+if ( cd "$TP" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v99.0.0-rc.99 --expect="${GOOD:0:7}" ) >/dev/null 2>&1; then
+  no "bootstrap: a 7-char prefix of the right commit was accepted by --expect"
+else
+  [ -d "$TP/tools/security-audit-kit" ] && no "bootstrap: prefix refused but still vendored" || ok "bootstrap: --expect with a prefix is refused (exact match only)"
+fi
+rm -rf "$TP"
 # correct --expect -> succeeds + vendors
 T2="$(mktemp -d)"; ( cd "$T2" && git init -q )
 if ( cd "$T2" && KIT_REPO="$KITREPO" bash "$KIT_SRC/bootstrap.sh" v99.0.0-rc.99 --expect="$GOOD" ) >/dev/null 2>&1; then

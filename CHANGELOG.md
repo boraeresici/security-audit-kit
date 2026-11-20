@@ -62,6 +62,8 @@ All notable changes to this project are documented here. The format is based on
   `.security-audit.conf` is never written. A `# noqa` / "dev only" comment or a `tests/`/`docs/`
   path is no longer evidence of a false positive by itself, and an exclusion rule added in the range
   under review is not applied. The eval prompt carries the same rule.
+- **`bootstrap.sh --expect` needs the full commit id.** It was a prefix match, so `--expect=a`
+  accepted one commit in sixteen. A short id is now refused with the full one in the message.
 - `docs/threat-model.md` lists the bypasses that exist by design and what shows each one (F11-r).
 
 ### Tests
