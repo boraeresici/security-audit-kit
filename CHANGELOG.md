@@ -42,8 +42,30 @@ All notable changes to this project are documented here. The format is based on
     `yarn-path`, and does not run yarn when `.yarnrc.yml` loads repo JavaScript (`yarnPath`,
     `plugins`; use `scan.sh osv` for that lockfile).
 
+### Added
+- **`policy_changes` (NEW-3).** Every run names what the change under review does to the gate
+  itself: config, exclusions, scanner allowlists and configs, package-manager configs, repo-local
+  rules, any file of the vendored kit, and added `nosemgrep` / `gitleaks:allow` / `checkov:skip` /
+  `zizmor: ignore` / `trivy:ignore` lines. In `summary.json` and as a `── policy:` line. A signal,
+  never a block; `null` when there is no base branch to compare with.
+- **`GATE_STRICT=1` (NEW-4).** A dimension that did not inspect (skipped, error, indeterminate) blocks,
+  soft ones included. Environment or config. The default stays permissive and loud.
+
+### Changed
+- **An osv-scanner crash blocks** (osv is a hard dimension; it allowed, while a crashed trivy, a soft
+  one, blocked). **zizmor is in `all`** (not applicable without workflows): a workflow injection now
+  gates a push.
+- **sec-triage proposes suppressions; it writes them only after you confirm (NEW-5).** It wrote
+  allowlists, `.security-exclusions.md` and the config on its own, so repo text that steered it
+  produced a team-wide suppression. Now: allowlist entries and exclusion rules are shown as a diff
+  and written once the user confirms in the conversation (unattended: left as a proposal);
+  `.security-audit.conf` is never written. A `# noqa` / "dev only" comment or a `tests/`/`docs/`
+  path is no longer evidence of a false positive by itself, and an exclusion rule added in the range
+  under review is not applied. The eval prompt carries the same rule.
+- `docs/threat-model.md` lists the bypasses that exist by design and what shows each one (F11-r).
+
 ### Tests
-- `tests/trust-gate.sh`: 38 offline cases, one reproduction per finding above (the N1/A/C ones: 19 fail on
+- `tests/trust-gate.sh`: 42 offline cases, one reproduction per finding above (the N1/A/C ones: 19 fail on
   1.21). CI runs it on Linux and macOS. e2e vendors the kit the way bootstrap does (the files git
   knows, not the working tree's run debris), since the integrity check now counts every file.
 

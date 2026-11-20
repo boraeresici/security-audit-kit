@@ -1948,12 +1948,16 @@ if [ -x /usr/bin/python3 ]; then
     || no "F02: trivy soft findings -> got '$D' rc=$F02RC"
   f02 container F02_RC=125; D="$(f02dim container)"
   [[ "$D" == "error block "* ]] && ok "F02: trivy/docker failure -> error, blocks as before" || no "F02: trivy failure -> got '$D'"
-  # osv: 128 = no lockfiles (not_applicable), other non-1 codes = scan error; neither blocks
+  # osv: 128 = no lockfiles (not_applicable); other non-1 codes = scan error, which blocks (hard; NEW-4)
   f02 osv F02_RC=128; [[ "$(f02dim osv)" == "not_applicable allow "* ]] && ok "F02: osv no lockfiles -> not_applicable" \
     || no "F02: osv 128 -> got '$(f02dim osv)'"
   f02 osv F02_RC=2; D="$(f02dim osv)"
-  [[ "$D" == "error allow "* ]] && [ "$F02RC" -eq 0 ] && ok "F02: osv scan error -> error, gate unchanged (allows)" \
+  [[ "$D" == "error block "* ]] && [ "$F02RC" -ne 0 ] && ok "F02: osv scan error -> error, blocks (a hard dimension that did not run)" \
     || no "F02: osv error -> got '$D' rc=$F02RC"
+  # GATE_STRICT=1: a soft dimension's crash and a skipped one block too
+  f02 iac F02_RC=1 GATE_STRICT=1 >/dev/null 2>&1; D="$(f02dim iac)"
+  [[ "$D" == "error block "* ]] && [ "$F02RC" -ne 0 ] && ok "NEW-4: GATE_STRICT=1 -> a crashed soft dimension (checkov) blocks" \
+    || no "NEW-4: strict iac crash -> got '$D' rc=$F02RC"
   grep -q 'NOT inspected' "$F02/out" && ok "F02: the run names what was not inspected" || no "F02: no not-inspected banner"
   echo "-- F03: evidence uses only what THIS run produced, and says where it came from --"
   F03SARIF='{"runs":[{"tool":{"driver":{"name":"semgrep"}},"results":[{"ruleId":"R1","level":"error","message":{"text":"m"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"app.py"},"region":{"startLine":1}}}]}]}]}'
@@ -2029,7 +2033,7 @@ assert isinstance(d.get("seconds"),(int,float))' "$F14SUM" 2>/dev/null \
   grep -qE '^   secret +skipped +[0-9]+\.[0-9]s +no docker' <<<"$F14OUT" \
     && grep -qE '^   sast +pass +[0-9]+\.[0-9]s' <<<"$F14OUT" \
     && ok "F14a: closing table lists each dimension with status, time and reason" || no "F14a: no closing table"
-  grep -q "not in 'all': osv guarddog zizmor sbom" <<<"$F14OUT" \
+  grep -q "not in 'all': osv guarddog sbom" <<<"$F14OUT" \
     && ok "F14a: the summary names the dimensions this command does not cover" || no "F14a: coverage gap not shown"
   grep -q 'Docker is not running: secret container' <<<"$F14OUT" && grep -q 'start Docker' <<<"$F14OUT" \
     && ok "F14a: one Docker line says what was not inspected and how to fix it" || no "F14a: no Docker line"

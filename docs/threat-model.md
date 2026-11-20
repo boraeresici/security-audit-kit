@@ -81,6 +81,24 @@ pip-audit, guarddog and zizmor run as **host processes and inherit your whole en
 | 9 | A scanner or its rules are swapped upstream | Images by digest; uvx tools by exact version | uvx tools are not hash-pinned (R06). **semgrep `p/...` packs are fetched unpinned at run time**: the rules a scan used can change without a kit change |
 | 10 | Data leaves the machine | Package names and versions go to osv.dev / PyPI / the JS registry (advisory lookups). guarddog fetches packages. semgrep fetches rule packs by name. Images and DBs are downloaded. No scanner sends source code | The AI layer sends what the agent reads to its model provider. Per command: [data-flow.md](data-flow.md) |
 
+## Bypasses, by design, and what shows them (F11-r, 1.22)
+
+The hooks are a guardrail for a developer who wants them, not a control against someone who can
+commit. These ways around them exist on purpose or cannot be closed client-side. Each one is either
+in your own hands (it never comes with a branch) or named by every run:
+
+| Way around | Who can use it | What shows it |
+|---|---|---|
+| `git commit --no-verify`, `git push --no-verify` | Anyone at their own keyboard | Nothing client-side. A team control is a CI job that runs `scan.sh verify` and `GATE_STRICT=1 scan.sh all` on the pull request |
+| `SKIP_SECURITY=1` in the environment | Anyone, for one command | The hook prints it. It is **not** read from the config any more (1.22) |
+| An allowlist entry, an exclusions rule, an inline `nosemgrep` / `gitleaks:allow` / `checkov:skip` | A branch author | `policy_changes` in summary.json and the `── policy:` line, for the range under review (NEW-3) |
+| A setting that narrows a scan (`SAST_PATHS`, `SEMGREP_CONFIGS`, `JS_SKIP_RE`, `TRIVY_SKIP_DIRS`, `TF_DIR`) | A branch author, through the config | The config change is in `policy_changes`; the value is in `provenance.scope` |
+| A scanner config in the repo (`.semgrepignore`, `.trivyignore*`, `.checkov.yaml` `skip-check`, `osv-scanner.toml`) | A branch author | `policy_changes` |
+| A dimension that did not run (no docker, no uvx, a crash) | Anyone, by environment | `NOT inspected. Not a pass.` in the closing summary; blocks with `GATE_STRICT=1`. A hard dimension's crash blocks in every profile |
+| An edited or extended vendored kit | A branch author | The hook wrapper refuses to run it (integrity vs the install anchor); the change is in `policy_changes` |
+| Re-running `install.sh` on a tampered kit (accepts it as the new anchor) | Only you, on purpose | Install prints the anchor it records. Review the kit diff first |
+| The pre-commit framework or `--skills-only` (no kit wrappers) | The repo's setup | No install anchor: `scan.sh verify` proves self-consistency only |
+
 ## The plugin boundary (input to R02)
 
 A plugin channel changes how the kit is **found and installed**, not what it trusts. The plugin

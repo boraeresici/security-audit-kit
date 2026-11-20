@@ -113,3 +113,10 @@
 # SCAN_LOCK_HEARTBEAT_SEC=30
 # A lock-less run's own record in runs/<run-id>/ is pruned after this many days.
 # SCAN_RUNS_KEEP_DAYS=7
+
+# --- gate profile ---
+# Strict: a dimension that did not inspect (skipped: no docker / no uvx; error: a crashed scanner;
+# indeterminate) BLOCKS the commit or push, soft dimensions included. Default 0: such a dimension is
+# named loudly ("NOT inspected. Not a pass.") but does not block. A hard dimension's crash blocks in
+# both profiles. For a team: set it here, so "not scanned" means "not pushed" for everyone.
+# : "${GATE_STRICT:=1}"

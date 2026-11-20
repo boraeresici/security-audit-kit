@@ -14,10 +14,10 @@
 #   sbom      Software inventory (syft CycloneDX+SPDX)       [artifact]
 #   osv       Broad multi-ecosystem dep CVE (osv-scanner)    [HARD]  optional (not in 'all')
 #   guarddog  Malicious/typosquat deps (guarddog verify)     [HARD]  optional (not in 'all'; needs network)
-#   zizmor    GitHub Actions security (zizmor, if workflows) [HARD]  optional (not in 'all')
+#   zizmor    GitHub Actions security (zizmor, if workflows) [HARD]  in 'all' (not applicable without workflows)
 #   pkgcheck  ONE named package BEFORE install (guarddog)   [HARD]  optional; agent-hook entry point
 #   fast      staged + deps  (pre-commit / package install)
-#   all       secret + sast + deps + container + iac         (pre-push / pre-PR)
+#   all       secret + sast + deps + container + iac + zizmor (pre-push / pre-PR)
 #   doctor    Report toolchain, pins and detected projects   (no scan, no logs)
 #   warm      Pull the pinned images + the trivy DB now        (one-time downloads; no scan)
 #   verify    Check the kit's files against CHECKSUMS         (integrity; no scan)
@@ -900,7 +900,9 @@ scan_osv(){
     0) return 0 ;;                                              # scanned, clean
     1) return 1 ;;                                              # vulnerabilities found (HARD)
     128) dim_na osv "no lockfiles found -> nothing to scan"; return 0 ;;
-    *) dim_error osv "osv-scanner exit $rc (scan error, not a finding)"; return 0 ;;
+    # osv is a HARD dimension: a crash is a check that did not happen, so it blocks like any hard
+    # dimension's failure (it allowed before, while a crashed trivy, a soft one, blocked; NEW-4).
+    *) dim_error osv "osv-scanner exit $rc (scan error, not a finding)"; return 2 ;;
   esac
 }
 
@@ -1746,7 +1748,7 @@ osv       | osv |
 guarddog  | guarddog |
 zizmor    | zizmor |
 fast      | staged py-deps js-deps | secret (full history) sast container iac osv guarddog zizmor sbom
-all       | secret sast py-deps js-deps container iac | osv guarddog zizmor sbom
+all       | secret sast py-deps js-deps container iac zizmor | osv guarddog sbom
 '
 # <command> <field 2|3> -> that field, trimmed; exit 1 for a command the table does not know.
 scan_command_field(){
@@ -1790,6 +1792,62 @@ git_freshness_line(){   # <freshness> [doctor] -> the warning, or nothing when n
   [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null || return 0
   printf 'git: %s is %s commit(s) behind %s%s — %s' \
     "$br" "$behind" "$up" "${fh:+ (as of the last fetch, ${fh}h ago)}" "$what"
+}
+
+# ---- policy drift (NEW-3) ------------------------------------------------------------------------
+# What a change does to the GATE itself, as opposed to the code: a suppression added in the same
+# range as the finding it hides, a scanner config narrowed, the kit edited. Each is legitimate one day
+# and a bypass the next, and none of them shows in a scan result — so the run names them, every
+# time, for the reviewer. A signal, not a block (a reviewed allowlist entry is the normal way to
+# close a finding). Range: <base>...HEAD plus what is staged; base = BASE_REF, else the default
+# branch's merge-base. No base -> not computed, and summary.json says so.
+POLICY_FILES_RE='(^|/)(\.security-audit\.conf|\.security-exclusions\.md|\.gitleaks\.toml|\.gitleaksignore|\.pip-audit-ignore|osv-scanner\.toml|\.trivyignore(\.yaml)?|trivy\.ya?ml|\.semgrepignore|\.checkov\.ya?ml|\.npmrc|\.yarnrc(\.yml)?|\.pnpmfile\.cjs)$|^(semgrep-rules|\.semgrep)/'
+POLICY_MARKERS_RE='nosemgrep|gitleaks:allow|checkov:skip|zizmor: *ignore|trivy:ignore'
+POLICY_BASE=""; POLICY_FILES=""; POLICY_INLINE=""
+policy_drift(){
+  local ref base kit_rel
+  ref="${BASE_REF:-$(default_base_ref)}"
+  [ -n "$ref" ] || return 0
+  base="$(git merge-base HEAD "$ref" 2>/dev/null)" || return 0
+  [ -n "$base" ] || return 0
+  POLICY_BASE="$ref"
+  kit_rel="$(real_dir "$KIT_DIR")"; kit_rel="${kit_rel#"$(real_dir "$ROOT")"/}"
+  # Files: policy files anywhere, and the vendored kit (unless the kit IS this repo).
+  POLICY_FILES="$( { git diff --name-status "$base" HEAD 2>/dev/null; git diff --cached --name-status 2>/dev/null; } \
+    | PD_RE="$POLICY_FILES_RE" awk -F'\t' -v kit="$kit_rel/" 'BEGIN { re = ENVIRON["PD_RE"] }
+        { p=$NF; st=substr($1,1,1) }
+        p ~ re || (kit != "/" && index(p, kit) == 1) { if (!(p in seen)) { seen[p]=1; print st "\t" p } }' )"
+  # Inline suppression markers on ADDED lines, per file.
+  POLICY_INLINE="$( { git diff -U0 "$base" HEAD 2>/dev/null; git diff --cached -U0 2>/dev/null; } \
+    | PD_RE="$POLICY_MARKERS_RE" awk 'BEGIN { re = ENVIRON["PD_RE"] }
+        /^\+\+\+ / { f=substr($0,7); next }
+        /^\+/ && !/^\+\+\+/ && match($0, re) { m=substr($0,RSTART,RLENGTH); k=f "\t" m; n[k]++ }
+        END { for (k in n) print k "\t" n[k] }' | LC_ALL=C sort )"
+  return 0
+}
+policy_drift_json(){
+  [ -n "$POLICY_BASE" ] || { printf 'null'; return; }
+  local first=1 st p m c
+  printf '{"base": %s, "files": [' "$(json_str "$POLICY_BASE")"
+  while IFS="$(printf '\t')" read -r st p; do
+    [ -n "$p" ] || continue; [ "$first" = 1 ] || printf ', '; first=0
+    printf '{"path": %s, "change": %s}' "$(json_str "$p")" "$(json_str "$st")"
+  done <<<"$POLICY_FILES"
+  printf '], "inline_suppressions": ['; first=1
+  while IFS="$(printf '\t')" read -r p m c; do
+    [ -n "$p" ] || continue; [ "$first" = 1 ] || printf ', '; first=0
+    printf '{"path": %s, "marker": %s, "added": %s}' "$(json_str "$p")" "$(json_str "$m")" "${c:-0}"
+  done <<<"$POLICY_INLINE"
+  printf ']}'
+}
+policy_drift_line(){
+  [ -n "$POLICY_BASE" ] || return 0
+  local nf ni list
+  nf="$(grep -c . <<<"$POLICY_FILES")"; ni="$(awk -F'\t' 'NF==3{s+=$3} END{print s+0}' <<<"$POLICY_INLINE")"
+  [ "$nf" -gt 0 ] || [ "$ni" -gt 0 ] || return 0
+  list="$(awk -F'\t' 'NF==2{printf "%s%s", (n++?", ":""), $2}' <<<"$POLICY_FILES" | cut -c1-160)"
+  printf 'policy: vs %s, %s gate file(s) changed%s and %s inline suppression(s) added — review them like code (summary.json: policy_changes)' \
+    "$POLICY_BASE" "$nf" "${list:+ ($list)}" "$ni"
 }
 
 # ---- config check (F24) ----------------------------------------------------------------------
@@ -1873,6 +1931,13 @@ _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
     case "$c" in 0) st=pass ;; 1) st=findings ;; "$RC_INDETERMINATE") st=indeterminate ;; *) st=error ;; esac
   fi
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && gate=block
+  # GATE_STRICT=1 (NEW-4): a dimension that did not inspect — skipped, error, indeterminate — blocks
+  # too, soft ones included (artifacts aside). The local default stays permissive but loud; this is
+  # the profile for a team that wants "not scanned" to mean "not pushed".
+  local strict=0
+  if [ "${GATE_STRICT:-0}" = 1 ] && [ "${DIM_GATE_TYPE:-hard}" != artifact ]; then
+    case "$st" in skipped|error|indeterminate) gate=block; strict=1 ;; esac
+  fi
   # Tabs/newlines would break the record; the reason is one line of prose.
   # A warn line explains a dimension that did not inspect; on pass/findings the last warn is just a
   # notice (e.g. "VIRTUAL_ENV ignored") and would read as the cause of the result — so only an
@@ -1881,6 +1946,7 @@ _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
   case "$st" in pass|findings) ;; *) [ -n "$why" ] || why="$DIM_WARN" ;; esac
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$c" "$st" "$gate" "$ms" "$(printf '%s' "$why" | tr '\t\n' '  ')" >> "$RESULTS_FILE"
   # RC_INDETERMINATE is recorded but never blocks: it says "no opinion", not "finding".
+  [ "$strict" = 1 ] && return 1
   [ "$c" -ne 0 ] && [ "$c" -ne "$RC_INDETERMINATE" ] && return 1; return 0; }
 
 # Every unit of the command runs, in table order, even after one blocks: the gate is the OR of them.
@@ -1892,7 +1958,7 @@ run_scans(){
   fi
   for u in $units; do
     row="$(dim_unit "$u")" || { echo "registry: unit '$u' of '$1' is not in DIM_UNITS"; return 2; }
-    read -r rec entry _ <<<"$row"
+    read -r rec entry DIM_GATE_TYPE _ <<<"$row"
     _dim "$rec" "$entry" || rc=1
   done
   return "$rc"
@@ -2047,6 +2113,7 @@ mkdir -p "$RUN_DIR"
 printf '\n===== %s  scan.sh %s  run %s =====\n' "$(date +%FT%T)" "$CMD" "$RUN_ID" >> "$LOG"
 
 RUN_T0="$(now_ms)"
+policy_drift
 run_scans "$CMD" 2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}
 RUN_SECONDS="$(awk -v ms="$(( $(now_ms) - RUN_T0 ))" 'BEGIN{printf "%.1f", ms/1000}')"
@@ -2095,6 +2162,7 @@ fi
   else
     printf '  "config": null,\n'
   fi
+  printf '  "policy_changes": %s,\n' "$(policy_drift_json)"
   printf '  "artifacts": %s,\n' "$(artifacts_json)"
   printf '  "dimensions": [\n'
   first=1
@@ -2173,6 +2241,8 @@ not_covered="$(scan_command_field "$CMD" 3 2>/dev/null)"
 [ -n "$not_covered" ] && printf "\033[36m── not in '%s': %s — run scan.sh <name> for those\033[0m\n" "$CMD" "$not_covered"
 GF_WARN="$(git_freshness_line "$GIT_FRESH")"
 [ -n "$GF_WARN" ] && printf '\033[33m── %s\033[0m\n' "$GF_WARN"
+PD_WARN="$(policy_drift_line)"
+[ -n "$PD_WARN" ] && printf '\033[33m── %s\033[0m\n' "$PD_WARN"
 HP_WARN="$(hookspath_check)"
 [ -n "$HP_WARN" ] && printf '\033[33m── %s\033[0m\n' "$HP_WARN"
 if [ -n "$CONFIG_WARNINGS" ]; then

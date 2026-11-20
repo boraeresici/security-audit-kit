@@ -195,6 +195,24 @@ printf 'JS_AUDIT_REGISTRY=http://127.0.0.1:9/\n' > "$H/.security-audit.conf"
 grep -q '\[--registry=https://registry.npmjs.org/\]' "$LOG" && ok "I: JS_AUDIT_REGISTRY is not read from the config (environment only)" || no "I: conf registry used: $(cat "$LOG")"
 rm -f "$H/.security-audit.conf"
 
+echo "-- NEW-3: what a change does to the gate itself is named, every run --"
+P="$W/p"; newrepo "$P"; git -C "$P" branch -q -M main
+pscan(){ (cd "$P" && env PATH="$SPATH" "$@" bash $K/scan.sh deps 2>&1); }
+psum(){ python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps(d.get("policy_changes")))' "$P/docs/security/scan-findings/summary.json"; }
+pscan >/dev/null; [ "$(psum)" = null ] && ok "NEW-3: no base branch -> policy_changes is null (not computed, not 'none')" || no "NEW-3: no base: $(psum)"
+( cd "$P" && git "${G[@]}" checkout -q -b feature \
+  && printf '[allowlist]\npaths = ["app/"]\n' > .gitleaks.toml && mkdir -p app && printf 'x = eval(y)  # nosemgrep: rule\nz = 1  # nosemgrep\n' > app/a.py \
+  && printf '\n# edited\n' >> $K/lib/native.py && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm f -n ) >/dev/null 2>&1
+out="$(pscan BASE_REF=main)"; j="$(psum)"
+python3 -I -c 'import json,sys; d=json.loads(sys.argv[1]); f={x["path"] for x in d["files"]}; i={(x["path"],x["marker"]):x["added"] for x in d["inline_suppressions"]}
+assert d["base"]=="main", d; assert ".gitleaks.toml" in f, f; assert "tools/security-audit-kit/lib/native.py" in f, f
+assert i.get(("app/a.py","nosemgrep"))==2, i' "$j" 2>/dev/null \
+  && ok "NEW-3: summary.json lists the allowlist, the edited kit file and 2 added nosemgrep markers" || no "NEW-3: policy_changes: $j"
+grep -q '── policy: vs main, 2 gate file(s) changed.*2 inline suppression(s) added' <<<"$out" \
+  && ok "NEW-3: the closing summary names them for the reviewer" || no "NEW-3: closing line: $(grep policy <<<"$out")"
+( cd "$P" && git "${G[@]}" checkout -q main ) >/dev/null 2>&1
+out="$(pscan BASE_REF=main)"; ! grep -q '── policy:' <<<"$out" && ok "NEW-3: no gate change -> no policy line" || no "NEW-3: spurious policy line"
+
 echo
 printf 'trust-gate: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

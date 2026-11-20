@@ -31,7 +31,7 @@ scan ends with one screen, the closing summary:
    js-deps    skipped          0.1s  package.json found but none is auditable ...
    container  findings         4.5s  CRITICAL/HIGH findings (soft, not blocking) · trivy DB 3h old
    iac        not_applicable   0.0s  no terraform
-── not in 'all': osv guarddog zizmor sbom — run scan.sh <name> for those
+── not in 'all': osv guarddog sbom — run scan.sh <name> for those
 ── BLOCKED (rc=1): sast (error) — commit/push is blocked.
 ── scanner FAILED: sast — this is not a finding; do not allowlist it. Fix the scan (see the raw log) and re-run.
 ```

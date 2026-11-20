@@ -76,3 +76,19 @@ matching a do-not-report class (DoS, test-only files, memory-safe languages, UUI
 trusted env vars…) or a precedent assumption — then run a **confidence-scored verification
 pass** and report only findings ≥ 0.7 (the rest go to a "Suppressed" section, on record). Tune
 and commit it per project; it kills recurring false-positive noise deterministically.
+
+## Gate profile: `GATE_STRICT`
+
+By default a dimension that could not inspect (no docker, no uvx, a crashed scanner, an
+indeterminate result) is named loudly, `NOT inspected. Not a pass.`, but does not block. With
+`GATE_STRICT=1`, in the environment or in `.security-audit.conf`, it blocks the commit or push, soft
+dimensions included. A hard dimension's crash blocks in both profiles. For a team, set it in the
+config, so "not scanned" means "not pushed" for everyone.
+
+## What a change does to the gate: `policy_changes`
+
+Every run compares the range under review (merge-base with `BASE_REF` or the default branch, up to
+`HEAD`, plus what is staged) for changes to the gate itself: the config, the exclusions, the
+scanners' allowlists and configs, repo-local rules, the vendored kit, and added inline suppression
+markers. They are listed in `summary.json` (`policy_changes`) and as one `── policy:` line in the
+closing summary. A signal for review, never a block. Schema: [docs/schema/summary.md](schema/summary.md).
