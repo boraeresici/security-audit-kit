@@ -103,15 +103,16 @@ out="$(CMD=verify scan)"; rc=$?
 printf '%s\n' "touch $M/a1" "SARIF=0 touch $M/a2" "BASE_REF=main && touch $M/a3" "REPORT= eval 'touch $M/a4'" \
   "TF_DIR=\$(touch $M/a5)" "SAST_PATHS=\`touch $M/a6\`" ': "${JS_DIRS:=$(touch '"$M"'/a7)}"' "PATH=/tmp/evil" > "$C"
 out="$(CMD=doctor scan)"
-n="$(ls "$M" | wc -l | tr -d ' ')"
+n="$(find "$M" -type f | wc -l | tr -d ' ')"
 [ "$n" = 0 ] && ok "A: no command in the config ran (8 attempts: plain, behind an assignment, &&, eval, \$(), backquote, :=\$(), PATH)" \
-  || no "A: $n config command(s) ran: $(ls "$M" | tr '\n' ' ')"
-miss=""; for i in 1 2 3 4 5 6 7 8; do grep -q "line $i[: ].*not applied" <<<"$out" || miss="$miss $i"; done
+  || no "A: $n config command(s) ran: $(find "$M" -type f -exec basename {} \; | tr '\n' ' ')"
+miss=""; for i in 1 2 3 4 5 6 7 8; do grep -q "line ${i}[: ].*not applied" <<<"$out" || miss="$miss $i"; done
 [ -z "$miss" ] && ok "A: doctor names every rejected line, with its number" || no "A: lines not reported:$miss — $out"
 grep -q 'settings only, all known' <<<"$out" && no "A: doctor still says 'settings only, all known'" || ok "A: no false all-clear"
 # Plain settings still apply, and env still wins.
 # shellcheck disable=SC2016
 printf '%s\n' '# comment' ': "${SAST_PATHS:=src lib}"' "TF_DIR='infra/main'" 'export JS_DIRS="web"  # trailing comment' 'SCAN_OFFLINE=1' > "$C"
+# shellcheck disable=SC2016  # expanded by the inner bash
 probe='printf "%s|%s|%s|%s\n" "$SAST_PATHS" "$TF_DIR" "$JS_DIRS" "$SCAN_OFFLINE"'
 got="$(cd "$R" && sed -n '/^conf_load(){/,/^conf_load$/p;/^CONF=/p;/^CONFIG_ENV_/p;/^CONF_LOAD_WARNINGS=/p;/^conf_warn/,/^}/p' $K/scan.sh > "$W/cl.sh" \
   && ROOT="$R" KIT_DIR="$R/$K" bash -c '. "$1"; '"$probe" _ "$W/cl.sh")"
@@ -140,6 +141,7 @@ echo "-- host execution: the scan never runs code a branch committed (B, N2, N3,
 # Shims stand in for the tools: they record how they were called and run nothing of the repo's.
 S="$W/shims"; mkdir -p "$S"; LOG="$W/shim.log"
 for t in uvx pnpm yarn npm; do
+  # shellcheck disable=SC2016  # the shim's own $vars, expanded when it runs
   printf '#!/bin/sh\n{ printf "%%s ARGS:" "%s"; for a in "$@"; do printf " [%%s]" "$a"; done; printf " ENV: pnpmfile=%%s yarnpath=%%s yarnreg=%%s pyloc=%%s\\n" "$npm_config_ignore_pnpmfile" "$YARN_IGNORE_PATH" "$YARN_NPM_REGISTRY_SERVER" "$PIPAPI_PYTHON_LOCATION"; } >> "%s"\nexit 0\n' "$t" "$LOG" > "$S/$t"
   chmod +x "$S/$t"
 done

@@ -95,6 +95,7 @@ conf_load(){
       # Not a setting the parser reads. Say what it is: an attempted setting, or a command.
       if [[ "$line" =~ $re_name ]]; then
         name="${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
+        # shellcheck disable=SC2016  # literal $( and backquote patterns, matched not run
         case "$line" in
           *'$('*|*'`'*) conf_warn "line $n: command substitution in $name — not applied (the config is data; it never runs code)" ;;
           *';'*|*'&'*|*'|'*) conf_warn "line $n: more than one statement on the line (; & |) — not applied: ${line:0:60}" ;;
@@ -107,8 +108,10 @@ conf_load(){
       continue
     fi
     if [ "$vq" = 0 ]; then
+      # shellcheck disable=SC2016  # literal $( and backquote / backslash patterns, matched not run
       case "$val" in *'$('*|*'`'*) conf_warn "line $n: command substitution in $name — not applied (the config is data; it never runs code)"; continue ;; esac
       case "$val" in *'$'*) conf_warn "line $n: $name expands a variable (\$) — not applied (values are literal; quote with ' for a literal \$)"; continue ;; esac
+      # shellcheck disable=SC1003  # literal $( and backquote / backslash patterns, matched not run
       case "$val" in *'\'*) conf_warn "line $n: $name contains a backslash — not applied"; continue ;; esac
     fi
     if [ "$bare" = 1 ]; then
