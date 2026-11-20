@@ -2005,6 +2005,46 @@ PY
     && ok "F16b: guarddog output that is not JSON is a scan error, not findings" || no "F16b: unreadable guarddog output recorded as findings"
   rm -rf "$F16G" "$F16GB"
 else skip "F16b: guarddog adapter (no python3)"; fi
+# F16b — the npm audit adapter. The shim plays npm: the recorded report with --json (exit 1, a
+# critical and a high), or npm's error object when the registry cannot be reached.
+if have python3; then
+  F16N="$(mktemp -d)"; F16NB="$(mktemp -d)"; git -C "$F16N" init -q; mkdir -p "$F16N/web"
+  cp "$KIT_SRC/tests/fixtures/native/npm-audit/package.json.fixture" "$F16N/web/package.json"
+  cp "$KIT_SRC/tests/fixtures/native/npm-audit/package-lock.json.fixture" "$F16N/web/package-lock.json"
+  git -C "$F16N" -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -C "$F16N" -c user.email=e2e@test -c user.name=e2e commit -qm js >/dev/null 2>&1
+  cat > "$F16NB/npm" <<'SH'
+#!/bin/sh
+json=0; for a in "$@"; do [ "$a" = --json ] && json=1; done
+if [ "$json" = 1 ]; then
+  if [ "$F16N_MODE" = error ]; then printf '{"error": {"code": "ENOTFOUND", "summary": "registry unreachable"}}\n'
+  else cat "$F16N_JSON"; fi
+else echo "2 vulnerabilities (1 high, 1 critical)"; fi
+exit 1
+SH
+  chmod +x "$F16NB/npm"
+  f16n(){ (cd "$F16N" && env PATH="$F16NB:$PATH" F16N_JSON="$KIT_SRC/tests/fixtures/native/npm-audit/npm-audit-11.9.0.json" "$@" \
+    bash "$KIT_SRC/scan.sh" deps >/dev/null 2>&1; bash "$KIT_SRC/scan.sh" evidence >/dev/null 2>&1); }
+  f16n SARIF=1 F16N_MODE=ok
+  python3 - "$F16N/docs/security/scan-findings" <<'PY' && ok "F16b: npm audit advisories are rows (npm severity, CVSS), and the gate still blocks" || no "F16b: npm audit rows missing or the gate changed"
+import json, os, sys
+d = sys.argv[1]
+s = json.load(open(os.path.join(d, "summary.json")))
+assert "sarif/npm-audit.native.json" in [a["path"] for a in s["artifacts"]]
+assert [(x["status"], x["gate"]) for x in s["dimensions"] if x["name"] == "js-deps"] == [("findings", "block")]
+rows = [f for f in json.load(open(os.path.join(d, "evidence.json")))["findings"] if f["tool"] == "npm-audit"]
+assert len(rows) == 5 and {r["file"] for r in rows} == {"web/package-lock.json"}
+assert any(r["severity"] == "critical" and r["cvss"] == 9.8 for r in rows)
+PY
+  rm -rf "$F16N/docs"; f16n SARIF=1 F16N_MODE=error
+  grep -q '"name": "js-deps".*"status": "error"' "$F16N/docs/security/scan-findings/summary.json" \
+    && ok "F16b: npm's error object (no registry) is a scan error, not findings" || no "F16b: an npm failure was recorded as findings"
+  rm -rf "$F16N/docs"; f16n SARIF=0 F16N_MODE=ok
+  [ ! -e "$F16N/docs/security/scan-findings/sarif/npm-audit.native.json" ] \
+    && grep -q '"name": "js-deps".*"status": "findings".*"gate": "block"' "$F16N/docs/security/scan-findings/summary.json" \
+    && ok "F16b: without SARIF=1 npm audit runs as before (no record, the gate blocks)" || no "F16b: npm audit without SARIF=1 changed"
+  rm -rf "$F16N" "$F16NB"
+else skip "F16b: npm audit adapter (no python3)"; fi
 # (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
 #     build a venv and install it, i.e. run the dependency tree's build scripts).
 printf 'requests==2.19.0\n' > "$PYR/requirements.txt"

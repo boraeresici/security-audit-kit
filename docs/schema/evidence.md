@@ -116,7 +116,7 @@ Numeric first, then the SARIF level, then a tool-specific default:
 
 ### Dimensions without per-finding rows (known gap)
 
-The JS audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
+pnpm and yarn audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
 entries; `warnings` names each one that had findings, and the report header says so. Their findings
 reach a human through `raw-<date>.log` and triage. The per-unit picture, and the adapters that close
 this, are in the [evidence matrix](../evidence-matrix.md).
@@ -138,6 +138,13 @@ except `capability-*` rules (what a package can do, which fire on `requests`); `
 manifest, `package` names it, `detail` holds guarddog's first location or message, and the severity is
 guarddog's own from its `risks`, else `unknown`. A requested package guarddog returned nothing for,
 and a rule that did not run, are in `warnings`.
+
+**npm audit rows (F16b).** With `SARIF=1` each JS project audited with npm keeps its
+`npm audit --json` report (auditReportVersion 2) in `npm-audit.native.json`. Each package and
+advisory is a row: `rule_id` is the GHSA id (else `npm-<source>`), `file` the project's
+`package-lock.json`, the severity npm's own (`moderate` is `medium`), `cvss` the advisory's score,
+which comes from the GitHub advisory, plus `affected`, `direct` and `fixed_in`. A package listed only
+because it depends on a vulnerable one is not a row. pnpm and yarn reports are not read yet.
 
 A finding the tool itself marked as suppressed in its SARIF (semgrep's `# nosemgrep`, written with
 `suppressions: [{kind: inSource}]`) is recorded with `decision: "suppressed"` and the tool's note, so

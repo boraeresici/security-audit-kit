@@ -8,6 +8,7 @@ not SARIF, so a CI job that uploads sarif/*.sarif does not send them to Code Sca
 Usage (scan.sh): native.py summary pip-audit <file>   -> a few readable lines for the scan log
                  native.py guarddog-add <pypi|npm> <manifest> <verify.json> <record.json>
                  native.py guarddog-gate <record.json> [block-extra] [report-extra]
+                 native.py npm-add <dir> <audit.json> <record.json>
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ NATIVE_SOURCES = {
     "pip-audit.native.json": ("pip-audit", "py-deps"),
     "checkov.native.json": ("checkov", "iac"),
     "guarddog.native.json": ("guarddog", "guarddog"),
+    "npm-audit.native.json": ("npm-audit", "js-deps"),
 }
 
 
@@ -269,7 +271,96 @@ def guarddog_gate(record_path: str, block_extra: str = "", report_extra: str = "
     return 0
 
 
-PARSERS = {"pip-audit": parse_pip_audit, "checkov": parse_checkov, "guarddog": parse_guarddog}
+NPM_SEVERITY = {"critical": "critical", "high": "high", "moderate": "medium", "low": "low", "info": "info"}
+
+
+def _lockfile(d: str) -> str:
+    return "package-lock.json" if d in ("", ".") else f"{d.rstrip('/')}/package-lock.json"
+
+
+def parse_npm_audit(doc, warnings: list) -> list:
+    """The kit's npm audit record (one `npm audit --json` report per JS project, auditReportVersion 2)
+    -> rows: one per package and advisory. npm's own severity (moderate = medium) and the advisory's
+    CVSS, which comes from the GitHub advisory, so it is a score and not a guess. A package listed only
+    because it depends on a vulnerable one carries no advisory of its own and is not a row."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("dirs"), list):
+        warnings.append("npm-audit.native.json: not the kit's npm audit record (no dirs list) -> no rows")
+        return []
+    out = []
+    for entry in doc["dirs"]:
+        if not isinstance(entry, dict) or not isinstance((entry.get("audit") or {}).get("vulnerabilities"), dict):
+            continue
+        lock = _lockfile(str(entry.get("dir") or "."))
+        for pkg, v in entry["audit"]["vulnerabilities"].items():
+            if not isinstance(v, dict):
+                continue
+            fix = v.get("fixAvailable")
+            fixed_in = [str(fix["version"])] if isinstance(fix, dict) and fix.get("version") else []
+            seen = set()
+            for via in v.get("via") or []:
+                if not isinstance(via, dict):
+                    continue            # a package name: the advisory is listed under that package
+                url = str(via.get("url") or "")
+                adv = url.rsplit("/", 1)[-1] if "/advisories/GHSA-" in url else f"npm-{via.get('source')}"
+                if adv in seen:
+                    continue
+                seen.add(adv)
+                sev = NPM_SEVERITY.get(str(via.get("severity") or "").lower())
+                score = (via.get("cvss") or {}).get("score")
+                out.append({
+                    "id": _id("js-deps", adv, f"npm:{pkg}|{lock}"),
+                    "dimension": "js-deps",
+                    "tool": "npm-audit",
+                    "rule_id": adv,
+                    "file": lock,
+                    "line": None,
+                    "message": f"{pkg} {via.get('range') or v.get('range') or ''}: {via.get('title') or adv}"
+                               + (f", fixed in {fixed_in[0]}" if fixed_in else ""),
+                    "severity": sev or "unknown",
+                    "severity_source": f"npm:{via.get('severity') or 'none'}",
+                    "cvss": float(score) if isinstance(score, (int, float)) and score > 0 else None,
+                    "decision": None,
+                    "confidence": None,
+                    "evidence": None,
+                    "package": {"ecosystem": "npm", "name": pkg, "version": None},
+                    "affected": str(via.get("range") or ""),
+                    "direct": bool(v.get("isDirect")),
+                    "fixed_in": fixed_in,
+                })
+    return out
+
+
+def npm_add(directory: str, audit_path: str, record_path: str) -> int:
+    """Append one `npm audit --json` report to the kit's record and print what it found.
+    2 = no report: npm wrote an error object or nothing readable (a scan error, not findings)."""
+    try:
+        audit = json.load(open(audit_path, encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"npm audit: {directory}: output unreadable ({exc.__class__.__name__})")
+        return 2
+    if not isinstance(audit, dict) or not isinstance(audit.get("vulnerabilities"), dict):
+        err = audit.get("error") if isinstance(audit, dict) else None
+        why = (f"{err.get('code')}: {' '.join(str(err.get('summary') or '').split())[:200]}"
+               if isinstance(err, dict) else "no vulnerabilities report")
+        print(f"npm audit: {directory}: {why}")
+        return 2
+    try:
+        record = json.load(open(record_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {"dirs": []}
+    record["dirs"].append({"dir": directory, "audit": audit})
+    with open(record_path, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=1)
+    rows = parse_npm_audit({"dirs": [record["dirs"][-1]]}, [])
+    for r in rows:
+        print(f"  {r['message']} [{r['severity']}]")
+    print(f"npm audit: {directory}: {len(rows)} advisor{'y' if len(rows) == 1 else 'ies'} "
+          f"in {len({r['package']['name'] for r in rows})} package(s)")
+    return 0
+
+
+PARSERS = {"pip-audit": parse_pip_audit, "checkov": parse_checkov, "guarddog": parse_guarddog,
+           "npm-audit": parse_npm_audit}
 
 
 def summary(tool: str, path: str) -> int:
@@ -302,6 +393,8 @@ if __name__ == "__main__":
         sys.exit(summary(sys.argv[2], sys.argv[3]))
     if len(sys.argv) == 6 and sys.argv[1] == "guarddog-add" and sys.argv[2] in ("pypi", "npm"):
         sys.exit(guarddog_add(*sys.argv[2:6]))
+    if len(sys.argv) == 5 and sys.argv[1] == "npm-add":
+        sys.exit(npm_add(*sys.argv[2:5]))
     if 3 <= len(sys.argv) <= 5 and sys.argv[1] == "guarddog-gate":
         sys.exit(guarddog_gate(*sys.argv[2:5]))
     print("usage: native.py summary pip-audit <file> | guarddog-add <pypi|npm> <manifest> <verify.json> <record.json>",

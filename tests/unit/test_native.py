@@ -219,3 +219,53 @@ class TestGuarddogGate:
 
     def test_unreadable_record_is_2(self, tmp_path):
         assert native.guarddog_gate(str(tmp_path / "missing.json")) == 2
+
+
+NPM = os.path.join(os.path.dirname(__file__), "..", "fixtures", "native", "npm-audit", "npm-audit-11.9.0.json")
+
+
+class TestParseNpmAudit:
+    def _rec(self, d="web"):
+        return {"dirs": [{"dir": d, "audit": json.load(open(NPM))}]}
+
+    def test_recorded_report_gives_one_row_per_package_and_advisory(self):
+        rows = native.parse_npm_audit(self._rec(), [])
+        assert len(rows) == 5 and len({r["id"] for r in rows}) == 5
+        r = [x for x in rows if x["rule_id"] == "GHSA-xvch-5gv4-984h"][0]
+        assert r["package"]["name"] == "minimist" and r["severity"] == "critical" and r["cvss"] == 9.8
+        assert r["file"] == "web/package-lock.json" and r["direct"] is True and r["fixed_in"] == ["1.2.8"]
+
+    def test_moderate_is_medium_and_the_source_is_kept(self):
+        r = [x for x in native.parse_npm_audit(self._rec(), []) if x["rule_id"] == "GHSA-29mw-wpgm-hmr9"][0]
+        assert r["severity"] == "medium" and r["severity_source"] == "npm:moderate"
+
+    def test_root_project_lockfile_path(self):
+        assert {r["file"] for r in native.parse_npm_audit(self._rec("."), [])} == {"package-lock.json"}
+
+    def test_a_package_listed_only_through_another_is_not_a_row(self):
+        doc = {"dirs": [{"dir": ".", "audit": {"vulnerabilities": {"wrapper": {"severity": "high", "via": ["lodash"]}}}}]}
+        assert native.parse_npm_audit(doc, []) == []
+
+    def test_an_advisory_without_a_ghsa_url_keeps_npm_source_id(self):
+        doc = {"dirs": [{"dir": ".", "audit": {"vulnerabilities": {"x": {"via": [
+            {"source": 42, "title": "t", "severity": "low", "url": "https://example.test/x"}]}}}}]}
+        assert native.parse_npm_audit(doc, [])[0]["rule_id"] == "npm-42"
+
+    @pytest.mark.parametrize("doc", [None, {}, {"dirs": "x"}])
+    def test_not_the_kits_record_gives_no_rows_and_a_warning(self, doc):
+        w = []
+        assert native.parse_npm_audit(doc, w) == [] and w
+
+
+class TestNpmAdd:
+    def test_appends_and_reports(self, tmp_path, capsys):
+        rec = tmp_path / "rec.json"
+        assert native.npm_add("web", NPM, str(rec)) == 0
+        assert json.load(open(rec))["dirs"][0]["dir"] == "web"
+        assert "web: 5 advisories in 2 package(s)" in capsys.readouterr().out
+
+    def test_an_npm_error_object_is_2_and_nothing_is_recorded(self, tmp_path, capsys):
+        err = tmp_path / "e.json"; err.write_text('{"error": {"code": "ENOTFOUND", "summary": "registry unreachable"}}')
+        rec = tmp_path / "rec.json"
+        assert native.npm_add(".", str(err), str(rec)) == 2 and not rec.exists()
+        assert "ENOTFOUND" in capsys.readouterr().out

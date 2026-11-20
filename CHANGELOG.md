@@ -65,6 +65,11 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- npm audit findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, npm's
+  `--json` report is kept per JS project and each package and advisory becomes a row with the GHSA
+  id, npm's severity, the advisory's CVSS and the fixed version; the log lists them. npm exits
+  non-zero for findings and for its own failures; an npm error object (no registry) is now a scan
+  error, not findings. pnpm and yarn reports are not read yet.
 - guarddog findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1` each
   `verify` run is kept with the packages its manifest asked for; each fired rule that is not a
   `capability-*` rule becomes a row with guarddog's own severity. guarddog silently drops a package it

@@ -527,7 +527,12 @@ scan_js_deps(){
     fi
     return 0
   fi
-  local rc=0 dir n=0 skipped=0 c
+  local rc=0 dir n=0 skipped=0 errored=0 c
+  # With SARIF=1 npm's report is kept as JSON beside the SARIF files (F16b): lib/native.py turns it
+  # into rows and prints what it found. npm exits non-zero for high findings AND for its own failures
+  # (no registry); with JSON the second is an error object, so it is told apart (exit 5 below).
+  local npmrec="" ; if [ "$SARIF" = "1" ] && have python3 && [ -f "$KIT_DIR/lib/native.py" ]; then
+    npmrec="$SARIF_DIR/npm-audit.native.json"; rm -f "$npmrec"; fi
   while IFS= read -r dir; do
     [ -n "$dir" ] || continue
     n=$((n+1))
@@ -548,12 +553,24 @@ scan_js_deps(){
         fi
         say deps "yarn audit ($dir)"
         YARN_IGNORE_PATH=1 YARN_NPM_REGISTRY_SERVER="$reg" yarn npm audit --severity high
-      elif [ -f package-lock.json ] && have npm;  then say deps "npm audit ($dir)";  npm audit --audit-level=high --registry="$reg"
+      elif [ -f package-lock.json ] && have npm;  then say deps "npm audit ($dir)"
+        if [ -n "$npmrec" ]; then
+          local tmpj a p; tmpj="$(mktemp)"
+          npm audit --audit-level=high --registry="$reg" --json > "$tmpj"; a=$?
+          python3 "$KIT_DIR/lib/native.py" npm-add "$dir" "$tmpj" "$npmrec" | py_say; p=${PIPESTATUS[0]}
+          rm -f "$tmpj"; [ "$p" -eq 0 ] || exit 5; exit "$a"
+        fi
+        npm audit --audit-level=high --registry="$reg"
       else warn deps "$dir: no lockfile with an installed package manager (pnpm/yarn/npm) -> skipped"; exit 4; fi )
     c=$?
     # 4 = this directory was not audited (the subshell's warn cannot reach DIM_* out here)
-    if [ "$c" -eq 4 ]; then skipped=$((skipped+1)); elif [ "$c" -ne 0 ]; then rc=1; fi
+    # 5 = npm audit failed and wrote no report (only told apart with SARIF=1, where its JSON is read)
+    if [ "$c" -eq 4 ]; then skipped=$((skipped+1)); elif [ "$c" -eq 5 ]; then errored=$((errored+1)); rc=1
+    elif [ "$c" -ne 0 ]; then rc=1; fi
   done <<<"$dirs"
+  if [ "$errored" -gt 0 ]; then
+    dim_error deps "npm audit failed in $errored of $n JS project(s) and wrote no report (scan error, not a finding)"; return 1
+  fi
   if [ "$skipped" -gt 0 ] && [ "$skipped" -eq "$n" ]; then
     dim_mark skipped "no installed package manager for any JS project's lockfile -> nothing audited"
   elif [ "$skipped" -gt 0 ]; then
