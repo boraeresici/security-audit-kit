@@ -1950,6 +1950,10 @@ if [ -x /usr/bin/python3 ]; then
   f02 iac F02_RC=1; D="$(f02dim iac)"
   [[ "$D" == "error allow "* ]] && [ "$F02RC" -eq 0 ] && ok "F02: checkov crash -> error, gate unchanged (allows)" \
     || no "F02: checkov crash -> got '$D' rc=$F02RC"
+  # GATE_STRICT=1: a soft dimension's crash and a skipped one block too
+  f02 iac F02_RC=1 GATE_STRICT=1 >/dev/null 2>&1; D="$(f02dim iac)"
+  [[ "$D" == "error block "* ]] && [ "$F02RC" -ne 0 ] && ok "NEW-4: GATE_STRICT=1 -> a crashed soft dimension (checkov) blocks" \
+    || no "NEW-4: strict iac crash -> got '$D' rc=$F02RC"
   git -C "$F02/repo" rm -q --cached infra/main.tf >/dev/null 2>&1; rm -f "$F02/repo/infra/main.tf"
   # trivy (soft): findings are recorded, the gate allows; a failed container run still blocks
   f02 container F02_RC=5; D="$(f02dim container)"
@@ -1963,10 +1967,6 @@ if [ -x /usr/bin/python3 ]; then
   f02 osv F02_RC=2; D="$(f02dim osv)"
   [[ "$D" == "error block "* ]] && [ "$F02RC" -ne 0 ] && ok "F02: osv scan error -> error, blocks (a hard dimension that did not run)" \
     || no "F02: osv error -> got '$D' rc=$F02RC"
-  # GATE_STRICT=1: a soft dimension's crash and a skipped one block too
-  f02 iac F02_RC=1 GATE_STRICT=1 >/dev/null 2>&1; D="$(f02dim iac)"
-  [[ "$D" == "error block "* ]] && [ "$F02RC" -ne 0 ] && ok "NEW-4: GATE_STRICT=1 -> a crashed soft dimension (checkov) blocks" \
-    || no "NEW-4: strict iac crash -> got '$D' rc=$F02RC"
   grep -q 'NOT inspected' "$F02/out" && ok "F02: the run names what was not inspected" || no "F02: no not-inspected banner"
   echo "-- F03: evidence uses only what THIS run produced, and says where it came from --"
   F03SARIF='{"runs":[{"tool":{"driver":{"name":"semgrep"}},"results":[{"ruleId":"R1","level":"error","message":{"text":"m"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"app.py"},"region":{"startLine":1}}}]}]}]}'
