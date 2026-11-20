@@ -116,7 +116,7 @@ Numeric first, then the SARIF level, then a tool-specific default:
 
 ### Dimensions without per-finding rows (known gap)
 
-`guarddog` and the JS audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
+The JS audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
 entries; `warnings` names each one that had findings, and the report header says so. Their findings
 reach a human through `raw-<date>.log` and triage. The per-unit picture, and the adapters that close
 this, are in the [evidence matrix](../evidence-matrix.md).
@@ -131,6 +131,13 @@ advisory in two packages is two findings, and a version change keeps the id.
 is a row with the repo-relative `file` and first `line` of the resource, plus `resource` and
 `guideline`. A check skipped with `#checkov:skip=<id>:<reason>` is a row with `decision: "suppressed"`
 and the reason in `evidence.note`. checkov gives no severity without a platform key: `unknown`.
+
+**guarddog rows (F16b).** With `SARIF=1` each `guarddog <eco> verify <manifest>` run is kept in
+`guarddog.native.json` with the packages the manifest asked for. Each package and fired rule is a row,
+except `capability-*` rules (what a package can do, which fire on `requests`); `file` is the
+manifest, `package` names it, `detail` holds guarddog's first location or message, and the severity is
+guarddog's own from its `risks`, else `unknown`. A requested package guarddog returned nothing for,
+and a rule that did not run, are in `warnings`.
 
 A finding the tool itself marked as suppressed in its SARIF (semgrep's `# nosemgrep`, written with
 `suppressions: [{kind: inSource}]`) is recorded with `decision: "suppressed"` and the tool's note, so

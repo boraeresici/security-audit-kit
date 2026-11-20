@@ -1959,6 +1959,52 @@ PY2
     || no "F16b: checkov JSON written without SARIF=1, or the failed count was lost"
   rm -rf "$F16C" "$F16CB"
 else skip "F16b: checkov adapter (no python3)"; fi
+# F16b — the guarddog adapter. The shim plays `guarddog <eco> verify <file> --output-format json`
+# with the recorded runs; the pypi one drops a package it could not fetch, as guarddog 3.0.2 does.
+if have python3; then
+  F16G="$(mktemp -d)"; F16GB="$(mktemp -d)"; git -C "$F16G" init -q
+  cp "$KIT_SRC/tests/fixtures/native/guarddog/requirements.txt.fixture" "$F16G/requirements.txt"
+  cp "$KIT_SRC/tests/fixtures/native/guarddog/package.json.fixture" "$F16G/package.json"
+  git -C "$F16G" -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
+  git -C "$F16G" -c user.email=e2e@test -c user.name=e2e commit -qm deps >/dev/null 2>&1
+  cat > "$F16GB/uvx" <<'SH'
+#!/bin/sh
+eco=""; json=0; for a in "$@"; do case "$a" in pypi|npm) [ -z "$eco" ] && eco="$a" ;; json) json=1 ;; esac; done
+[ "$F16G_MODE" = garbage ] && { echo "not json"; exit 1; }
+[ "$F16G_MODE" = block ] && [ "$json" = 1 ] && { printf '[{"dependency": "reqests", "version": "1.0", "result": {"issues": 1, "errors": {}, "results": {"typosquatting": "close to requests"}, "risks": []}}]\n'; exit 1; }
+[ "$json" = 1 ] && cat "$F16G_DIR/verify-$eco-3.0.2.json"
+[ "$eco" = pypi ] && exit 1
+exit 0
+SH
+  chmod +x "$F16GB/uvx"
+  f16g(){ (cd "$F16G" && env PATH="$F16GB:$PATH" F16G_DIR="$KIT_SRC/tests/fixtures/native/guarddog" "$@" \
+    bash "$KIT_SRC/scan.sh" guarddog >/dev/null 2>&1; bash "$KIT_SRC/scan.sh" evidence >/dev/null 2>&1); }
+  f16g SARIF=1 F16G_MODE=ok
+  python3 - "$F16G/docs/security/scan-findings" <<'PY' && ok "F16b: guarddog's non-capability rules are rows with its own severity; a package it dropped is named" || no "F16b: guarddog rows or the not-checked warning missing"
+import json, os, sys
+d = sys.argv[1]
+s = json.load(open(os.path.join(d, "summary.json")))
+assert "sarif/guarddog.native.json" in [a["path"] for a in s["artifacts"]]
+e = json.load(open(os.path.join(d, "evidence.json")))
+rows = [f for f in e["findings"] if f["tool"] == "guarddog"]
+assert rows and not any(r["rule_id"].startswith("capability-") for r in rows)
+assert {r["package"]["name"] for r in rows} == {"setuptools"}
+assert {r["severity"] for r in rows} <= {"low", "medium", "high", "critical", "unknown"} and any(r["severity"] == "high" for r in rows)
+assert any("f16-no-such-package-xyz" in w and "not checked" in w for w in e["warnings"])
+PY
+  grep -q '"name": "guarddog".*"status": "findings".*"gate": "allow"' "$F16G/docs/security/scan-findings/summary.json" \
+    && ok "F16b: guarddog rules off pkgcheck's block list are reported, not blocking" || no "F16b: off-list guarddog rules blocked the gate"
+  rm -rf "$F16G/docs"; f16g SARIF=1 F16G_MODE=block
+  grep -q '"name": "guarddog".*"status": "findings".*"gate": "block"' "$F16G/docs/security/scan-findings/summary.json" \
+    && ok "F16b: a rule on pkgcheck's block list (typosquatting) blocks the guarddog gate" || no "F16b: a block-list guarddog rule did not block"
+  rm -rf "$F16G/docs"; f16g SARIF=0 F16G_MODE=ok
+  [ ! -e "$F16G/docs/security/scan-findings/sarif/guarddog.native.json" ] \
+    && ok "F16b: without SARIF=1 guarddog writes no record" || no "F16b: guarddog record written without SARIF=1"
+  rm -rf "$F16G/docs"; f16g SARIF=1 F16G_MODE=garbage
+  grep -q '"name": "guarddog".*"status": "error"' "$F16G/docs/security/scan-findings/summary.json" \
+    && ok "F16b: guarddog output that is not JSON is a scan error, not findings" || no "F16b: unreadable guarddog output recorded as findings"
+  rm -rf "$F16G" "$F16GB"
+else skip "F16b: guarddog adapter (no python3)"; fi
 # (b) a committed requirements.txt IS readable — statically, by osv-scanner (pip-audit -r would
 #     build a venv and install it, i.e. run the dependency tree's build scripts).
 printf 'requests==2.19.0\n' > "$PYR/requirements.txt"

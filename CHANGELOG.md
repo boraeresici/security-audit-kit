@@ -65,6 +65,11 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- guarddog findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1` each
+  `verify` run is kept with the packages its manifest asked for; each fired rule that is not a
+  `capability-*` rule becomes a row with guarddog's own severity. guarddog silently drops a package it
+  cannot fetch (and exits 0); the record now names such packages as not checked, and names a rule
+  that did not run instead of dropping the package's other results.
 - `.codex-plugin/plugin.json` and `scripts/build_codex_zip.py` (F43b): the Codex manifest, with the
   listing fields the OpenAI plugin directory asks for, and a reproducible ZIP of only what that
   directory accepts (the manifest, the icon, the five skills, the licence; no hooks, no scanner, no
@@ -91,6 +96,12 @@ All notable changes to this project are documented here. The format is based on
   soft ones included. Environment or config. The default stays permissive and loud.
 
 ### Changed
+- **`scan.sh guarddog` blocks on the same measured rule list as `pkgcheck`.** It used guarddog's exit
+  code, which counts `capability-*` rules: a project with `requests` alone was reported with findings
+  and blocked (measured, guarddog 3.0.2, label `no_risks_detected`). Now a rule on `pkgcheck`'s block
+  list blocks, any other threat or metadata rule is reported without blocking, and capabilities are
+  not findings; `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` apply to both. Without python3 the
+  exit code still decides, and the run says so.
 - **An osv-scanner crash blocks** (osv is a hard dimension; it allowed, while a crashed trivy, a soft
   one, blocked). **zizmor is in `all`** (not applicable without workflows): a workflow injection now
   gates a push.

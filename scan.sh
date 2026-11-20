@@ -1039,20 +1039,47 @@ scan_guarddog(){
   npmpkgs="$(git ls-files | grep -E '(^|/)package\.json$' | grep -v node_modules || true)"
   [ -z "$pyreqs" ] && [ -z "$npmpkgs" ] && { dim_na guarddog "no requirements*.txt or package.json -> nothing to verify"; return 0; }
   say guarddog "guarddog verify (malicious/typosquat deps, ==$GUARDDOG_VER, needs network)"
-  while IFS= read -r f; do
+  # With SARIF=1 each run's JSON goes into one record beside the SARIF files (F16b), together with the
+  # packages the manifest asked for: guarddog drops a package it cannot fetch and still exits 0, so
+  # only the comparison says it was not checked. lib/native.py prints what fired to the log.
+  # The verdict comes from what fired, not from guarddog's exit code, which counts capability-*
+  # rules too (`requests` alone exits 1): a rule on pkgcheck's measured block list blocks, any other
+  # threat or metadata rule is reported, capabilities are not findings. The record is kept only with
+  # SARIF=1; without python3 the old exit-code verdict stands, and the run says so.
+  local nat="$SARIF_DIR/guarddog.native.json" json=0 eco tmpj r rec
+  if have python3 && [ -f "$KIT_DIR/lib/native.py" ]; then
+    json=1
+    if [ "$SARIF" = "1" ]; then rec="$nat"; rm -f "$nat"; else rec="$(mktemp)"; rm -f "$rec"; fi
+  else
+    warn guarddog "no python3 -> the verdict is guarddog's exit code, which also counts capability-* rules"
+  fi
+  while IFS="$(printf '\t')" read -r eco f; do
     [ -n "$f" ] || continue
-    say guarddog "pypi verify $f"
-    pyrun guarddog "$GUARDDOG_VER" guarddog pypi verify "$f" --exit-non-zero-on-finding || rc=1
+    say guarddog "$eco verify $f"
+    if [ "$json" = 1 ]; then
+      tmpj="$(mktemp)"
+      pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" verify "$f" --exit-non-zero-on-finding --output-format json > "$tmpj"; r=$?
+      if python3 "$KIT_DIR/lib/native.py" guarddog-add "$eco" "$f" "$tmpj" "$rec" | py_say; then
+        :   # the verdict is taken over the whole record below
+      else
+        dim_error guarddog "guarddog exit $r on $f, output unreadable (scan error, not a finding)"; rc=1
+      fi
+      rm -f "$tmpj"
+    else
+      pyrun guarddog "$GUARDDOG_VER" guarddog "$eco" verify "$f" --exit-non-zero-on-finding || rc=1
+    fi
   done <<EOF
-$pyreqs
+$(printf '%s\n' "$pyreqs" | awk 'NF{print "pypi\t" $0}')
+$(printf '%s\n' "$npmpkgs" | awk 'NF{print "npm\t" $0}')
 EOF
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    say guarddog "npm verify $f"
-    pyrun guarddog "$GUARDDOG_VER" guarddog npm verify "$f" --exit-non-zero-on-finding || rc=1
-  done <<EOF
-$npmpkgs
-EOF
+  if [ "$json" = 1 ] && [ -s "$rec" ]; then
+    python3 "$KIT_DIR/lib/native.py" guarddog-gate "$rec" "${PKGCHECK_BLOCK_EXTRA:-}" "${PKGCHECK_REPORT_EXTRA:-}" | py_say
+    case "${PIPESTATUS[0]}" in
+      1) rc=1 ;;
+      4) dim_mark findings "rules fired, none on the block list (reported, not blocking)" ;;
+    esac
+    [ "$SARIF" = "1" ] || rm -f "$rec"
+  fi
   return "$rc"
 }
 

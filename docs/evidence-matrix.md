@@ -24,7 +24,7 @@ listed below"), and `evidence.json` carries a warning for it. The findings thems
 | `container` | trivy `fs` (vuln, secret, misconfig, license) | `trivy.sarif` | **yes** | `security-severity` (CVSS) | `.trivyignore.yaml`, trivy's own ids only | not in the output (measured, 0.58.0) |
 | `sbom` | syft | CycloneDX + SPDX JSON | artifact, no findings | — | — | — |
 | `osv` | osv-scanner `scan source` | `osv.sarif` | **yes** | `security-severity` | `osv-scanner.toml` | not in the output (not measured) |
-| `guarddog` | guarddog `verify` | log only | no | — | none in the kit | — |
+| `guarddog` | guarddog `verify` (pypi and npm) | `guarddog.native.json` (with `SARIF=1`): each run plus the packages the manifest asked for | **yes**, via `lib/native.py`; `capability-*` rules are not rows | guarddog's own, from `risks`; else `unknown` | none in the kit | — |
 | `zizmor` | zizmor `--offline` | `zizmor.sarif` | **yes** | SARIF `level` | `# zizmor: ignore[…]` | not measured |
 | judgment | the skills' `findings-<date>.md` | markdown table | **yes**, `dimension: judgment` | the skill's rating, [F39 scale](skills.md#severity-of-a-judgment-finding) | `### Suppressed` section | recorded as **suppressed** |
 
@@ -34,9 +34,9 @@ marked **yes** are exactly the ones whose output (SARIF or native JSON) `lib/evi
 
 ## Known gaps, in the order they close (F16b)
 
-- **No rows for the JS audits and guarddog.** Each gets an adapter that reads the tool's
+- **No rows for the JS audits.** Each gets an adapter that reads the tool's
   native JSON and normalises it in `lib/native.py`, keeping package, version and aliases, as
-  pip-audit's and checkov's do now. These rows go to `evidence.json` and the report, not to Code Scanning: the
+  pip-audit's, checkov's and guarddog's do now. These rows go to `evidence.json` and the report, not to Code Scanning: the
   native files are not SARIF, and a CI job uploads `sarif/*.sarif`.
 - **One advisory, three ids.** trivy reports `CVE-2021-33503` where osv-scanner and pip-audit report
   `PYSEC-2021-108`, and `.trivyignore.yaml` matches trivy's own id only
@@ -44,6 +44,13 @@ marked **yes** are exactly the ones whose output (SARIF or native JSON) `lib/evi
   literally until F19's alias map exists.
 - **trivy 0.58.0 does not read `uv.lock`.** In a uv project, `container` says nothing about Python
   dependencies; `py-deps` and `osv` do.
+- **guarddog drops a package it cannot fetch** and still exits 0 (measured, 3.0.2). The record keeps
+  the packages each manifest asked for, so `evidence.json` names the ones guarddog returned nothing
+  for. A rule that fails (a timeout, seen live) is named; the other rules' results stay.
+- **guarddog's exit code counts capabilities**, so it is not the verdict. `requests` alone makes
+  `guarddog verify --exit-non-zero-on-finding` exit 1 with no threat rule fired (label
+  `no_risks_detected`). The `guarddog` dimension now decides from what fired: a rule on `pkgcheck`'s
+  measured block list blocks, any other threat or metadata rule is reported, not blocking.
 - **A severity the tool does not give** is `unknown`, with `severity_source: "<tool>:none"`, not a
   guess: pip-audit gives none, and checkov gives none without a platform key.
 - **pip-audit repeats advisories.** 2.10.1 lists most of them twice per package (43 entries for 23

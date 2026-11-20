@@ -111,3 +111,111 @@ class TestParseCheckov:
     def test_not_checkov_json_gives_no_rows_and_a_warning(self, doc):
         w = []
         assert native.parse_checkov(doc, w) == [] and w
+
+
+GD = os.path.join(os.path.dirname(__file__), "..", "fixtures", "native", "guarddog")
+
+
+def _gd_record(name="verify-pypi-3.0.2.json", eco="pypi", manifest="requirements.txt", requested=None):
+    verify = json.load(open(os.path.join(GD, name)))
+    if requested is None:
+        requested = native.requested_packages(eco, os.path.join(GD, f"{'requirements.txt' if eco == 'pypi' else 'package.json'}.fixture"))
+    return {"files": [{"ecosystem": eco, "manifest": manifest, "requested": requested, "verify": verify}]}
+
+
+class TestRequestedPackages:
+    def test_pypi_names_are_normalised_and_options_skipped(self, tmp_path):
+        p = tmp_path / "r.txt"
+        p.write_text("Foo_Bar==1.0  # pinned\n-r other.txt\n--hash=sha256:x\n\nzope.interface>=5\n")
+        assert native.requested_packages("pypi", str(p)) == ["foo-bar", "zope-interface"]
+
+    def test_npm_reads_dependencies_and_devdependencies(self):
+        assert native.requested_packages("npm", os.path.join(GD, "package.json.fixture")) == ["is-number", "ms"]
+
+    def test_unreadable_manifest_is_empty(self, tmp_path):
+        assert native.requested_packages("npm", str(tmp_path / "missing.json")) == []
+
+
+class TestParseGuarddog:
+    def test_recorded_pypi_run(self):
+        w = []
+        rows = native.parse_guarddog(_gd_record(), w)
+        assert rows and all(r["package"]["name"] == "setuptools" for r in rows)       # requests: capabilities only
+        assert not any(r["rule_id"].startswith("capability-") for r in rows)
+        sev = {r["rule_id"]: r["severity"] for r in rows}
+        assert sev["threat-filesystem-read"] == "high" and sev["threat-runtime-obfuscation-unicode"] == "medium"
+        assert all(r["severity_source"] == f"guarddog:{r['severity']}" for r in rows)
+        assert any("f16-no-such-package-xyz" in x and "not checked" in x for x in w)
+
+    def test_recorded_npm_run_is_clean(self):
+        w = []
+        assert native.parse_guarddog(_gd_record("verify-npm-3.0.2.json", "npm", "package.json"), w) == [] and w == []
+
+    def test_one_failing_rule_keeps_the_others(self):
+        doc = {"files": [{"ecosystem": "pypi", "manifest": "r.txt", "requested": ["x"], "verify": [
+            {"dependency": "x", "version": "1", "result": {"errors": {"r1": "timed out"},
+             "results": {"threat-a": [{"location": "x.py:1"}], "capability-b": [{"location": "y"}]}, "risks": []}}]}]}
+        w = []
+        rows = native.parse_guarddog(doc, w)
+        assert [r["rule_id"] for r in rows] == ["threat-a"] and rows[0]["severity"] == "unknown"
+        assert any("some rules did not run" in x for x in w)
+
+    def test_no_results_is_not_scanned(self):
+        doc = {"files": [{"ecosystem": "pypi", "manifest": "r.txt", "requested": ["x"],
+                          "verify": [{"dependency": "x", "version": "1", "result": {"errors": {"dl": "404"}}}]}]}
+        w = []
+        assert native.parse_guarddog(doc, w) == [] and any("x 1 not scanned" in x for x in w)
+
+    def test_same_rule_in_two_manifests_is_two_rows(self):
+        a = native.parse_guarddog(_gd_record(manifest="a/requirements.txt"), [])
+        b = native.parse_guarddog(_gd_record(manifest="b/requirements.txt"), [])
+        assert {r["id"] for r in a}.isdisjoint({r["id"] for r in b})
+
+    @pytest.mark.parametrize("doc", [None, {}, {"files": "x"}, []])
+    def test_not_the_kits_record_gives_no_rows_and_a_warning(self, doc):
+        w = []
+        assert native.parse_guarddog(doc, w) == [] and w
+
+
+class TestGuarddogAdd:
+    def test_appends_and_reports(self, tmp_path, capsys):
+        rec = tmp_path / "rec.json"
+        man = os.path.join(GD, "requirements.txt.fixture")
+        for _ in range(2):
+            assert native.guarddog_add("pypi", man, os.path.join(GD, "verify-pypi-3.0.2.json"), str(rec)) == 0
+        assert len(json.load(open(rec))["files"]) == 2
+        out = capsys.readouterr().out
+        assert "2 of 3 package(s) checked" in out and "not checked" in out
+
+    def test_unreadable_output_is_2(self, tmp_path):
+        bad = tmp_path / "v.json"; bad.write_text("{not json")
+        assert native.guarddog_add("pypi", "r.txt", str(bad), str(tmp_path / "rec.json")) == 2
+
+
+def _gd_rule(rule, name="pkg"):
+    return {"files": [{"ecosystem": "pypi", "manifest": "r.txt", "requested": [name], "verify": [
+        {"dependency": name, "version": "1", "result": {"errors": {}, "results": {rule: [{"location": "x.py:1"}]}, "risks": []}}]}]}
+
+
+class TestGuarddogGate:
+    def _rec(self, tmp_path, doc):
+        p = tmp_path / "rec.json"; p.write_text(json.dumps(doc)); return str(p)
+
+    def test_a_block_list_rule_blocks(self, tmp_path, capsys):
+        assert native.guarddog_gate(self._rec(tmp_path, _gd_rule("typosquatting"))) == 1
+        assert "BLOCK — pkg: typosquatting" in capsys.readouterr().out
+
+    def test_rules_off_the_block_list_are_reported_not_blocking(self, tmp_path):
+        assert native.guarddog_gate(self._rec(tmp_path, _gd_record())) == 4      # setuptools, recorded
+
+    def test_capabilities_only_pass(self, tmp_path):
+        assert native.guarddog_gate(self._rec(tmp_path, _gd_rule("capability-process-spawn"))) == 0
+
+    def test_block_extra_and_report_extra_as_in_pkgcheck(self, tmp_path):
+        rec = self._rec(tmp_path, _gd_rule("threat-filesystem-read"))
+        assert native.guarddog_gate(rec) == 4
+        assert native.guarddog_gate(rec, "threat-filesystem-read") == 1
+        assert native.guarddog_gate(self._rec(tmp_path, _gd_rule("typosquatting")), "", "typosquatting") == 4
+
+    def test_unreadable_record_is_2(self, tmp_path):
+        assert native.guarddog_gate(str(tmp_path / "missing.json")) == 2

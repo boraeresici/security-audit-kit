@@ -5,18 +5,23 @@ Each adapter turns one tool's native output into the kit's finding rows, keeping
 lose (package, version, aliases, fixes). The rows go to evidence.json and the HTML report; they are
 not SARIF, so a CI job that uploads sarif/*.sarif does not send them to Code Scanning. Stdlib only.
 
-Usage (scan.sh): native.py summary <tool> <file>   -> a few readable lines for the scan log
+Usage (scan.sh): native.py summary pip-audit <file>   -> a few readable lines for the scan log
+                 native.py guarddog-add <pypi|npm> <manifest> <verify.json> <record.json>
+                 native.py guarddog-gate <record.json> [block-extra] [report-extra]
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import sys
 
 # native output file (in the run's sarif/ directory) -> (tool, scan.sh dimension)
 NATIVE_SOURCES = {
     "pip-audit.native.json": ("pip-audit", "py-deps"),
     "checkov.native.json": ("checkov", "iac"),
+    "guarddog.native.json": ("guarddog", "guarddog"),
 }
 
 
@@ -112,7 +117,159 @@ def parse_checkov(doc, warnings: list) -> list:
     return out
 
 
-PARSERS = {"pip-audit": parse_pip_audit, "checkov": parse_checkov}
+def _pypi_name(n: str) -> str:
+    return re.sub(r"[-_.]+", "-", n).lower()          # PEP 503
+
+
+def requested_packages(ecosystem: str, manifest: str) -> list:
+    """The packages a manifest asks for, as guarddog `verify` reads them: every requirement line for
+    pypi; dependencies and devDependencies for npm (measured, guarddog 3.0.2, both are verified)."""
+    try:
+        text = open(manifest, encoding="utf-8").read()
+    except (OSError, UnicodeDecodeError):
+        return []
+    if ecosystem == "npm":
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return []
+        names = set()
+        for key in ("dependencies", "devDependencies"):
+            if isinstance(doc.get(key), dict):
+                names.update(str(k).lower() for k in doc[key])
+        return sorted(names)
+    names = set()
+    for line in text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        m = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", line)
+        if line and not line.startswith("-") and m:
+            names.add(_pypi_name(m.group(0)))
+    return sorted(names)
+
+
+def parse_guarddog(doc, warnings: list) -> list:
+    """The kit's guarddog record -> rows: one per package and fired rule that is not a capability-*
+    rule (capabilities say what a package CAN do; requests fires three). The severity is guarddog's
+    own, from `risks`, where it gives one; a package it was asked about and returned nothing for is
+    named as not checked, never counted as clean (guarddog drops a package it cannot fetch)."""
+    if not isinstance(doc, dict) or not isinstance(doc.get("files"), list):
+        warnings.append("guarddog.native.json: not the kit's guarddog record (no files list) -> no rows")
+        return []
+    out = []
+    for entry in doc["files"]:
+        if not isinstance(entry, dict):
+            continue
+        eco, manifest = str(entry.get("ecosystem") or "?"), str(entry.get("manifest") or "")
+        norm = _pypi_name if eco == "pypi" else str.lower
+        items = entry.get("verify") if isinstance(entry.get("verify"), list) else []
+        seen = {norm(str((i or {}).get("dependency") or "")) for i in items if isinstance(i, dict)}
+        missing = [n for n in entry.get("requested") or [] if n not in seen]
+        if missing:
+            warnings.append(f"guarddog: {manifest}: {len(missing)} package(s) not checked "
+                            f"(guarddog returned nothing for them): {', '.join(missing[:20])}")
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            name, version = str(it.get("dependency") or "?"), str(it.get("version") or "")
+            r = it.get("result") if isinstance(it.get("result"), dict) else {}
+            errs = "; ".join(f"{k}: {v}" for k, v in (r.get("errors") or {}).items())
+            if r.get("results") is None:
+                warnings.append(f"guarddog: {name} {version} not scanned ({' '.join((errs or 'no results').split())[:200]})")
+                continue
+            if errs:   # one rule failing (a timeout, seen live) leaves the others' results standing
+                warnings.append(f"guarddog: {name} {version}: some rules did not run ({' '.join(errs.split())[:200]})")
+            sev_of = {}
+            rank = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+            for risk in r.get("risks") or []:
+                if isinstance(risk, dict) and risk.get("threat_rule"):
+                    s = str(risk.get("severity") or "").lower()
+                    if rank.get(s, 0) > rank.get(sev_of.get(risk["threat_rule"]), 0):
+                        sev_of[risk["threat_rule"]] = s
+            label = str((r.get("risk_score") or {}).get("label") or "")
+            for rule, hits in (r.get("results") or {}).items():
+                if not hits or str(rule).startswith("capability-"):
+                    continue
+                first = hits[0].get("location") if isinstance(hits, list) and hits and isinstance(hits[0], dict) \
+                    else str(hits).splitlines()[0][:200]
+                sev = sev_of.get(rule)
+                out.append({
+                    "id": _id("guarddog", rule, f"{eco}:{norm(name)}|{manifest}"),
+                    "dimension": "guarddog",
+                    "tool": "guarddog",
+                    "rule_id": rule,
+                    "file": manifest or None,
+                    "line": None,
+                    "message": f"{name} {version}: {rule}" + (f" (package risk: {label})" if label else ""),
+                    "severity": sev or "unknown",
+                    "severity_source": f"guarddog:{sev or 'none'}",
+                    "cvss": None,
+                    "decision": None,
+                    "confidence": None,
+                    "evidence": None,
+                    "package": {"ecosystem": eco, "name": name, "version": version},
+                    "detail": first,
+                })
+    return out
+
+
+def guarddog_add(ecosystem: str, manifest: str, verify_path: str, record_path: str) -> int:
+    """Append one `guarddog <eco> verify <manifest> --output-format json` run to the kit's record,
+    with the packages the manifest asked for, and print what fired. 2 = the output is not JSON."""
+    try:
+        verify = json.load(open(verify_path, encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"guarddog: {manifest}: output unreadable ({exc.__class__.__name__})")
+        return 2
+    if not isinstance(verify, list):
+        print(f"guarddog: {manifest}: output is not a verify list")
+        return 2
+    try:
+        record = json.load(open(record_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {"files": []}
+    entry = {"ecosystem": ecosystem, "manifest": manifest,
+             "requested": requested_packages(ecosystem, manifest), "verify": verify}
+    record["files"].append(entry)
+    with open(record_path, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, indent=1)
+    warnings: list = []
+    rows = parse_guarddog({"files": [entry]}, warnings)
+    for r in rows:
+        print(f"  {r['message']} [{r['severity']}]")
+    for w in warnings:
+        print(f"  ! {w}")
+    print(f"guarddog: {manifest}: {len(verify)} of {len(entry['requested'])} package(s) checked, "
+          f"{len(rows)} non-capability rule(s) fired")
+    return 0
+
+
+def guarddog_gate(record_path: str, block_extra: str = "", report_extra: str = "") -> int:
+    """The guarddog dimension's verdict, from what fired, not from guarddog's exit code: that counts
+    capability-* rules too, so `requests` alone made it 1. Blocking uses pkgcheck's measured block
+    list (the pre-install check's), with the same overrides. 1 = a block-list rule fired; 4 = rules
+    fired, none on it (reported, not blocking); 0 = none; 2 = the record is unreadable."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import pkgcheck
+    try:
+        doc = json.load(open(record_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        print("guarddog: no readable record")
+        return 2
+    rows = parse_guarddog(doc, [])
+    csv = lambda v: {x.strip() for x in (v or "").split(",") if x.strip()}
+    block = (set(pkgcheck.BLOCK_RULES) | csv(block_extra)) - csv(report_extra)
+    blocking = sorted({f"{r['package']['name']}: {r['rule_id']}" for r in rows if r["rule_id"] in block})
+    if blocking:
+        print(f"guarddog: BLOCK — {', '.join(blocking)}")
+        return 1
+    if rows:
+        print(f"guarddog: {len(rows)} rule(s) fired, none on the block list -> reported, not blocking")
+        return 4
+    print("guarddog: no threat or metadata rule fired (capability-* rules are not findings)")
+    return 0
+
+
+PARSERS = {"pip-audit": parse_pip_audit, "checkov": parse_checkov, "guarddog": parse_guarddog}
 
 
 def summary(tool: str, path: str) -> int:
@@ -143,5 +300,10 @@ def summary(tool: str, path: str) -> int:
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "summary" and sys.argv[2] == "pip-audit":
         sys.exit(summary(sys.argv[2], sys.argv[3]))
-    print("usage: native.py summary pip-audit <file>", file=sys.stderr)
+    if len(sys.argv) == 6 and sys.argv[1] == "guarddog-add" and sys.argv[2] in ("pypi", "npm"):
+        sys.exit(guarddog_add(*sys.argv[2:6]))
+    if 3 <= len(sys.argv) <= 5 and sys.argv[1] == "guarddog-gate":
+        sys.exit(guarddog_gate(*sys.argv[2:5]))
+    print("usage: native.py summary pip-audit <file> | guarddog-add <pypi|npm> <manifest> <verify.json> <record.json>",
+          file=sys.stderr)
     sys.exit(2)

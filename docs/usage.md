@@ -157,6 +157,10 @@ kit blocks on an explicit list of ~24 malice-specific rules (typosquatting, depe
 install-time network access, reverse shells, exfiltration, cryptomining, keylogging, maintainer-domain
 takeover) — every one of which fired on **none** of those 18 packages. Everything else is printed as a
 note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in `.security-audit.conf`.
+The `guarddog` dimension (`scan.sh guarddog`, every declared dependency) uses the same list and the same
+two settings: a rule on it blocks, any other threat or metadata rule is reported without blocking, and
+capabilities are not findings. It used guarddog's exit code before, which counts capabilities, so a
+project with `requests` alone was blocked.
 
 **What it does not do, stated plainly:**
 - It guards the **agent's** tool calls. A human typing `npm i` in a terminal is not covered — nothing
