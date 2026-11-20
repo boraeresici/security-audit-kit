@@ -55,7 +55,10 @@ every form. A line that is anything else is **not applied**, and the kit names i
 - a line that runs a command, or a setting followed by a command (`SARIF=0 touch x`, `X=1 && cmd`);
 - a command substitution or a `$` expansion in a value;
 - a setting `scan.sh` does not read (a typo, or a name such as `PATH`);
-- `SKIP_SECURITY`, which is read from the environment only;
+- `SKIP_SECURITY`, `JS_AUDIT_REGISTRY`, `OSV_ALLOW_BUILD_SCRIPTS` and every tool pin (`*_VER`,
+  `*_DIGEST`), which are read from the environment only (pins move with the kit: `bootstrap.sh <tag>`);
+- a `SEMGREP_CONFIGS` that is not `--config <rules>` pairs, or a path list with a value starting
+  with `-` (it would become a scanner flag);
 - a value of the wrong type (a non-integer wait, `SCAN_OFFLINE=yes`) is applied, and named.
 
 Upgrading from 1.21 or older: a config that used `$VAR` in a value, or a plain `NAME=value` that

@@ -42,6 +42,22 @@ All notable changes to this project are documented here. The format is based on
     `yarn-path`, and does not run yarn when `.yarnrc.yml` loads repo JavaScript (`yarnPath`,
     `plugins`; use `scan.sh osv` for that lockfile).
 
+- **Cross-check fixes (independent review of this branch).**
+  - Linked worktrees: a commit in one was blocked with the whole worktree listed as EXTRA, because
+    git hands hooks `GIT_DIR`/`GIT_INDEX_FILE`; the integrity check now clears them.
+  - Bytecode: a committed `lib/__pycache__/*.pyc` with an unchecked hash (PEP 552) ran without its
+    source and was excluded from the check. It is now an EXTRA, and the kit's python reads and
+    writes no bytecode beside its sources (`PYTHONPYCACHEPREFIX`).
+  - `PY_VENV` gets the same check as the repo `.venv` (a committed interpreter is not run).
+  - **Tool pins are environment-only.** A `*_VER` / `*_DIGEST` line in the config is not applied: a
+    branch could re-pin a scanner to an image of its choosing, which reads the repo with network.
+    `OSV_ALLOW_BUILD_SCRIPTS` likewise. **Upgrade:** pins move with the kit (`bootstrap.sh <tag>`);
+    a config that set them gets a warning per line.
+  - List values cannot smuggle scanner flags: `SEMGREP_CONFIGS` takes `--config <rules>` pairs only,
+    and a path list (`SAST_PATHS`, `JS_DIRS`, `TF_DIR`, `TRIVY_SKIP_DIRS`) a value starting with `-`
+    is not applied.
+  - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
+
 ### Added
 - **`policy_changes` (NEW-3).** Every run names what the change under review does to the gate
   itself: config, exclusions, scanner allowlists and configs, package-manager configs, repo-local
@@ -67,7 +83,7 @@ All notable changes to this project are documented here. The format is based on
 - `docs/threat-model.md` lists the bypasses that exist by design and what shows each one (F11-r).
 
 ### Tests
-- `tests/trust-gate.sh`: 42 offline cases, one reproduction per finding above (the N1/A/C ones: 19 fail on
+- `tests/trust-gate.sh`: 48 offline cases, one reproduction per finding above (the N1/A/C ones: 19 fail on
   1.21). CI runs it on Linux and macOS. e2e vendors the kit the way bootstrap does (the files git
   knows, not the working tree's run debris), since the integrity check now counts every file.
 

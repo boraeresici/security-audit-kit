@@ -133,8 +133,13 @@ for f in lib/json.py hooks/post-merge extra-at-root.sh scan.s skills/sec-triage/
 done
 ln -s ../scan.sh "$R/$K/skills/link"; out="$(CMD=verify scan)"
 grep -qx 'EXTRA     skills/link' <<<"$out" && ok "C: EXTRA for a symlink" || no "C: symlink not reported"; rm -f "$R/$K/skills/link"
-mkdir -p "$R/$K/lib/__pycache__" && echo x > "$R/$K/lib/__pycache__/evidence.cpython-312.pyc"
-( cd "$R" && bash $K/scan.sh verify >/dev/null 2>&1 ) && ok "C: python's own bytecode cache is not an extra" || no "C: __pycache__ flagged"
+mkdir -p "$R/$K/lib/__pycache__" && echo x > "$R/$K/lib/__pycache__/native.cpython-312.pyc"
+out="$(CMD=verify scan)"
+grep -qx 'EXTRA     lib/__pycache__/native.cpython-312.pyc' <<<"$out" \
+  && ok "C: a .pyc in lib/__pycache__ is an EXTRA (an unchecked-hash .pyc runs without its source)" || no "C: planted .pyc not reported"
+rm -rf "$R/$K/lib/__pycache__"
+( cd "$R" && bash $K/scan.sh doctor >/dev/null 2>&1 ); [ ! -d "$R/$K/lib/__pycache__" ] \
+  && ok "C: the kit's own python writes no bytecode beside its sources" || no "C: scan.sh wrote lib/__pycache__"
 ( cd "$R" && bash $K/scan.sh verify >/dev/null 2>&1 ) && ok "C: clean kit verifies again" || no "C: clean kit fails verify"
 
 echo "-- host execution: the scan never runs code a branch committed (B, N2, N3, I) --"
@@ -214,6 +219,36 @@ grep -q '── policy: vs main, 2 gate file(s) changed.*2 inline suppression(s)
   && ok "NEW-3: the closing summary names them for the reviewer" || no "NEW-3: closing line: $(grep policy <<<"$out")"
 ( cd "$P" && git "${G[@]}" checkout -q main ) >/dev/null 2>&1
 out="$(pscan BASE_REF=main)"; ! grep -q '── policy:' <<<"$out" && ok "NEW-3: no gate change -> no policy line" || no "NEW-3: spurious policy line"
+
+echo "-- x-check residuals (1.22): worktrees, PY_VENV, pins, flag injection, marker case --"
+# A linked worktree: git hands the hook GIT_DIR/GIT_INDEX_FILE; the check must still read the kit.
+git -C "$R" worktree add -q "$W/wt" -b wt >/dev/null 2>&1
+out="$(cd "$W/wt" && echo w > w.txt && git add w.txt && git "${G[@]}" commit -qm w 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ! grep -q BLOCKED <<<"$out" && ok "x: a commit in a linked worktree is not falsely blocked" || no "x: worktree commit (rc=$rc): $(head -5 <<<"$out")"
+git -C "$R" worktree remove --force "$W/wt" >/dev/null 2>&1
+# PY_VENV naming a venv the branch committed: its python is not run.
+mkdir -p "$H/ci-env/bin"; : > "$H/ci-env/pyvenv.cfg"; printf '#!/bin/sh\ntouch "%s/pyvenv"\n' "$M" > "$H/ci-env/bin/python"; chmod +x "$H/ci-env/bin/python"
+printf 'requests==2.0.0\n' > "$H/requirements.txt"; printf 'PY_VENV=ci-env\n' > "$H/.security-audit.conf"
+( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm pv -n ) >/dev/null 2>&1
+: > "$LOG"; out="$(cd "$H" && env PATH="$SPATH" bash $K/scan.sh deps 2>&1)"
+! grep -q "pyloc=.*ci-env" "$LOG" && grep -q 'tracked by git' <<<"$out" && ok "x: PY_VENV pointing at a committed venv: its python is not run" || no "x: PY_VENV tracked: $(cat "$LOG")"
+( cd "$H" && git rm -rq ci-env requirements.txt .security-audit.conf && SKIP_SECURITY=1 git "${G[@]}" commit -qm rm -n ) >/dev/null 2>&1
+# Pins and the build-script opt-in are environment-only; list values cannot smuggle scanner flags.
+printf '%s\n' 'GITLEAKS_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000' 'SEMGREP_VER=0.1' \
+  'OSV_ALLOW_BUILD_SCRIPTS=1' 'SEMGREP_CONFIGS="--config /dev/null --output=/tmp/x"' 'SAST_PATHS="src --exclude=*"' \
+  'TRIVY_SKIP_DIRS="ok -x"' > "$C"
+out="$(CMD=doctor scan)"; miss=""
+for i in 1 2 3 4 5 6; do grep -q "line ${i}[: ].*not applied" <<<"$out" || miss="$miss $i"; done
+[ -z "$miss" ] && ok "x: tool pins, OSV_ALLOW_BUILD_SCRIPTS and flag-smuggling list values are not applied from the config" || no "x: lines applied:$miss — $out"
+# shellcheck disable=SC2016
+printf '%s\n' ': "${SEMGREP_CONFIGS:=--config p/python --config semgrep-rules}"' 'SAST_PATHS="src lib"' > "$C"
+grep -q 'settings only, all known' <<<"$(CMD=doctor scan)" && ok "x: well-formed SEMGREP_CONFIGS pairs and paths still apply" || no "x: valid list values rejected: $(CMD=doctor scan | grep -A4 config)"
+rm -f "$C"
+# Suppression markers are counted whatever their case.
+( cd "$P" && git "${G[@]}" checkout -q -f feature && printf 'q = 1  # NOSEMGREP\n' >> app/a.py && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm up -n ) >/dev/null 2>&1
+pscan BASE_REF=main >/dev/null; j="$(psum)"
+python3 -I -c 'import json,sys; d=json.loads(sys.argv[1]); i={(x["path"],x["marker"]):x["added"] for x in d["inline_suppressions"]}; assert i.get(("app/a.py","nosemgrep"))==3, i' "$j" 2>/dev/null \
+  && ok "x: an upper-case NOSEMGREP is counted too" || no "x: marker case: $j"
 
 echo
 printf 'trust-gate: %d passed, %d failed\n' "$PASS" "$FAIL"

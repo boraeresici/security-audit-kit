@@ -15,6 +15,10 @@
 # into the git dir and the hook wrappers run THAT copy, so a branch that edits the vendored kit cannot
 # also edit the check that guards it (N1/C). bash 3.2 compatible.
 set -u
+# Git exports GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE to hooks (in a linked worktree they point at
+# the worktree's). Inherited here, they made `git rev-parse` / `ls-files` answer for the wrong tree:
+# every file of the worktree read as EXTRA and every commit was blocked (x-check, 1.22).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 kd="${1:-}"; anchor="${2:-}"
 [ -n "$kd" ] && [ -d "$kd" ] || { echo "integrity: no kit directory: ${kd:-<none>}" >&2; exit 2; }
 cd "$kd" || exit 2
@@ -57,14 +61,15 @@ fi
 
 # EXTRA: everything under the kit dir, in every directory, files AND links. Exact path match (the old
 # check was a substring test on skills/ only: an extra hooks/post-checkout or lib/json.py passed).
-# Not counted: the manifest, the pin file, python's own bytecode caches (a .pyc without its source is
-# never imported). In the kit's own git repo (maintainer), ignored files are build/run noise.
+# Not counted: the manifest and the pin file. Bytecode caches DO count: an unchecked-hash .pyc
+# (PEP 552) is run without looking at its source, and scan.sh never writes one (it runs python with
+# PYTHONPYCACHEPREFIX elsewhere). In the kit's own git repo (maintainer), ignored files are noise.
 top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$(pwd -P)" ]; then
   git -c core.quotepath=off ls-files -co --exclude-standard
 else
   find . \( -type f -o -type l \) -print | sed 's|^\./||'
-fi | grep -vE '^(CHECKSUMS|\.kit-version)$|(^|/)__pycache__/' | sort -u > "$tmp/found"
+fi | grep -vE '^(CHECKSUMS|\.kit-version)$' | sort -u > "$tmp/found"
 comm -23 "$tmp/found" "$tmp/listed" | sed 's/^/EXTRA     /' >> "$out"
 
 # ANCHOR: the manifest itself must be the one recorded at install (else edit + regenerate passes).

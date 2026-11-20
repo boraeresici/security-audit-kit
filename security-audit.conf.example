@@ -35,7 +35,7 @@
 # Reachability signal for dependency CVEs (opt-in). Adds --all-vulns, so the gate is
 # unchanged — you gain a called/uncalled marking for triage, not fewer findings.
 # rust also works but RUNS the dependency tree's build scripts, so it is refused unless
-# OSV_ALLOW_BUILD_SCRIPTS=1 is set as well.
+# OSV_ALLOW_BUILD_SCRIPTS=1 is set as well, in the environment (never read from this file).
 # : "${OSV_CALL_ANALYSIS:=go}"
 
 # --- dependencies (js) ---
@@ -70,7 +70,10 @@
 # 1 = never download a scanner DB: use the cached one at any age; none cached -> "skipped".
 # : "${SCAN_OFFLINE:=0}"
 
-# --- Tool version pins (keep ALL of these aligned with CI to avoid drift) ---
+# --- Tool version pins: ENVIRONMENT ONLY (since 1.22) ---
+# Listed for reference. A *_VER or *_DIGEST line in this file is NOT applied: the file is committed,
+# so a branch could re-pin a scanner to an image or package of its choosing. Pins move with the kit
+# (bash bootstrap.sh <tag>); for a deliberate one-off, set the variable in the environment.
 # Python tools (uvx/pipx) — pinned by version:
 # : "${SEMGREP_VER:=1.166.0}"
 # : "${CHECKOV_VER:=3.3.1}"

@@ -46,6 +46,11 @@ git(){ command git -c core.quotepath=off "$@"; }
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 1
 
+# The kit's python never reads or writes bytecode beside its sources: a committed lib/__pycache__/
+# .pyc with an unchecked hash (PEP 552) is run without looking at the .py (x-check, 1.22). The
+# prefix is a directory that does not exist, so nothing is read from or written to it.
+export PYTHONDONTWRITEBYTECODE=1 PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/security-audit-kit-no-pyc.$$"
+
 # Directory of the kit itself (where this script lives) — distinct from ROOT, which is the
 # TARGET repo. Used by `verify`/`checksums` so integrity is checked against the kit's files.
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -64,7 +69,11 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # A value may not expand anything: no $, no backquote (in single quotes $ is a literal).
 CONF="${SECURITY_AUDIT_CONF:-$ROOT/.security-audit.conf}"
 CONFIG_ENV_KNOBS="SARIF REPORT BASE_REF"   # per-run knobs that also work from the config
-CONFIG_ENV_ONLY="SKIP_SECURITY JS_AUDIT_REGISTRY"   # read from the environment only, never from the file
+# Read from the environment only, never from the file: what would let a branch switch the checks
+# off, pick the answer, run code, or swap the scanner itself. Plus every tool pin (*_VER, *_DIGEST):
+# a branch that re-pins GITLEAKS_DIGEST runs ITS image over your repo (read-only, but with network).
+# Pins move with the kit (bootstrap.sh <tag>); an env value is a deliberate one-off.
+CONFIG_ENV_ONLY="SKIP_SECURITY JS_AUDIT_REGISTRY OSV_ALLOW_BUILD_SCRIPTS"
 CONF_LOAD_WARNINGS=""
 conf_warn(){ CONF_LOAD_WARNINGS="${CONF_LOAD_WARNINGS:+$CONF_LOAD_WARNINGS
 }$1"; }
@@ -120,6 +129,27 @@ conf_load(){
     case " $CONFIG_ENV_ONLY " in *" $name "*)
       conf_warn "line $n: $name is never read from the config (it would switch the checks off for everyone on this branch) — not applied; set it in the environment for one run"
       continue ;;
+    esac
+    case "$name" in *_VER|*_DIGEST)
+      conf_warn "line $n: $name is a tool pin, never read from the config (a branch could swap the scanner) — not applied; pins move with the kit (bootstrap.sh <tag>), or set it in the environment"
+      continue ;;
+    esac
+    # List values are split into arguments later: a token that starts with "-" would be a flag of the
+    # scanner (a branch could add --config /dev/null, --output …). SEMGREP_CONFIGS takes
+    # "--config <rules>" pairs and nothing else.
+    case "$name" in
+      SEMGREP_CONFIGS)
+        local t want=flag bad=0
+        for t in $val; do
+          if [ "$want" = flag ]; then [ "$t" = --config ] || { bad=1; break; }; want=arg
+          else case "$t" in -*) bad=1; break ;; esac; want=flag; fi
+        done
+        [ "$want" = flag ] || bad=1
+        [ "$bad" = 0 ] || { conf_warn "line $n: SEMGREP_CONFIGS must be \"--config <rules>\" pairs only — not applied"; continue; } ;;
+      SAST_PATHS|JS_DIRS|TF_DIR|TRIVY_SKIP_DIRS|SEMGREP_LOCAL_RULES)
+        local t bad=0
+        for t in $val; do case "$t" in -*) bad=1 ;; esac; done
+        [ "$bad" = 0 ] || { conf_warn "line $n: $name has a value starting with \"-\" (it would be a scanner flag) — not applied"; continue; } ;;
     esac
     case "$known" in *" $name "*) ;; *)
       conf_warn "line $n: unknown setting $name (a typo? scan.sh does not read it) — not applied"; continue ;;
@@ -381,6 +411,7 @@ scan_py_deps(){
   # through to the no-env path (static manifests or INDETERMINATE) and the run says why.
   local venv="" why=""
   if [ -n "$PY_VENV" ]; then
+    venv_untracked "$PY_VENV" || { dim_error deps "PY_VENV=$PY_VENV is not a venv you built (see above) -> its python is NOT run"; return 1; }
     [ -x "$PY_VENV/bin/python" ] \
       || { dim_error deps "PY_VENV=$PY_VENV has no bin/python -> cannot audit the env you named"; return 1; }
     venv="$PY_VENV"; why="PY_VENV"
@@ -1824,7 +1855,7 @@ policy_drift(){
   POLICY_INLINE="$( { git diff -U0 "$base" HEAD 2>/dev/null; git diff --cached -U0 2>/dev/null; } \
     | PD_RE="$POLICY_MARKERS_RE" awk 'BEGIN { re = ENVIRON["PD_RE"] }
         /^\+\+\+ / { f=substr($0,7); next }
-        /^\+/ && !/^\+\+\+/ && match($0, re) { m=substr($0,RSTART,RLENGTH); k=f "\t" m; n[k]++ }
+        /^\+/ && !/^\+\+\+/ && match(tolower($0), re) { m=substr(tolower($0),RSTART,RLENGTH); k=f "\t" m; n[k]++ }
         END { for (k in n) print k "\t" n[k] }' | LC_ALL=C sort )"
   return 0
 }
