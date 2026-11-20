@@ -497,6 +497,7 @@ mkdir -p "$VP/repo/.venv/bin" "$VP/foreign/bin"
 printf '#!/bin/sh\nexit 0\n' > "$VP/repo/.venv/bin/python"; chmod +x "$VP/repo/.venv/bin/python"; : > "$VP/repo/.venv/pyvenv.cfg"   # a real venv has one (N2)
 printf '#!/bin/sh\nexit 0\n' > "$VP/foreign/bin/python";    chmod +x "$VP/foreign/bin/python"
 echo 'requests==2.31.0' > "$VP/repo/requirements.txt"
+echo '*' > "$VP/repo/.venv/.gitignore"   # what `python -m venv` writes (3.13+): a venv is never committed (N2)
 ( cd "$VP/repo" && git init -q . && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
   # An unrelated venv is active: the repo's own .venv must still be the one audited.
   DOUT="$(VIRTUAL_ENV="$VP/foreign" bash "$KIT_SRC/scan.sh" deps 2>&1 || true)"
