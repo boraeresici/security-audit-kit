@@ -94,8 +94,10 @@ require_skill_sums(){
 # Every release says what a consumer must do on upgrade, even if that is nothing (F25):
 # bootstrap.sh --check shows these sections to someone about to update. "- None." is a valid body;
 # a missing section is not, because then nobody decided.
+# A here-string, not a pipe: under pipefail, `grep -q` exits at the first match and a long section's
+# writer dies of SIGPIPE, so the pipeline reports "not found" (it did, once [Unreleased] grew).
 require_upgrade_notes(){
-  release_notes "$1" | grep -q '^### Upgrade notes' \
+  grep -q '^### Upgrade notes' <<<"$(release_notes "$1")" \
     || die "no '### Upgrade notes' in [$1] — add one (write '- None.' if nothing changes for consumers) before cutting a tag"
 }
 

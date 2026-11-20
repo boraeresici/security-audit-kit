@@ -725,9 +725,12 @@ if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$F37/kit"/; else cp -
 awk '!done && /^## \[/ { print "## [99.0.0] - 2026-01-01"; print ""; print "### Upgrade notes"; print "- None."; print "";
                           done=1; if ($0 ~ /^## \[Unreleased\]/) next } { print }' \
   "$F37/kit/CHANGELOG.md" > "$F37/kit/CHANGELOG.md.e2e" && mv "$F37/kit/CHANGELOG.md.e2e" "$F37/kit/CHANGELOG.md"
-sed -i.bak 's/"version": *"[^"]*"/"version": "99.0.0"/' "$F37/kit/.claude-plugin/plugin.json" && rm -f "$F37/kit/.claude-plugin/plugin.json.bak"
+for F37M in .claude-plugin .codex-plugin; do   # release.sh holds both manifests to the version
+  sed -i.bak 's/"version": *"[^"]*"/"version": "99.0.0"/' "$F37/kit/$F37M/plugin.json" && rm -f "$F37/kit/$F37M/plugin.json.bak"
+done
 ( cd "$F37/kit" && { git init -q -b main 2>/dev/null || { git init -q && git checkout -q -b main; }; } \
   && git config user.email e2e@test && git config user.name e2e \
+  && bash scripts/skill-sums.sh >/dev/null 2>&1 \
   && git add -A && bash scan.sh checksums >/dev/null 2>&1 && git add -A && git commit -qm kit \
   && git init -q --bare "$F37/origin.git" && git remote add origin "$F37/origin.git" \
   && git push -q origin main main:release && git commit -q --allow-empty -m next && git push -q origin main ) >/dev/null 2>&1
