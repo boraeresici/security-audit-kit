@@ -6,6 +6,35 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Security
+- **Hooks no longer run from the vendored tree (N1).** `core.hooksPath` pointed at
+  `tools/security-audit-kit/hooks/`, a directory of the checked-out branch: a branch that added
+  `hooks/post-checkout` got it run by a plain `git checkout`, and one that edited `hooks/pre-commit`
+  got its copy run on the next commit. `install.sh` now always generates wrappers in
+  `.git/security-audit-hooks/` (only `pre-commit` and `pre-push`, plus your own hooks, chained), and
+  each wrapper first runs its own copy of `lib/integrity.sh` against the kit. A kit that differs from
+  the manifest recorded in `.git` at install is not run, and the commit or push is blocked with the
+  files named. **Upgrade:** re-run `install.sh` (bootstrap does) once; after a kit update you have
+  reviewed, re-running it is how you accept the new kit.
+- **`.security-audit.conf` is data, never code (A).** It was sourced as bash, before every command,
+  `verify` included: a committed `exit 0` defeated the pre-push integrity check, `SKIP_SECURITY=1`
+  switched every scan off for everyone on the branch, and any line ran with your privileges. It is now
+  parsed line by line: known names only, literal values (no `$`, no command substitution), env wins
+  over the file for every form, and `SKIP_SECURITY` is read from the environment only. A line that is
+  not a plain setting is not applied and is named with its line number (doctor, verify, the closing
+  summary, `summary.json`). The F24 check no longer reports "settings only, all known" for a line
+  such as `SARIF=0 touch x` (N4). **Upgrade:** a value that used `$VAR`, or a plain `NAME=value` meant
+  to override the environment, behaves differently; `scan.sh doctor` lists such lines.
+- **`verify` sees an extra file in any directory of the kit (C).** It looked for extras under
+  `skills/` only, by substring match: an added `lib/json.py`, `hooks/post-merge` or a symlink passed.
+  It now compares every file and link of the kit against `CHECKSUMS` exactly (python bytecode caches
+  aside), through the same `lib/integrity.sh` the hooks use.
+
+### Tests
+- `tests/trust-gate.sh`: 28 offline cases, one reproduction per finding above (19 of them fail on
+  1.21). CI runs it on Linux and macOS. e2e vendors the kit the way bootstrap does (the files git
+  knows, not the working tree's run debris), since the integrity check now counts every file.
+
 ### Added
 - The plugin has a listing icon, `.claude-plugin/icon.png`: the banner's shield mark, drawn by
   `scripts/make_icon.py` with no dependencies. e2e checks its size and that the script redraws it.

@@ -131,14 +131,17 @@ bash bootstrap.sh v1.21.0 --expect=<sha>  # enforce the pin: refuse if the tag r
 > `KIT_REPO=https://… bash bootstrap.sh v1.21.0`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
-at the kit's hooks folder -> copies the `sec-*` skills into `.claude/skills/`. Idempotent, safe to
+at wrappers in `.git/security-audit-hooks/` (integrity first, then the kit's hook) -> copies the `sec-*` skills into `.claude/skills/`. Idempotent, safe to
 re-run.
 
 Hooks the repo already has are **kept**. That covers `.git/hooks`, a custom `core.hooksPath` such
 as `.husky`, and the pre-commit framework. Install names what it found and chains it:
 `core.hooksPath` then points at generated wrappers in `.git/security-audit-hooks/`, which run the
 kit's hook and then the repo's own, with the same arguments and stdin. A failing hook of yours
-still blocks. A repo with no hooks gets the kit's hooks folder directly, without a question.
+still blocks. A repo with no hooks gets the same wrappers, without a question: hooks never run
+from the vendored tree, where a checked-out branch could add or edit one. Each wrapper first checks
+the kit against the manifest recorded at install and does not run a kit that differs; after a kit
+update you have reviewed, re-run `install.sh` (bootstrap does this) to accept it.
 
 **Worktrees** share one git config, so one `core.hooksPath` serves all of them. A hooksPath
 pointing at a directory that does not exist makes git run **no hooks at all, silently**: not the
@@ -247,7 +250,8 @@ with no warranty**. Pin a tag/SHA, **review skills before running**, and review 
 update. Full trust model, supply-chain guidance, and vulnerability reporting:
 [SECURITY.md](SECURITY.md). What the kit itself reads, writes and runs, and with which
 privileges, is in [docs/threat-model.md](docs/threat-model.md). In short:
-- `.security-audit.conf` is bash, sourced on every scan, and checked every run.
+- `.security-audit.conf` is data: parsed, never sourced; a line that is not a plain setting is not applied, and named.
+- The git hooks run from `.git/`, never from the vendored tree, and refuse a kit that differs from the one you installed.
 - Docker scanners read the repo read-only.
 - The skills treat repo text as evidence, never instructions.
 - The kit never builds or runs the scanned project (the opt-in rust call analysis is the only exception).

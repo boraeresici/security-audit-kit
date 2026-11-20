@@ -18,7 +18,7 @@ jobs:
       - name: shellcheck (pinned image — no version drift; uses repo .shellcheckrc)
         run: |
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
-            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push hooks/pre-tool-install.sh tests/e2e.sh scripts/release.sh scripts/dogfood.sh scripts/skill-sums.sh tests/eval/run.sh
+            scan.sh install.sh bootstrap.sh hooks/pre-commit hooks/pre-push hooks/pre-tool-install.sh lib/integrity.sh tests/e2e.sh tests/trust-gate.sh scripts/release.sh scripts/dogfood.sh scripts/skill-sums.sh tests/eval/run.sh
 
   pytest:
     runs-on: ubuntu-latest
@@ -45,6 +45,8 @@ jobs:
           python-version: '3.11'
       - name: e2e (offline — no docker, no uvx; external-tool assertions skip gracefully)
         run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh
+      - name: trust-the-gate (a branch cannot run code through the kit or switch it off)
+        run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/trust-gate.sh
 
   # Platform coverage (F18). Separate jobs, not a matrix on `pytest`/`e2e`: a matrix renames those
   # checks, and branch protection requires them by name.
@@ -83,6 +85,8 @@ jobs:
           persist-credentials: false
       - name: e2e on macOS (bash 3.2, BSD tools, system python3; offline like the Linux job)
         run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/e2e.sh
+      - name: trust-the-gate (a branch cannot run code through the kit or switch it off)
+        run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/trust-gate.sh
 
   plugin:
     runs-on: ubuntu-latest

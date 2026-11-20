@@ -53,7 +53,8 @@ The single canonical repository is:
 [docs/threat-model.md](docs/threat-model.md) covers what the kit reads, writes and runs, with which
 privileges, and where something it reads could change what it does. It marks each claim as
 verified or unverified. Short version:
-- The config is bash, sourced on every scan.
+- The config is data, parsed and never sourced; `SKIP_SECURITY` is read from the environment only.
+- Git hooks run from `.git/security-audit-hooks/`, never from the tree, and refuse a kit that differs from the one installed.
 - Docker scanners read the repo read-only.
 - uvx scanners are host processes that inherit your environment.
 - semgrep registry packs are fetched unpinned at run time.

@@ -22,6 +22,16 @@ no(){ FAIL=$((FAIL+1)); printf '  \033[31mFAIL\033[0m %s\n' "$1"; }
 skip(){ printf '  \033[33mSKIP\033[0m %s\n' "$1"; }
 have(){ command -v "$1" >/dev/null 2>&1; }
 docker_ok(){ have docker && docker info >/dev/null 2>&1; }
+# Vendor the kit the way bootstrap.sh does: the files git knows (tracked, plus new ones not ignored),
+# never the run debris of the working tree (__pycache__, eval outputs, .local notes). The integrity
+# check counts every file in the kit dir, so debris would read as a planted file.
+vendor_kit(){
+  mkdir -p "$1" || return 1
+  if git -C "$KIT_SRC" rev-parse --git-dir >/dev/null 2>&1; then
+    ( cd "$KIT_SRC" && git -c core.quotepath=off ls-files -co --exclude-standard -z | while IFS= read -r -d '' f; do [ -e "$f" ] || [ -L "$f" ] && printf '%s\0' "$f"; done | xargs -0 tar cf - ) | ( cd "$1" && tar xf - )
+  elif have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$1"/
+  else cp -R "$KIT_SRC"/. "$1"/; rm -rf "$1/.git"; fi
+}
 
 TARGET="$(mktemp -d)"
 trap 'rm -rf "$TARGET"' EXIT
@@ -29,11 +39,7 @@ echo "== e2e target: $TARGET =="
 
 # --- vendor the current working tree (not a released tag) ---
 mkdir -p "$TARGET/tools/security-audit-kit"
-if have rsync; then
-  rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TARGET/tools/security-audit-kit"/
-else
-  cp -R "$KIT_SRC"/. "$TARGET/tools/security-audit-kit"/; rm -rf "$TARGET/tools/security-audit-kit/.git"
-fi
+vendor_kit "$TARGET/tools/security-audit-kit"
 
 cd "$TARGET" || exit 1
 git init -q
@@ -44,7 +50,7 @@ SCAN="bash tools/security-audit-kit/scan.sh"
 
 echo "-- install --"
 bash tools/security-audit-kit/install.sh >/dev/null 2>&1 && ok "install.sh ran" || no "install.sh failed"
-[ "$(git config core.hooksPath)" = "tools/security-audit-kit/hooks" ] && ok "hooksPath set" || no "hooksPath not set"
+case "$(git config core.hooksPath)" in */security-audit-hooks) ok "hooksPath set (the git dir's wrappers, never the tree)" ;; *) no "hooksPath not set: $(git config core.hooksPath)" ;; esac
 for s in sec-triage sec-sast-deep sec-ai-review sec-threat-model sec-audit; do
   [ -f ".claude/skills/$s/SKILL.md" ] && ok "skill installed: $s" || no "skill missing: $s"
 done
@@ -507,7 +513,7 @@ echo "-- merge commits: what a merge brings in is reported; only what the merger
 if docker_ok && have python3; then
   MG="$(mktemp -d)"; MGG=(-c user.email=e2e@test -c user.name=e2e)
   ( cd "$MG" && git init -q && git checkout -q -b main && mkdir -p tools/security-audit-kit \
-    && { if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ tools/security-audit-kit/; else cp -R "$KIT_SRC"/. tools/security-audit-kit/; fi; } \
+    && { vendor_kit tools/security-audit-kit; } \
     && echo base > base.txt && git add base.txt && git "${MGG[@]}" commit -qm base \
     && git checkout -q -b dev && AK=AKIA && printf 'aws_key = "%s1234567890ABCDEF"\n' "$AK" > from_dev.py \
     && git add from_dev.py && git "${MGG[@]}" commit -qm dev && git checkout -q main \
@@ -563,7 +569,7 @@ else no "summary.json not written"; fi
 echo "-- bootstrap SHA-verify (--expect enforcement, offline local repo) --"
 # Build a throwaway 'kit repo' (local, offline) with a tag, then bootstrap from it.
 KITREPO="$(mktemp -d)"
-if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$KITREPO"/; else cp -R "$KIT_SRC"/. "$KITREPO"/ && rm -rf "$KITREPO/.git"; fi
+vendor_kit "$KITREPO"
 # Cut the fixture the way scripts/release.sh cuts a tag: the newest CHANGELOG section carries the
 # tag's version and CHECKSUMS is regenerated. Taking the working tree as-is would tie this test to
 # whatever the CHANGELOG says today — an open `[Unreleased]` (every PR adds one) or a stale
@@ -656,7 +662,7 @@ echo "-- F07: a stable release stops when CI cannot be verified (gh / API / runs
 # A release repo built from this kit: main + a bare origin, in sync. gh is a shim answering with
 # check-runs as TSV (name, status, conclusion, id). Nothing is tagged: only `preflight` runs.
 F07="$(mktemp -d)"; F07S="$F07/shims"; mkdir -p "$F07S" "$F07/kit"
-if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$F07/kit"/; else cp -R "$KIT_SRC"/. "$F07/kit"/; fi
+vendor_kit "$F07/kit"
 ( cd "$F07/kit" && git init -q -b main 2>/dev/null || { git init -q && git checkout -q -b main; }
   git add -A && bash scan.sh checksums >/dev/null 2>&1 && git add -A \
   && git -c user.email=e2e@test -c user.name=e2e commit -qm kit \
@@ -796,7 +802,7 @@ rm -rf "$F25K" "$F25C" "$F25K2" "$F08K" "$F08E"
 F25I="$(mktemp -d)"
 # shellcheck disable=SC2016  # the config line is a literal: its ${...} is for scan.sh to expand
 ( cd "$F25I" && git init -q && mkdir -p tools/security-audit-kit \
-  && cp -R "$KIT_SRC"/. tools/security-audit-kit/ && rm -rf tools/security-audit-kit/.git \
+  && vendor_kit tools/security-audit-kit \
   && printf ': "${SAST_PATHS:=src}"\n' > .security-audit.conf ) >/dev/null 2>&1
 F25OUT="$(cd "$F25I" && bash tools/security-audit-kit/install.sh 2>&1 || true)"
 # shellcheck disable=SC2016
@@ -1299,7 +1305,7 @@ grep -q 'NOT wired' <($SCAN doctor 2>/dev/null) \
 if have python3; then
   TAH="$(mktemp -d)"
   mkdir -p "$TAH/tools/security-audit-kit"
-  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TAH/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TAH/tools/security-audit-kit"/; fi
+  vendor_kit "$TAH/tools/security-audit-kit"
   ( cd "$TAH" && git init -q && bash tools/security-audit-kit/install.sh --with-agent-hook \
       && bash tools/security-audit-kit/install.sh --with-agent-hook ) >/dev/null 2>&1
   python3 -c "
@@ -1325,7 +1331,7 @@ else skip ".pre-commit-hooks.yaml (no python3)"; fi
 # install --skills-only: skills present, but core.hooksPath NOT set
 TSO="$(mktemp -d)"
 mkdir -p "$TSO/tools/security-audit-kit"
-if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TSO/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TSO/tools/security-audit-kit"/; fi
+vendor_kit "$TSO/tools/security-audit-kit"
 ( cd "$TSO" && git init -q && bash tools/security-audit-kit/install.sh --skills-only ) >/dev/null 2>&1
 [ -f "$TSO/.claude/skills/sec-triage/SKILL.md" ] && ok "--skills-only: skills installed" || no "--skills-only: skills missing"
 [ -z "$(git -C "$TSO" config core.hooksPath 2>/dev/null || true)" ] && ok "--skills-only: core.hooksPath NOT set" || no "--skills-only: hooksPath should be unset"
@@ -1334,7 +1340,7 @@ rm -rf "$TSO"
 echo "-- F10: install keeps the hooks a repo already has, says so, and can be undone --"
 # f10repo <dir>: a repo with the kit vendored and one commit.
 f10repo(){ mkdir -p "$1/tools/security-audit-kit"
-  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$1/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$1/tools/security-audit-kit"/; fi
+  vendor_kit "$1/tools/security-audit-kit"
   ( cd "$1" && git init -q && git -c user.email=e2e@test -c user.name=e2e commit -q --allow-empty -m init ); }
 f10hook(){ printf '#!/bin/sh\necho "%s $*" >> "%s"\ncat >> "%s" 2>/dev/null\nexit %s\n' "$2" "$3" "$3" "${4:-0}" > "$1"; chmod +x "$1"; }
 f10commit(){ (cd "$1" && echo "$2" > "f$2.txt" && git add "f$2.txt" && SKIP_SECURITY=1 git -c user.email=e2e@test -c user.name=e2e commit -qm "c$2") >/dev/null 2>&1; }
@@ -1388,11 +1394,11 @@ I10="$(cd "$T10" && bash tools/security-audit-kit/install.sh 2>&1)"; f10commit "
 grep -qi 'pre-commit framework' <<<"$I10" && grep -q -- '--skills-only' <<<"$I10" && grep -q '^framework' "$M10" \
   && ok "F10: a pre-commit framework hook keeps running; the --skills-only alternative is named" || no "F10: pre-commit framework handling"
 rm -rf "$T10"
-# (d) a fresh repo: no question, no chain — the kit's hooks dir directly (as before)
+# (d) a fresh repo: no question; the wrappers in the git dir (N1: never a hooksPath into the tree)
 T10="$(mktemp -d)"; f10repo "$T10"
 I10="$(cd "$T10" && bash tools/security-audit-kit/install.sh </dev/null 2>&1)"; I10RC=$?
-[ "$I10RC" -eq 0 ] && [ "$(git -C "$T10" config core.hooksPath)" = "tools/security-audit-kit/hooks" ] \
-  && ok "F10: a fresh repo installs without a question, hooksPath -> the kit's hooks" || no "F10: fresh install (rc=$I10RC): $(git -C "$T10" config core.hooksPath)"
+[ "$I10RC" -eq 0 ] && case "$(git -C "$T10" config core.hooksPath)" in */security-audit-hooks) true ;; *) false ;; esac \
+  && ok "F10: a fresh repo installs without a question, hooksPath -> the git dir's wrappers" || no "F10: fresh install (rc=$I10RC): $(git -C "$T10" config core.hooksPath)"
 (cd "$T10" && bash tools/security-audit-kit/install.sh --uninstall) >/dev/null 2>&1
 [ -z "$(git -C "$T10" config core.hooksPath || true)" ] && [ ! -d "$T10/.claude/skills/sec-audit" ] \
   && ok "F10: uninstall of a fresh install leaves no hooksPath and no kit skills" || no "F10: fresh uninstall left state"
@@ -1600,7 +1606,7 @@ else skip "F43a: Codex install (no codex CLI)"; fi
 # install, identical to this kit's template, or identical to a RELEASED template (lib/released-skills.sums,
 # so a copy from an older kit is recognised even though this kit's template changed since).
 TNS="$(mktemp -d)"; mkdir -p "$TNS/tools/security-audit-kit"
-if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$TNS/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$TNS/tools/security-audit-kit"/; fi
+vendor_kit "$TNS/tools/security-audit-kit"
 ( cd "$TNS" && git init -q && bash tools/security-audit-kit/install.sh ) >/dev/null 2>&1
 rm -f "$TNS/.git/security-audit-install.state"                       # an install from before the record
 # sec-audit: a copy an OLDER kit installed (its template is in RELEASED.sums, not this kit's)
@@ -1624,7 +1630,7 @@ rm -rf "$TNS"
 # used to delete (and overwrite) through that link, removing the copy other agents read.
 for R18M in --no-skills "" --uninstall; do
   R18T="$(mktemp -d)"; git -C "$R18T" init -q; mkdir -p "$R18T/tools" "$R18T/.agents/skills" "$R18T/.claude/skills"
-  if have rsync; then rsync -a --exclude '.git' --exclude 'docs/security' "$KIT_SRC"/ "$R18T/tools/security-audit-kit"/; else cp -R "$KIT_SRC"/. "$R18T/tools/security-audit-kit"/; fi
+  vendor_kit "$R18T/tools/security-audit-kit"
   for s in $R02D; do
     mkdir -p "$R18T/.agents/skills/$s"; cp "$KIT_SRC/skills/$s/SKILL.md" "$R18T/.agents/skills/$s/"
     ln -s "../../.agents/skills/$s" "$R18T/.claude/skills/$s"
@@ -1703,8 +1709,7 @@ BIG="$(mktemp -d)"
   cd "$BIG" || exit 1
   git init -q .
   mkdir -p tools/security-audit-kit .github/workflows zz_filler
-  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
-  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  vendor_kit tools/security-audit-kit
   printf '[project]\nname = "big"\nversion = "0.1.0"\n' > pyproject.toml
   printf 'x = 1\n' > app.py
   # package.json with NO lockfile: enough for stack detection, and js-deps then skips it instead of
@@ -1746,8 +1751,7 @@ PYR="$(mktemp -d)"
   cd "$PYR" || exit 1
   git init -q .
   mkdir -p tools/security-audit-kit
-  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
-  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  vendor_kit tools/security-audit-kit
   printf '[project]\nname = "noenv"\nversion = "0.1.0"\n' > pyproject.toml
   git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
   git -c user.email=e2e@test -c user.name=e2e commit -qm py >/dev/null 2>&1
@@ -1872,8 +1876,7 @@ F02="$(mktemp -d)"; F02S="$F02/shims"; mkdir -p "$F02S"
   cd "$F02" && mkdir repo && cd repo || exit 1
   git init -q .
   mkdir -p tools/security-audit-kit infra
-  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
-  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  vendor_kit tools/security-audit-kit
   printf 'print(1)\n' > app.py
   git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
   git -c user.email=e2e@test -c user.name=e2e commit -qm f02 >/dev/null 2>&1
@@ -2283,8 +2286,7 @@ JSR="$(mktemp -d)"
   cd "$JSR" || exit 1
   git init -q .
   mkdir -p tools/security-audit-kit static/assets/plugins/fullcalendar
-  if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ tools/security-audit-kit/
-  else cp -R "$KIT_SRC"/. tools/security-audit-kit/; rm -rf tools/security-audit-kit/.git; fi
+  vendor_kit tools/security-audit-kit
   printf '{"name":"fullcalendar-vendored","version":"1.0.0"}\n' > static/assets/plugins/fullcalendar/package.json
   git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
   git -c user.email=e2e@test -c user.name=e2e commit -qm js >/dev/null 2>&1

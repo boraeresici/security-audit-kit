@@ -22,7 +22,7 @@ rules. `scan.sh doctor` prints the resolved set. For customization, one file per
    # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: audit a venv outside the repo (see below)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # leave unset = stack-auto; set to override
    ```
-3. `scan.sh` sources it automatically.
+3. `scan.sh` reads it automatically, as data (see below).
 
 **`js-deps` picks its directory by lockfile, not by luck.** Every tracked `package.json` is
 considered, minus vendor paths (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
@@ -46,14 +46,20 @@ there is neither an environment nor a readable manifest — a bare `pyproject.to
 dimension reports **`indeterminate`** (exit code 3): it does not block, it does not count as a pass,
 and the run says so out loud. `summary.json` records it as `"status": "indeterminate"`.
 
-**The config is code.** `.security-audit.conf` is sourced by bash, so it runs with your privileges
-on every scan and every hook. Review a change to it like a change to a script. The kit checks it
-on every run and says what it does beyond setting values:
-- a syntax error;
-- a setting `scan.sh` does not read (a typo would otherwise be ignored silently);
-- a line that runs a command;
-- a command substitution in a value;
-- a value of the wrong type (a non-integer wait, `SCAN_OFFLINE=yes`).
+**The config is data, never code** (since 1.22). `.security-audit.conf` is committed, so on a
+checked-out branch it belongs to whoever wrote that branch. `scan.sh` therefore parses it line by
+line and never sources it. Accepted lines: `: "${NAME:=value}"`, `: ${NAME:=value}`, `NAME=value`,
+`NAME="value"`, `NAME='value'`, each optionally with `export` and a trailing `# comment`. Values are
+literal: no `$` expansion, no command substitution. The environment always wins over the file, for
+every form. A line that is anything else is **not applied**, and the kit names it with its line:
+- a line that runs a command, or a setting followed by a command (`SARIF=0 touch x`, `X=1 && cmd`);
+- a command substitution or a `$` expansion in a value;
+- a setting `scan.sh` does not read (a typo, or a name such as `PATH`);
+- `SKIP_SECURITY`, which is read from the environment only;
+- a value of the wrong type (a non-integer wait, `SCAN_OFFLINE=yes`) is applied, and named.
+
+Upgrading from 1.21 or older: a config that used `$VAR` in a value, or a plain `NAME=value` that
+was meant to override the environment, now behaves differently; `scan.sh doctor` lists such lines.
 
 These are warnings, never a block. They appear in the closing summary as `── config: N warning(s)`,
 in `summary.json` under `config.warnings`, and in full in `scan.sh doctor` / `scan.sh verify`.

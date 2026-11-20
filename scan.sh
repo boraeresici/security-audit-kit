@@ -51,12 +51,84 @@ cd "$ROOT" || exit 1
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # Per-project config (committed to the repo, shared with the team). Precedence is
-# env > conf > default: the conf only affects variables you did NOT set; env always wins.
+# env > conf > default: the conf only sets variables you did NOT set; env always wins.
+#
+# The conf is DATA, never code: each line is parsed as one setting and applied with printf -v; the
+# file is never sourced. A committed file belongs to whoever authored the checked-out branch, so a
+# sourced conf ran a PR author's commands on every scan and hook, could `exit 0` before `verify`
+# ran, and could set SKIP_SECURITY for the whole team. A line that is not a plain setting of a name
+# scan.sh reads is NOT applied, and the config check names it with its line number.
+# Accepted lines (comments and blank lines aside):
+#   : "${NAME:=value}"      : ${NAME:=value}      NAME=value   NAME="value"   NAME='value'
+#   export NAME=...         (any of the above may end in "  # comment")
+# A value may not expand anything: no $, no backquote (in single quotes $ is a literal).
 CONF="${SECURITY_AUDIT_CONF:-$ROOT/.security-audit.conf}"
-if [ -f "$CONF" ]; then
-  # shellcheck disable=SC1090
-  . "$CONF"
-fi
+CONFIG_ENV_KNOBS="SARIF REPORT BASE_REF"   # per-run knobs that also work from the config
+CONFIG_ENV_ONLY="SKIP_SECURITY"            # read from the environment only, never from the file
+CONF_LOAD_WARNINGS=""
+conf_warn(){ CONF_LOAD_WARNINGS="${CONF_LOAD_WARNINGS:+$CONF_LOAD_WARNINGS
+}$1"; }
+conf_load(){
+  [ -f "$CONF" ] || return 0
+  local known raw line n=0 name val vq bare word
+  known=" $(grep -oE '\$\{[A-Z][A-Z0-9_]*:=|^#? *[A-Z][A-Z0-9_]*=' "$KIT_DIR/security-audit.conf.example" 2>/dev/null \
+            | grep -oE '[A-Z][A-Z0-9_]*' | sort -u | tr '\n' ' ')$CONFIG_ENV_KNOBS "
+  local sq="'" cmt='([[:space:]]+#.*)?'
+  local re_colon_q='^:[[:space:]]+"\$\{([A-Za-z_][A-Za-z0-9_]*):=([^"]*)\}"'"$cmt"'$'
+  local re_colon_b='^:[[:space:]]+\$\{([A-Za-z_][A-Za-z0-9_]*):=([^}"'"$sq"'[:space:]]*)\}'"$cmt"'$'
+  local re_dq='^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"'"$cmt"'$'
+  local re_sq='^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)='"$sq"'([^'"$sq"']*)'"$sq$cmt"'$'
+  local re_bare='^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=([^[:space:]"'"$sq"']*)'"$cmt"'$'
+  local re_name='^(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=|^:[[:space:]]+"?\$\{([A-Za-z_][A-Za-z0-9_]*):'
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    n=$((n+1))
+    line="${raw#"${raw%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+    case "$line" in ""|"#"*) continue ;; esac
+    name=""; val=""; vq=0; bare=0
+    if   [[ "$line" =~ $re_colon_q ]]; then name="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"
+    elif [[ "$line" =~ $re_colon_b ]]; then name="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"; bare=1
+    elif [[ "$line" =~ $re_sq ]];      then name="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"; vq=1
+    elif [[ "$line" =~ $re_dq ]];      then name="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
+    elif [[ "$line" =~ $re_bare ]];    then name="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"; bare=1
+    fi
+    if [ -z "$name" ]; then
+      # Not a setting the parser reads. Say what it is: an attempted setting, or a command.
+      if [[ "$line" =~ $re_name ]]; then
+        name="${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
+        case "$line" in
+          *'$('*|*'`'*) conf_warn "line $n: command substitution in $name — not applied (the config is data; it never runs code)" ;;
+          *';'*|*'&'*|*'|'*) conf_warn "line $n: more than one statement on the line (; & |) — not applied: ${line:0:60}" ;;
+          *) conf_warn "line $n: $name is not a plain value (a syntax error, or quoting the parser does not read) — not applied" ;;
+        esac
+      else
+        word="${line%%[[:space:];|&<>]*}"
+        conf_warn "line $n runs a command ($word), not a setting — not applied: ${line:0:60}"
+      fi
+      continue
+    fi
+    if [ "$vq" = 0 ]; then
+      case "$val" in *'$('*|*'`'*) conf_warn "line $n: command substitution in $name — not applied (the config is data; it never runs code)"; continue ;; esac
+      case "$val" in *'$'*) conf_warn "line $n: $name expands a variable (\$) — not applied (values are literal; quote with ' for a literal \$)"; continue ;; esac
+      case "$val" in *'\'*) conf_warn "line $n: $name contains a backslash — not applied"; continue ;; esac
+    fi
+    if [ "$bare" = 1 ]; then
+      case "$val" in *[\;\&\|\<\>\(\)]*) conf_warn "line $n: more than one statement on the line (; & |) — not applied: ${line:0:60}"; continue ;; esac
+    fi
+    case " $CONFIG_ENV_ONLY " in *" $name "*)
+      conf_warn "line $n: $name is never read from the config (it would switch the checks off for everyone on this branch) — not applied; set it in the environment for one run"
+      continue ;;
+    esac
+    case "$known" in *" $name "*) ;; *)
+      conf_warn "line $n: unknown setting $name (a typo? scan.sh does not read it) — not applied"; continue ;;
+    esac
+    # env > conf: a variable set in the environment (even to empty) keeps its value.
+    [ -n "${!name+x}" ] && continue
+    printf -v "$name" '%s' "$val"
+    case "$line" in export[[:space:]]*) export "${name?}" ;; esac
+  done < "$CONF"
+  return 0
+}
+conf_load
 
 # Docker tools — pinned by IMMUTABLE digest (preferred) with a human-readable tag.
 # To bump: set both the *_VER and *_DIGEST (or clear the digest to fall back to the tag).
@@ -1317,27 +1389,18 @@ kit_pin_check(){
   return 1
 }
 
-# Verify the kit's files against CHECKSUMS: MODIFIED / MISSING listed files, plus EXTRA
-# files under skills/ (a rogue skill dropped into a vendored copy), plus the pin cross-check
-# above. Exit non-zero on any.
+# Verify the kit's files against CHECKSUMS: MODIFIED / MISSING listed files, EXTRA files and links in
+# ANY directory of the kit (an added hooks/post-checkout or lib/json.py is code that runs; the old
+# check looked at skills/ only, by substring), plus the pin cross-check below. Exit non-zero on any.
+# The file comparison is lib/integrity.sh, the same self-contained check install.sh copies into the
+# git dir for the hook wrappers (which also hold it to the manifest recorded at install).
 scan_verify(){
   [ -f "$CHECKSUMS_FILE" ] || { warn verify "no CHECKSUMS manifest (run: scan.sh checksums)"; return 1; }
   have_sha || { warn verify "no sha256 tool (shasum/sha256sum/openssl)"; return 1; }
-  local issues; issues="$(mktemp)"
-  local want path got
-  while read -r want path; do
-    [ -z "${want:-}" ] && continue
-    if [ ! -f "$KIT_DIR/$path" ]; then printf 'MISSING   %s\n' "$path" >> "$issues"; continue; fi
-    got="$(cd "$KIT_DIR" && sha256_of "$path")"
-    [ "$got" = "$want" ] || printf 'MODIFIED  %s\n' "$path" >> "$issues"
-  done < "$CHECKSUMS_FILE"
-  if [ -d "$KIT_DIR/skills" ]; then
-    while IFS= read -r f; do
-      grep -qF "  $f" "$CHECKSUMS_FILE" || printf 'EXTRA     %s\n' "$f" >> "$issues"
-    done <<EOF
-$(cd "$KIT_DIR" && find skills -type f)
-EOF
-  fi
+  [ -f "$KIT_DIR/lib/integrity.sh" ] || { printf '\033[31m[scan:verify] integrity FAILED:\033[0m\nMISSING   lib/integrity.sh\n'; return 1; }
+  local issues irc; issues="$(mktemp)"
+  bash "$KIT_DIR/lib/integrity.sh" "$KIT_DIR" >> "$issues" 2>&1; irc=$?
+  [ "$irc" = 2 ] && { cat "$issues"; rm -f "$issues"; warn verify "integrity could not be checked"; return 1; }
   kit_pin_check >> "$issues" || true
   if [ -s "$issues" ]; then
     printf '\033[31m[scan:verify] integrity FAILED:\033[0m\n'; cat "$issues"; rm -f "$issues"; return 1
@@ -1690,37 +1753,14 @@ git_freshness_line(){   # <freshness> [doctor] -> the warning, or nothing when n
 }
 
 # ---- config check (F24) ----------------------------------------------------------------------
-# .security-audit.conf is SOURCED: it is bash, and runs with your privileges on every scan and hook.
-# Nothing here refuses to load it (fail-open, as the gate is). It says out loud what the file does
-# beyond setting values: a syntax error, a setting scan.sh does not read (a typo is otherwise silently
-# ignored), a line that runs a command, a command substitution in a value, a value of the wrong type.
-# One line per warning, on stdout. Known names come from security-audit.conf.example, plus the
-# per-run env knobs that also work from the config.
-CONFIG_ENV_KNOBS="SARIF REPORT BASE_REF SKIP_SECURITY"
+# .security-audit.conf is parsed as data (conf_load, top of this file): a line that is not a plain
+# setting of a known name was NOT applied, and conf_load recorded why. This says it out loud, one
+# line per warning on stdout, plus values of the wrong type. Nothing here refuses to scan (fail-open,
+# as the gate is): a rejected line just never takes effect.
 config_check(){
   [ -f "$CONF" ] || return 0
-  local known err v val
-  known=" $(grep -oE '\$\{[A-Z][A-Z0-9_]*:=|^#? *[A-Z][A-Z0-9_]*=' "$KIT_DIR/security-audit.conf.example" 2>/dev/null \
-            | grep -oE '[A-Z][A-Z0-9_]*' | sort -u | tr '\n' ' ')$CONFIG_ENV_KNOBS "
-  err="$(bash -n "$CONF" 2>&1 | head -1)"
-  [ -n "$err" ] && printf 'syntax error: %s\n' "${err#"$CONF": }"
-  awk -v known="$known" '
-    { line = $0; sub(/^[ \t]+/, "", line) }
-    line == "" || line ~ /^#/ { next }
-    {
-      name = ""
-      if (match(line, /^:[ \t]+"?\$\{[A-Za-z_][A-Za-z0-9_]*:?[=-]/)) {
-        name = substr(line, RSTART, RLENGTH); sub(/^:[ \t]+"?\$\{/, "", name); sub(/:?[=-]$/, "", name)
-      } else if (match(line, /^(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*=/)) {
-        name = substr(line, RSTART, RLENGTH); sub(/^export[ \t]+/, "", name); sub(/=$/, "", name)
-      } else {
-        split(line, w, /[ \t;|&<>]+/)
-        printf "line %d runs a command (%s), not a setting: %s\n", NR, w[1], substr(line, 1, 60); next
-      }
-      if (index(known, " " name " ") == 0) printf "line %d: unknown setting %s (a typo? scan.sh does not read it)\n", NR, name
-      if (line ~ /\$\(|`/) printf "line %d: command substitution in %s runs code when the config is loaded\n", NR, name
-      else if (line ~ /;[ \t]*[A-Za-z]/) printf "line %d: more than one statement on the line (;)\n", NR
-    }' "$CONF"
+  local v val
+  [ -n "$CONF_LOAD_WARNINGS" ] && printf '%s\n' "$CONF_LOAD_WARNINGS"
   # Types, on the values in force (env > config > default).
   for v in SCAN_LOCK_WAIT SCAN_LOCK_STALE_MIN SCAN_LOCK_HEARTBEAT_SEC SCAN_RUNS_KEEP_DAYS PKGCHECK_CACHE_TTL_MIN TRIVY_DB_MAX_AGE_H; do
     val="${!v:-}"; [ -z "$val" ] && continue
@@ -1737,7 +1777,7 @@ config_report(){   # the full list, for doctor / verify
   [ -f "$CONF" ] || return 0
   local n=0; [ -n "$CONFIG_WARNINGS" ] && n="$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')"
   if [ "$n" = 0 ]; then printf '  ok  config %s: settings only, all known\n' "${CONF#"$ROOT"/}"; return 0; fi
-  printf '  !!  config %s: %s warning(s) — it is bash, sourced on every scan and hook:\n' "${CONF#"$ROOT"/}" "$n"
+  printf '  !!  config %s: %s warning(s) — a line named here was NOT applied (the config is data, never run):\n' "${CONF#"$ROOT"/}" "$n"
   printf '%s\n' "$CONFIG_WARNINGS" | sed 's/^/        /'
 }
 
@@ -2096,7 +2136,7 @@ GF_WARN="$(git_freshness_line "$GIT_FRESH")"
 HP_WARN="$(hookspath_check)"
 [ -n "$HP_WARN" ] && printf '\033[33m── %s\033[0m\n' "$HP_WARN"
 if [ -n "$CONFIG_WARNINGS" ]; then
-  printf '\033[33m── config: %s warning(s) in %s (it is bash, run on every scan) — scan.sh doctor lists them\033[0m\n' \
+  printf '\033[33m── config: %s warning(s) in %s (lines not applied or wrong values) — scan.sh doctor lists them\033[0m\n' \
     "$(printf '%s\n' "$CONFIG_WARNINGS" | wc -l | tr -d ' ')" "${CONF#"$ROOT"/}"
 fi
 # The usual reason for a hole in coverage is the toolchain, not the repo: name the cause once.

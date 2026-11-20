@@ -121,7 +121,7 @@ bash bootstrap.sh v1.21.0 --expect=<sha>  # pini dayat: ref baska commit'e cozul
 > vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.21.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
-kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
+`.git/security-audit-hooks/` icindeki sarmalayicilara isaretler (once butunluk, sonra kitin hook'u) -> `sec-triage` + `sec-sast-deep` skill'lerini
 `.claude/skills/`'e kopyalar. Idempotent, tekrar kosulabilir.
 
 ## Skill'leri Claude Code plugin'i olarak kur
@@ -255,8 +255,11 @@ pre-commit install --hook-type pre-push    # sec-all
 `core.hooksPath`, pre-commit framework. Bulduklarini adlariyla yazar ve zincirler: `core.hooksPath`,
 `.git/security-audit-hooks/` icinde uretilen sarmalayicilari gosterir; bunlar once kitin hook'unu,
 sonra repo'nun kendi hook'unu ayni argumanlar ve stdin ile calistirir. Senin hook'un basarisiz
-olursa commit yine bloklanir. Hic hook'u olmayan repo, soru sormadan dogrudan kitin hooks dizinini
-alir.
+olursa commit yine bloklanir. Hic hook'u olmayan repo da soru sormadan ayni sarmalayicilari alir:
+hook'lar asla vendor edilmis agactan calismaz (checkout edilen bir branch oraya hook ekleyebilir ya da
+birini degistirebilir). Her sarmalayici once kiti kurulumda kaydedilen manifest'e karsi kontrol eder,
+farkliysa calistirmaz; incelenmis bir kit guncellemesinden sonra kabul etmek icin `install.sh`'i
+yeniden kostur (bootstrap bunu yapar).
 
 **Worktree'ler** tek bir git config'i paylasir, yani bir `core.hooksPath` hepsine gecerlidir. Var
 olmayan bir dizini gosteren hooksPath, git'in **hicbir hook'u sessizce calistirmamasina** yol acar:
@@ -823,7 +826,7 @@ secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
    # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: repo disindaki bir venv'i denetle (asagi bak)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # set degil = stack-auto; override icin set et
    ```
-3. `scan.sh` bunu otomatik source eder.
+3. `scan.sh` bunu otomatik okur (veri olarak; asla calistirmaz).
 
 **`js-deps` dizinini sansa gore degil, lockfile'a gore secer.** Tracked her `package.json`
 degerlendirilir; vendor yollari (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
@@ -847,9 +850,11 @@ de okunabilir manifest varsa — ornegin yalin bir `pyproject.toml` — boyut **
 kodu 3) doner: bloklamaz, pass sayilmaz ve kosu bunu yuksek sesle soyler. `summary.json` bunu
 `"status": "indeterminate"` olarak kaydeder.
 
-**Config bir koddur.** `.security-audit.conf` bash tarafindan source edilir; yani her taramada ve
-her hook'ta senin yetkilerinle calisir. Bu dosyadaki bir degisikligi bir script degisikligi gibi
-incele. Kit onu her kosuda kontrol eder ve deger atamanin otesinde ne yaptigini soyler:
+**Config veridir, kod degil** (1.22'den beri). `.security-audit.conf` commit'lenir; yani checkout
+edilmis bir branch'te o branch'i yazanindir. Bu yuzden `scan.sh` onu satir satir ayristirir, asla
+source etmez: degerler literaldir (`$` genisletmesi, komut ikamesi yok), ortam degiskeni her zaman
+dosyayi ezer, `SKIP_SECURITY` yalnizca ortamdan okunur. Asagidakilerden biri olan satir
+**uygulanmaz** ve satir numarasiyla soylenir:
 - sozdizimi hatasi;
 - `scan.sh`'in okumadigi bir ayar (yazim hatasi aksi halde sessizce yok sayilirdi);
 - komut calistiran bir satir;
@@ -893,7 +898,8 @@ repo admin'inin secimidir, `plugin` istege baglidir (RELEASING.md → *Branch pr
 calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, tedarik-zinciri
 rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md). Kitin kendisinin neyi okudugu, yazdigi ve calistirdigi, hangi
 yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kisaca:
-- `.security-audit.conf` bash'tir, her taramada source edilir ve her kosuda kontrol edilir.
+- `.security-audit.conf` veridir: ayristirilir, asla source edilmez; duz ayar olmayan satir uygulanmaz ve adiyla soylenir.
+- Git hook'lari vendor edilmis agactan degil `.git/` icinden calisir ve kurulumdakinden farkli bir kiti calistirmaz.
 - Docker tarayicilari repoyu salt-okunur okur.
 - Skill'ler repodaki metni kanit sayar, asla talimat degil.
 - Kit taranan projeyi asla build etmez ya da calistirmaz (tek istisna, istege bagli rust call analysis).

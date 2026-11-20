@@ -2,7 +2,9 @@
 #
 # Usage: copy this file to the repo ROOT as `.security-audit.conf`,
 # tune the values for your project, and COMMIT it (team-shared).
-# scan.sh sources it automatically.
+# scan.sh reads it automatically, as DATA: it is parsed, never run (no commands, no $ expansion;
+# a line that is not a plain setting is not applied, and `scan.sh doctor` names it).
+# SKIP_SECURITY is never read from here: it would switch the checks off for everyone on the branch.
 #
 # Precedence: env > this file > scan.sh default.  Thanks to the `:=` form you can
 # override for a single run via env:  SAST_PATHS="lib" bash scan.sh sast
