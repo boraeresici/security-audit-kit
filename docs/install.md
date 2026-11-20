@@ -1,6 +1,6 @@
 # Install, update and platforms
 
-Other install paths, making the skills visible, the pre-commit framework, updates, reachability, platform notes and requirements. Start with the [README](../README.md).
+Other install paths, making the skills visible, the skills in Codex, the Skills CLI, the pre-commit framework, updates, reachability, platform notes and requirements. Start with the [README](../README.md).
 
 ## Other ways to install
 
@@ -61,6 +61,58 @@ that repo's `core.hooksPath`, `.security-audit.conf` carries that repo's SAST pa
 findings land in that repo's `docs/security/scan-findings/`. A backend and a frontend in
 two repos need two installs — there is no cross-repo mode.
 
+## The skills in Codex
+
+Codex reads the same plugin, so the skills install there with no separate package. From a
+terminal:
+
+```bash
+codex plugin marketplace add boraeresici/security-audit-kit --ref v1.21.0
+codex plugin add security-audit-kit@security-audit-kit
+```
+
+`--ref` pins a release; without it Codex follows the default branch. A local checkout works in
+place of `boraeresici/security-audit-kit`. Start a new Codex session afterwards. The skills load as
+`security-audit-kit:sec-triage`, `security-audit-kit:sec-audit`, and so on, the same names as in
+Claude Code. Undo: `codex plugin remove security-audit-kit@security-audit-kit`, then
+`codex plugin marketplace remove security-audit-kit`.
+
+The scanner contract is the same as with the Claude Code plugin: the skills use the repo's vendored
+scanner and never download one, so vendor it too (`bash bootstrap.sh <tag> --no-skills`).
+
+Codex reads `.codex-plugin/plugin.json`, and also finds the plugin's edit-check hook
+(`hooks/hooks.json`); Codex runs a plugin hook only after you review and trust it (`/hooks`).
+
+What is not there yet: `install.sh --with-agent-hook` wires the package pre-install check for
+Claude Code only, and the kit is not listed in the OpenAI plugin directory yet. The package for it is
+built by `scripts/build_codex_zip.py` (the manifest, the icon and the skills; no hooks, which that
+directory refuses); submitting it is the maintainer's step in [RELEASING.md](../RELEASING.md). Codex
+copies the whole repo into its plugin cache when installed from the repo, not just the skills, until
+the plugin moves into its own folder.
+
+## The skills with the Skills CLI
+
+The [Skills CLI](https://github.com/vercel-labs/skills) (`npx skills`) installs `SKILL.md` folders
+for many agents at once, Claude Code and Codex among them. It is a third-party tool, not part of
+the kit. Tried with `skills@1.7.4`:
+
+```bash
+DISABLE_TELEMETRY=1 npx -y skills@1.7.4 add boraeresici/security-audit-kit#v1.21.0 -s '*' -a claude-code -a codex
+```
+
+- **Pin both.** `#v1.21.0` pins the skills; `skills-lock.json` records that ref and a hash per
+  skill. `skills@1.7.4` pins the CLI: `npx skills` alone runs its newest release, which may be days
+  old.
+- **Telemetry is on by default.** The CLI reports installs, with the repo and skill names for a
+  public GitHub source. `DISABLE_TELEMETRY=1` (or `DO_NOT_TRACK=1`) turns it off; see
+  [data flow](data-flow.md).
+- **Where the files go.** Each skill is copied to `.agents/skills/<name>/` and linked from
+  `.claude/skills/<name>`. With `-a '*'` it also creates folders for every agent it knows, including
+  an `agent/skills/` folder at the repo root; name the agents you use instead.
+- **Only the skills.** The scanner is not installed, and the skills say so when it is missing, as
+  with the plugin. Vendor it with `bash bootstrap.sh <tag> --no-skills`. `install.sh` leaves skill
+  folders that are links alone in every mode: it neither overwrites nor removes them.
+
 ## Using the pre-commit framework (alternative to the kit's own hooks)
 
 Already on [pre-commit](https://pre-commit.com)? Add the kit to your `.pre-commit-config.yaml`
@@ -89,7 +141,8 @@ Why this shape (consistent with the kit's own ethos):
 - **Pinning is required in practice.** A moving ref (`main`) breaks the "no drift vs.
   CI" promise; bootstrap warns if you don't pass a tag/SHA. It writes a `.kit-version`
   (ref + resolved SHA) you can commit so the whole team shares one pinned version. Pass
-  `--expect=<sha>` — the **commit** the tag resolves to, not the annotated tag's own object id
+  `--expect=<sha>` — the **full** commit id the tag resolves to (40 hex characters; a prefix is
+  refused since 1.22), not the annotated tag's own object id
   (`git rev-parse <tag>^{commit}`) — to **enforce** the pin (refuse if the ref resolves elsewhere), and a
   re-vendor of an already-pinned ref that now points to a different commit is refused
   (tag-repoint guard) unless you pass `--allow-ref-change`.
@@ -171,8 +224,8 @@ The kit is bash-first. Linux and macOS are native; on Windows the supported path
 | Environment | Status | Notes |
 |---|---|---|
 | Linux | ✓ full | native |
-| macOS | ✓ full | native (bash 3.2 — the scripts stay POSIX-ish on purpose) |
-| **WSL2** | ✓ full | run everything *inside* the WSL filesystem; docker dimensions work through Docker Desktop's WSL integration |
+| macOS | ✓ full | native (bash 3.2 — the scripts stay POSIX-ish on purpose); CI runs the offline e2e on `macos-latest` |
+| **WSL2** | Expected, **not verified** | should work *inside* the WSL filesystem, with docker dimensions through Docker Desktop's WSL integration; no WSL2 run has been recorded yet (see below) |
 | Git Bash / MSYS | Partial | `uvx`/`pipx` dimensions and the git hooks work; **docker** dimensions (secret, container, sbom, osv) are unreliable — MSYS rewrites the `/repo` mount into a Windows path before docker sees it. Prefix `MSYS_NO_PATHCONV=1`, or move to WSL2 |
 | PowerShell / cmd | ✗ | not supported — no bash |
 
@@ -194,8 +247,14 @@ debugged. Two WSL2 habits that matter:
 - **docker** — gitleaks / trivy / syft / osv-scanner (pinned images, no install)
 - **uvx or pipx** — semgrep / checkov / pip-audit / guarddog / zizmor (no install, on-demand)
 - **pnpm / yarn / npm** — JS dep audit (whichever the project uses)
-- **python3** *(optional)* — `evidence.json`, `kit.sarif` and the HTML report; stdlib only, no
-  packages to install. Without it the scan runs exactly as before, minus those artifacts.
+- **python3** *(optional)*, **3.9 or newer** (macOS's own `/usr/bin/python3` is 3.9) —
+  `evidence.json`, `kit.sarif` and the HTML report; stdlib only, no packages to install. Without it
+  the scan runs exactly as before, minus those artifacts. CI tests 3.9 and 3.13.
+
+**Paths.** File and folder names with spaces or non-ASCII characters (`güvenlik modülü/`) are
+scanned like any other. The lists you write in `.security-audit.conf` (`SAST_PATHS`, `JS_DIRS`,
+`DEP_ALLOWLISTS`) are space-separated, so a path in them cannot contain a space; name a parent
+folder instead.
 
 You don't need to permanently install any tool. Every version is pinned — Python tools
 (semgrep/checkov/pip-audit) by version, docker tools (gitleaks/trivy/syft) by **immutable

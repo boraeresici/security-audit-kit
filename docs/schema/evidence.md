@@ -83,7 +83,7 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 | `file` | string | Repo-relative path. |
 | `line` | int\|null | 1-indexed start line; `null` when the tool reports no location. |
 | `message` | string | The tool's message, single-line, trimmed. |
-| `severity` | enum | Normalized: `critical` · `high` · `medium` · `low` · `info`. |
+| `severity` | enum | Normalized: `critical` · `high` · `medium` · `low` · `unknown` · `info`. `unknown`: the tool gave none (pip-audit), never guessed or folded into `info`. |
 | `severity_source` | string | The tool's own value, verbatim, e.g. `semgrep:level=error`, `trivy:security-severity=8.8`. |
 | `cvss` | float\|null | Passthrough **only** where the tool supplied a CVSS-derived score. |
 | `decision` | enum\|null | `real` · `fp` · `uncertain` · `suppressed` · `null` (not yet judged). Written by the judgment layer, not the scan. |
@@ -116,10 +116,40 @@ Numeric first, then the SARIF level, then a tool-specific default:
 
 ### Dimensions without per-finding rows (known gap)
 
-`checkov` (iac), `guarddog`, `pip-audit` (py-deps) and the JS audits do not emit SARIF in the kit
-today, so they appear in `scan.dimensions` with a status but contribute no `findings`
-entries. Their findings still reach a human through `raw-<date>.log` and triage. Closing this gap
-means adding SARIF output per tool — tracked separately, not part of this schema.
+pnpm and yarn audits write no per-finding output the kit reads yet, so they appear in `scan.dimensions` with a status but contribute no `findings`
+entries; `warnings` names each one that had findings, and the report header says so. Their findings
+reach a human through `raw-<date>.log` and triage. The per-unit picture, and the adapters that close
+this, are in the [evidence matrix](../evidence-matrix.md).
+
+**Dependency rows from native JSON (F16b).** pip-audit writes JSON, not SARIF (`pip-audit.native.json`,
+listed in the run's `artifacts` like a SARIF file); `lib/native.py` turns it into rows with
+`file`/`line` null and three more fields: `package` (`{ecosystem, name, version}`), `aliases` (the
+advisory's other ids) and `fixed_in`. The `id` hashes dimension, advisory and package name, so the same
+advisory in two packages is two findings, and a version change keeps the id.
+
+**checkov rows (F16b).** With `SARIF=1` checkov also writes `checkov.native.json`; each failed check
+is a row with the repo-relative `file` and first `line` of the resource, plus `resource` and
+`guideline`. A check skipped with `#checkov:skip=<id>:<reason>` is a row with `decision: "suppressed"`
+and the reason in `evidence.note`. checkov gives no severity without a platform key: `unknown`.
+
+**guarddog rows (F16b).** With `SARIF=1` each `guarddog <eco> verify <manifest>` run is kept in
+`guarddog.native.json` with the packages the manifest asked for. Each package and fired rule is a row,
+except `capability-*` rules (what a package can do, which fire on `requests`); `file` is the
+manifest, `package` names it, `detail` holds guarddog's first location or message, and the severity is
+guarddog's own from its `risks`, else `unknown`. A requested package guarddog returned nothing for,
+and a rule that did not run, are in `warnings`.
+
+**npm audit rows (F16b).** With `SARIF=1` each JS project audited with npm keeps its
+`npm audit --json` report (auditReportVersion 2) in `npm-audit.native.json`. Each package and
+advisory is a row: `rule_id` is the GHSA id (else `npm-<source>`), `file` the project's
+`package-lock.json`, the severity npm's own (`moderate` is `medium`), `cvss` the advisory's score,
+which comes from the GitHub advisory, plus `affected`, `direct` and `fixed_in`. A package listed only
+because it depends on a vulnerable one is not a row. pnpm and yarn reports are not read yet.
+
+A finding the tool itself marked as suppressed in its SARIF (semgrep's `# nosemgrep`, written with
+`suppressions: [{kind: inSource}]`) is recorded with `decision: "suppressed"` and the tool's note, so
+it is on record and not counted as reported. A suppression whose `status` is `rejected` or
+`underReview` leaves the finding live.
 
 ## The judgment half — how decisions get in
 
@@ -134,6 +164,22 @@ asked to also emit JSON — two sources of truth drift, and the markdown is the 
 - **Section headings set the context.** `## Round N — sec-sast-deep` sets the origin skill; a
   `### Suppressed` heading marks everything under it `decision: suppressed`; a `### Kit issues`
   section is skipped entirely — those are bugs in the kit, not findings about your repo.
+- **The table is untrusted input.** A model that read the scanned repo writes it, and its location
+  ends up in `kit.sarif`, which Code Scanning ingests. A row is dropped, with a warning that quotes
+  it escaped, unless its location is a repo-relative path of at most 1024 characters: no leading
+  `/` or `~`, no colon (a URI scheme or drive letter), no backslash; no empty, `.` or `..` segment,
+  and none that starts with a space or ends with a dot or a space; no control, format, separator,
+  private-use or unassigned character, no space other than U+0020, and nothing that compatibility
+  normalization would turn into something else (fullwidth `．．`). A leading `./` is removed first;
+  `path:line:column` keeps the line. A line, if given, is 1 to 10,000,000. The first 20 dropped
+  rows are named, the rest counted. `kit.sarif` percent-encodes the path, so `%`, `?`, `#` and
+  spaces in a file name stay part of the name.
+- **Free-text cells** lose control characters, bidirectional controls, zero-width spaces and tag
+  characters (joiners that belong to the text, as in emoji or Persian, stay) and are cut at 2000
+  characters; the severity cell at 40. A confidence outside `[0, 1]`, `nan` and `inf` included,
+  becomes `null` with a warning. A `[text](url)` link in the message reaches `kit.sarif` broken
+  apart. A findings file over 2 MiB, or one that is not UTF-8, skips the judgment layer with a
+  warning; a UTF-8 BOM is accepted.
 - **A triage row about a scanner finding fills that finding in** (matched on file + line, with the
   tool name as a tiebreak) rather than becoming a second entry. A deep-pass finding has no scanner
   counterpart, so it becomes a new finding with `dimension: "judgment"` and `tool: "<skill>"`.
@@ -158,8 +204,11 @@ nothing needed changing there — and GitHub's upload step validates the documen
 - **An empty run is never written.** Zero judgment findings usually means no judgment pass ran, not
   that the findings are gone — and an empty upload closes every open kit alert. With nothing to
   report the previous `kit.sarif` is left untouched.
-- Results carry `partialFingerprints.sakFindingId` (the evidence `id`), so re-running a scan updates
-  an alert instead of creating a new one.
+- Results carry `partialFingerprints.sakFindingId` (the evidence `id`). GitHub does not match alerts
+  on it: Code Scanning uses only `primaryLocationLineHash`, which `upload-sarif` computes from the
+  source when the file does not carry one. The kit's id changes when a finding moves to another
+  line (it hashes the line number, F19), so it is a stable key for the kit's own records within one
+  version of the code, not across edits.
 
 ## `report-<date>.html` — the human-readable rendering
 

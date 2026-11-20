@@ -31,6 +31,15 @@ To update an existing ruleset, find its id (`gh api repos/{owner}/{repo}/ruleset
 gh api -X PUT repos/{owner}/{repo}/rulesets/<id> --input .github/rulesets/main.json
 ```
 
+## `release.json` — the branch the plugin directory tracks
+Only `scripts/release.sh final` moves `release`, by fast-forward to the final tag
+([RELEASING.md](../../RELEASING.md), step 6). The ruleset blocks deletion, force-pushes and
+updates; repo admins bypass the update rule (that is how the release script pushes it), and
+the bypass is permanent but narrow: it covers this branch only and still cannot rewrite history.
+```sh
+gh api -X POST repos/{owner}/{repo}/rulesets --input .github/rulesets/release.json
+```
+
 ## Manual fallback (classic branch protection)
 Settings → Branches → Add rule for `main`:
 - ☑ Require a pull request before merging (approvals: 0)

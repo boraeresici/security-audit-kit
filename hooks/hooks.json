@@ -1,0 +1,17 @@
+{
+  "description": "security-audit-kit: after each agent Edit/Write, one advisory semgrep pass on that file with the repo's vendored, pinned scanner. Never blocks. Off: EDIT_CHECK=0.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-edit-check.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

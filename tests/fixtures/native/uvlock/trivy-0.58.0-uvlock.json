@@ -1,0 +1,18 @@
+{
+ "SchemaVersion": 2,
+ "CreatedAt": "2026-11-17T17:28:17.518690423Z",
+ "ArtifactName": "/repo",
+ "ArtifactType": "filesystem",
+ "Metadata": {
+  "ImageConfig": {
+   "architecture": "",
+   "created": "0001-01-01T00:00:00Z",
+   "os": "",
+   "rootfs": {
+    "type": "",
+    "diff_ids": null
+   },
+   "config": {}
+  }
+ }
+}

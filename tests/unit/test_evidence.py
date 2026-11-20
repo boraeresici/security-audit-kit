@@ -511,6 +511,146 @@ class TestParseFindingsMd:
 
 
 # ---------------------------------------------------------------------------
+# F42: the findings table is model-written, so its cells are untrusted input
+# ---------------------------------------------------------------------------
+def _one_row(tmp_path, loc, why="ok"):
+    md = tmp_path / "findings.md"
+    md.write_text(f"# sec-sast-deep\n\n| Sink (file:line) | Sev | Why |\n|---|---|---|\n| {loc} | high | {why} |\n",
+                  encoding="utf-8")
+    warnings = []
+    return evidence.parse_findings_md(str(md), warnings), warnings
+
+
+class TestJudgmentInputSafety:
+    @pytest.mark.parametrize("loc", [
+        "/etc/passwd:1",
+        "~/x.py:3",
+        "../outside.py:4",
+        "src/../../x.py:4",
+        "src/./x.py:4",
+        "src//x.py:4",
+        "src/:4",
+        "C:/repo/x.py:5",
+        "c:x.py:5",
+        "src\\app.py:6",
+        "src/app.py:0",
+        "src/a\x07pp.py:7",
+        "src/\u202eyp.exe:8",
+        "src/a\u200bpp.py:8",
+        "src/a\u2028pp.py:8",
+        # from the review of the first version
+        "https:/evil.example/x.py:3",
+        "javascript:alert(1)",
+        "file:etc/passwd:3",
+        "a.py:" + "9" * 5000,
+        "a.py:99999999999",
+        "src/app.py:10000001",
+        "a/ /b.py:1",
+        "a/\u3000/b.py:1",
+        "a/.. /b.py:1",
+        "a/.../b.py:1",
+        "a/file.:1",
+        "x/\u3164.py:1",
+        "x/\ue000y.py:1",
+        "\uff0e\uff0e/\uff0e\uff0e/x.py:1",
+        "s" * 1025,
+    ])
+    def test_unsafe_location_is_dropped_and_said(self, tmp_path, loc):
+        results, warnings = _one_row(tmp_path, loc)
+        assert results == []
+        assert any("not a safe repo-relative path" in w for w in warnings)
+
+    def test_warning_escapes_what_it_quotes(self, tmp_path):
+        _, warnings = _one_row(tmp_path, "src/\u202eyp.exe:8")
+        assert all("\u202e" not in w for w in warnings)
+        assert any("\\u202e" in w for w in warnings)
+
+    @pytest.mark.parametrize("loc,path,line", [
+        ("src/app.py:42", "src/app.py", 42),
+        ("`src/app.py:42`", "src/app.py", 42),
+        ("./src/app.py:42", "src/app.py", 42),
+        ("src/app.py", "src/app.py", None),
+        ("docs/ünïcode/naïve.py:3", "docs/ünïcode/naïve.py", 3),
+        (".github/workflows/ci.yml:9", ".github/workflows/ci.yml", 9),
+        ("src/app.py:12:5", "src/app.py", 12),
+        ("cafe\u0301/menu.py:2", "cafe\u0301/menu.py", 2),     # NFD, as macOS writes it
+        ("my docs/read me.md:4", "my docs/read me.md", 4),
+        ("src/%2e%2e/x.py:1", "src/%2e%2e/x.py", 1),          # literal name; encoded at the SARIF sink
+    ])
+    def test_normal_location_still_passes(self, tmp_path, loc, path, line):
+        results, warnings = _one_row(tmp_path, loc)
+        assert [(r["file"], r["line"]) for r in results] == [(path, line)]
+        assert warnings == []
+
+    def test_non_ascii_digit_is_not_a_line_and_does_not_crash(self, tmp_path):
+        results, warnings = _one_row(tmp_path, "src/app.py:²")
+        assert results == [] and any("not a safe" in w for w in warnings)
+
+    def test_free_text_loses_control_and_bidi_characters(self, tmp_path):
+        results, _ = _one_row(tmp_path, "src/app.py:1", why="see\x1b[31m red\u202e evil\u200b\u2029end")
+        assert results[0]["message"] == "see [31m red evil end"
+        assert results[0]["evidence"]["note"] == "see [31m red evil end"
+
+    def test_free_text_keeps_joiners_that_belong_to_the_text(self, tmp_path):
+        text = "m\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 \U0001f469\u200d\U0001f4bb co\u00adop"
+        results, _ = _one_row(tmp_path, "src/app.py:1", why=text)
+        assert results[0]["message"] == text
+
+    @pytest.mark.parametrize("loc", ["N/A", "\u2013", "none"])
+    def test_placeholder_location_is_not_a_file(self, tmp_path, loc):
+        results, warnings = _one_row(tmp_path, loc)
+        assert results == [] and warnings == []
+
+    def test_row_warnings_are_capped(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_text("# sec-sast-deep\n\n| Sink (file:line) | Sev |\n|---|---|\n" + "| /x | high |\n" * 500)
+        warnings = []
+        assert evidence.parse_findings_md(str(md), warnings) == []
+        assert len(warnings) == evidence.MAX_ROW_WARNINGS + 1
+        assert "480 more rows dropped" in warnings[-1]
+
+    @pytest.mark.parametrize("conf", ["nan", "inf", "-inf", "1e999", "999", "-0.1", "1_0"])
+    def test_confidence_outside_0_1_is_none_and_said(self, tmp_path, conf):
+        md = tmp_path / "findings.md"
+        md.write_text(f"# sec-sast-deep\n\n| Sink (file:line) | Sev | Conf |\n|---|---|---|\n| a.py:1 | high | {conf} |\n")
+        warnings = []
+        results = evidence.parse_findings_md(str(md), warnings)
+        assert results[0]["confidence"] is None and any("not in [0, 1]" in w for w in warnings)
+        json.dumps(results, allow_nan=False)
+
+    def test_severity_cell_is_capped_in_severity_source(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_text("# sec-sast-deep\n\n| Sink (file:line) | Sev |\n|---|---|\n| a.py:1 | " + "z" * 3000 + " |\n")
+        warnings = []
+        results = evidence.parse_findings_md(str(md), warnings)
+        assert len(results[0]["severity_source"]) <= len("sec-sast-deep:") + 40
+        assert all(len(w) < 200 for w in warnings)
+
+    def test_bom_prefixed_file_is_read(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_bytes("\ufeff| Sink (file:line) | Sev |\n|---|---|\n| a.py:1 | high |\n".encode("utf-8"))
+        assert [r["file"] for r in evidence.parse_findings_md(str(md), [])] == ["a.py"]
+
+    def test_free_text_is_capped(self, tmp_path):
+        results, _ = _one_row(tmp_path, "src/app.py:1", why="x" * 5000)
+        msg = results[0]["message"]
+        assert len(msg) == evidence.MAX_CELL_CHARS and msg.endswith("…")
+
+    def test_oversized_findings_file_skips_the_judgment_layer(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(evidence, "MAX_FINDINGS_BYTES", 64)
+        results, warnings = _one_row(tmp_path, "src/app.py:1", why="x" * 100)
+        assert results == []
+        assert any("judgment layer skipped" in w for w in warnings)
+
+    def test_undecodable_findings_file_is_said_not_raised(self, tmp_path):
+        md = tmp_path / "findings.md"
+        md.write_bytes(b"| Sink | Sev |\n|---|---|\n| a.py:1 | \xff\xfe |\n")
+        warnings = []
+        assert evidence.parse_findings_md(str(md), warnings) == []
+        assert any("UnicodeDecodeError" in w for w in warnings)
+
+
+# ---------------------------------------------------------------------------
 # merge_judgment()
 # ---------------------------------------------------------------------------
 class TestMergeJudgment:
@@ -993,7 +1133,7 @@ class TestSelectSources:
     def test_inspecting_dimension_without_sarif_is_said(self, tmp_path):
         w = []
         evidence.select_sources(self._summary([{"name": "secret", "status": "pass"}], []), str(tmp_path), w)
-        assert any("secret" in x and "no SARIF" in x for x in w)
+        assert any("secret" in x and "no per-finding output" in x for x in w)
 
     def test_alias_dimension_uses_its_tools_file(self, tmp_path):
         p = self._sarif(tmp_path, "gitleaks.sarif")
@@ -1039,3 +1179,61 @@ class TestRunTimingStaysOut:
         assert evidence.main() == 0
         doc = json.loads(out.read_text())
         assert doc["scan"]["dimensions"] == [{"name": "sast", "status": "pass", "gate": "allow"}]
+
+
+class TestMergeToolTiebreak:
+    def test_dash_tool_cell_does_not_claim_a_scanner_finding(self):
+        scanner = [{"id": "g1", "tool": "gitleaks", "file": "cfg.py", "line": 3, "decision": None},
+                   {"id": "s1", "tool": "semgrep", "file": "cfg.py", "line": 3, "decision": None}]
+        judged = [{"origin": "sec-sast-deep", "tool": "-", "rule_id": "SAK-sast-deep-x", "file": "cfg.py", "line": 3,
+                   "message": "m", "severity": "low", "severity_source": "s", "decision": "suppressed",
+                   "confidence": None, "evidence": {}}]
+        out = evidence.merge_judgment(scanner, judged, [])
+        assert [f["decision"] for f in out[:2]] == [None, None]
+        assert out[2]["dimension"] == "judgment"
+
+
+class TestNumericSeverityFinite:
+    @pytest.mark.parametrize("raw", ["NaN", "nan", "inf", "-Infinity"])
+    def test_non_finite_score_is_ignored(self, raw):
+        assert evidence.numeric_severity({"properties": {"security-severity": raw}}) is None
+
+
+class TestNoAdapterWarning:
+    def test_findings_dimension_without_an_adapter_is_said(self, tmp_path):
+        summary = {"schema": 2, "sarif": True, "artifacts": {},
+                   "dimensions": [{"name": "custom-tool", "status": "findings"}, {"name": "sbom", "status": "pass"}]}
+        warnings = []
+        evidence.select_sources(summary, str(tmp_path), warnings)
+        # every scanner the kit ships now has an adapter; the path stays for the next one
+        assert any(w.startswith("custom-tool: has findings, but the kit reads no per-finding output") for w in warnings)
+        assert not any(w.startswith("sbom:") for w in warnings)
+
+
+class TestToolSuppression:
+    """semgrep writes `nosemgrep` hits into its SARIF with suppressions: [{kind: inSource}]."""
+
+    def _sarif(self, tmp_path, suppressions):
+        result = {"ruleId": "R", "level": "error", "message": {"text": "m"},
+                  "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app.py"}, "region": {"startLine": 2}}}]}
+        if suppressions is not None:
+            result["suppressions"] = suppressions
+        p = tmp_path / "semgrep.sarif"
+        p.write_text(json.dumps({"runs": [{"tool": {"driver": {"name": "semgrep", "rules": []}}, "results": [result]}]}))
+        return evidence.collect(str(p), "semgrep", "sast", [])[0]
+
+    def test_in_source_suppression_is_recorded_as_suppressed(self, tmp_path):
+        f = self._sarif(tmp_path, [{"kind": "inSource"}])
+        assert f["decision"] == "suppressed" and "inSource" in f["evidence"]["note"]
+
+    def test_justification_is_kept(self, tmp_path):
+        f = self._sarif(tmp_path, [{"kind": "external", "justification": "test fixture"}])
+        assert f["evidence"]["note"].endswith(": test fixture")
+
+    @pytest.mark.parametrize("status", ["rejected", "underReview"])
+    def test_a_suppression_not_accepted_leaves_the_finding_live(self, tmp_path, status):
+        assert self._sarif(tmp_path, [{"kind": "inSource", "status": status}])["decision"] is None
+
+    def test_no_suppression_is_unchanged(self, tmp_path):
+        f = self._sarif(tmp_path, None)
+        assert f["decision"] is None and f["evidence"] is None

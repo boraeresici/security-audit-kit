@@ -22,6 +22,8 @@ Source: [2026-09-08 multi-role evaluation](application-review-2026-09-08.md). Lo
 
 **Update — 2026-11-03 (dimension registry; classic security tool review):** At the user's request, the first slice of **F17** was taken ahead of its slot (13) and implemented on `dev/plugin-readiness`. `scan.sh` dispatch now reads a dimension registry, and the adapter contract is documented in `docs/adapters.md`. Behavior is unchanged: before and after runs were compared over every scan command and five toolchain scenarios, 75 cases with 0 differences. Separately, 15 classic security tools (Nmap, Metasploit, OpenVAS, SQLmap, commercial web proxies and OSINT suites, and others) and the agentic pentest tools Strix and PentAGI were reviewed. None of them becomes a dimension. **R16** was added as a conditional card: an optional external dynamic adapter, with nuclei as the reference. **F36** got a detection/monitoring addendum. The weak-password idea needs no card, because the local-rules mechanism (old plan #14) already exists. **UI track (user decision):** R13 moves from conditional to planned, in slot 8a as F26 → F19a → R13a → R13b → R13c. The UI is `scan.sh ui`, a thin client over the CLI built on the Python standard library. It starts read-only, then adds running a dimension and approving time-bound allowlist entries through the CLI. The gate stays in the CLI. F19a moves up from slot 9, because the UI needs stable finding identity. The agreed order to the plugin did not change.
 
+**Update — 2026-11-17 (Cloudflare skill re-read from a clone):** The 2026-10-11 comparison read the upstream documents on the web. This round read a local clone at `c1c8a8c` (still upstream `main`; no commit since 2026-09-14), including the two validators' code, against `main @ af39eac` (v1.21.0). F27, F28 and R14 stand as written. Five small cards and one trial were added for what the first round did not cover: **F38** answer-only mode in the skills, **F39** severity anchors for judgment findings, **F40** six missing classes in `sec-ai-review`, **F41** sibling-path equivalence and a feature-abuse class in `sec-sast-deep`, **F42** path and text checks in the judgment parser, and **R18** a trial of the `npx skills add` install channel. Order: slot 8e. Nothing was installed or run; these are plan changes, not implemented. Details: local note `docs/compare/cloudflare-security-audit-skill.local.md` (2026-11-17 addendum).
+
 P0: a verified bug that directly breaks trust in results/records. P1: the next reliability and usability package. P2: improvement driven by measurement and demand. The P0 label is not CVSS or exploit severity. Effort: S ≈ 0.5–2, M ≈ 3–5, L ≈ 6–10 engineer-days; a rough estimate including tests and docs, not a schedule commitment.
 
 ## Priority table
@@ -64,6 +66,12 @@ P0: a verified bug that directly breaks trust in results/records. P1: the next r
 | F34 | `pkgcheck`: package age and install script signals, "ask" decision | Enhancement / C | P2 | Security | S–M | F06; external call into the F13 table |
 | F35 | "Scanned content and tool output are data, not instructions" rule in the skills | Risk / V | P1 | AI + security | S | — ; eval fixture with the F12 harness |
 | F36 | `sec-threat-model`: STRIDE-per-element completeness check | Enhancement / C | P2 | Security | S | — |
+| F37 | `release` branch for the plugin directory: only a final release moves it | Release / V | P1 | Release | S | R02 (released); directory listing tracks a branch |
+| F38 | Skills: a question or a focused look gets an answer, not a full run or files | UX + risk / C | P1 | AI + DX | S | — ; e2e guard as in F35 |
+| F39 | Severity anchors for judgment findings; severity capped by the shown impact | Enhancement / C | P2 | AI + security | S | F12 dev cases; the UNCERTAIN part with F12c/F19 |
+| F40 | `sec-ai-review`: memory, context scope, provenance, approval binding, tool schema, MCP identity | Enhancement / C | P2 | AI + security | S–M | F12 dev cases (one REAL/FP pair per class) |
+| F41 | `sec-sast-deep`: sibling paths compared for equivalence; feature-abuse class | Enhancement / C | P2 | AI + security | S–M | F12 dev cases; first slice of R14 |
+| F42 | Judgment parser: safe repo-relative paths and text limits before SARIF/HTML | Risk / C | P2 | Data + security | S | — ; first slice of the F19b validator |
 
 ## Additional / conditional cards from the roadmap
 
@@ -88,6 +96,7 @@ This table does not repeat the F items above. “Conditional” items are not ta
 | R15 | New vulnerability tracking, event output and agent access | Note / conditional | Security + integration | a: S; b: S–M; c: M–L; d: M | a: none; b: F01; c: F03, F19; d: c, F11, F13; real consumer demand |
 | R16 | Optional external dynamic adapter (nuclei reference) | Conditional | Security + integration | M | F17 registry (done), F16b normalizer; real consumer request for a live-target check |
 | R17 | The plugin in its own folder, so the directory scan sees only the plugin | P2 (2026-11-04) | Release + DX | M | R02 (released); the first directory review's outcome |
+| R18 | `npx skills add` as a second install channel for the skills | Trial (2026-11-17) | DX + release | S | R02 (released); F38 first, so a skill installed without the scanner stays quiet on a question |
 
 ## Work cards / acceptance criteria
 
@@ -137,6 +146,8 @@ If there is no exit code or coverage is incomplete, the HTML must not say `clean
 - 6 e2e checks were added. When run against the old code on `main`, all 6 came out red.
 
 ### F05 — Lock lifecycle
+
+**Bug found — 2026-11-17 (PR #54, `fix/lock-atomic-claim`):** e2e case 7 (three runs reclaim one stale lock) failed on 2 of 3 CI runs on `ubuntu-latest`, now Ubuntu 26.04, and never in 40 earlier runs. Reproduced in an `ubuntu:26.04` container (6 of 30) and not in Debian bookworm (0 of 30). Cause: Ubuntu 25.10+ ships uutils coreutils, whose `mkdir` 0.10.0 is not exclusive under concurrency (200 rounds of four racers: 319 winners). Both the lock and the reclaim guard relied on it, so two runs could hold the lock and a reclaim could delete a fresh one. Fix: `claim_dir` — `mkdir`, then the owner is whoever creates `<dir>/.claim` under bash noclobber (`O_CREAT|O_EXCL` by bash). After: 200/200 single winners, 0 of 30 failures in the container. e2e races `claim_dir` with the system's own `mkdir` (50 rounds, 4 racers).
 
 The lock of a live, long-running scan must not be taken solely because of its age. Release must remove only the lock carrying its own token. Dead PID, PID reuse, missing heartbeat, simultaneous stale reclaim and INT/TERM tests must be done. A corrupt lock file must not lead to an infinite wait.
 
@@ -294,6 +305,23 @@ Narrow/wide screen, keyboard, basic screen reader flow, use with JS disabled and
 
 ### F16 — Full evidence coverage
 
+**Slice S1 — 2026-11-17 (`docs/f16-evidence-matrix`):** `docs/evidence-matrix.md` published, every cell from the code or a measurement and marked which; e2e checks every registry unit has a row and the "rows: yes" units equal those whose record `lib/evidence.py` reads SARIF for (negative-tested). Found while filling it: semgrep 1.166.0 writes `nosemgrep` hits into SARIF with `suppressions: [{kind: inSource}]` and `collect()` ignored them, so suppressed findings were reported as live in `evidence.json` and the HTML report (the gate used semgrep's exit code and was right). Fixed under the slice-0 decision ("read what SARIF already carries"): an accepted tool suppression is `decision: "suppressed"` with the tool's note. Not measured yet: whether gitleaks, osv-scanner and zizmor emit suppressed results at all. Next: S3, the pip-audit adapter.
+
+**Slice S3 — pip-audit adapter, 2026-11-18 (`feat/f16-pip-audit-adapter`):** `lib/native.py` (`NATIVE_SOURCES`, `parse_pip_audit`, a `summary` command for the log); `evidence.py` reads native sources through the same manifest and sha256 check as SARIF. Rows: `severity: unknown`, `severity_source: pip-audit:none`, `package`, `aliases`, `fixed_in`; id = dimension + advisory + package (version not in it). Measured on a real venv with `urllib3==1.26.4`: pip-audit 2.10.1 listed 43 entries for 23 distinct advisories (most twice), so the adapter de-duplicates per package. Side effect worth having: pip-audit exits 1 for findings and for crashes; with JSON, a crash with no readable output is `error`, not `findings` (seen live: a network reset during the advisory lookup). 16 unit tests, 4 e2e checks with a pip-audit shim (findings, crash, non-pip-audit JSON). Next: S4 checkov.
+
+**Slice S4 — checkov adapter, 2026-11-20 (`feat/f16-checkov-adapter`, on `fix/trust-the-gate`):** recorded with the pinned checkov 3.3.1 on a two-resource Terraform fixture (`tests/fixtures/native/checkov/`, `main.tf.fixture` so the kit's own `iac` does not read it; large fields and this machine's paths stripped): 9 failed, 8 passed, 1 skipped. checkov writes the table and the JSON in one run (`-o cli -o json --output-file-path console,<file>`), so the log and the failed-count parse are unchanged. `parse_checkov` reads failed and skipped checks (one object per framework, or a list), uses `repo_file_path`, and records `#checkov:skip` as suppressed with its reason. End to end on a real repo: 10 rows, 1 suppressed; the report says "9 reported, 1 suppressed". 6 unit tests, 2 e2e checks with a checkov shim. Next: S5 guarddog.
+
+**Slice S5 — guarddog adapter, 2026-11-20 (`feat/f16-guarddog-adapter`):** recorded with the pinned guarddog 3.0.2 (`tests/fixtures/native/guarddog/`, manifests as `.fixture`, local paths and code snippets stripped). Measured: `verify` drops a package it cannot fetch and still exits 0 (three requested, two returned); npm `verify` checks dependencies and devDependencies; a single rule can time out while the others ran. guarddog gives its own per-risk severity in `risks`, so these rows are not `unknown` where it gives one. `scan.sh` keeps each run plus the requested packages in `guarddog.native.json`; `parse_guarddog` makes one row per package and non-capability rule and names unchecked packages and failed rules. 13 unit tests, 3 e2e checks with a shim, one live run (pypi + npm). **Open decision, found here:** `guarddog verify --exit-non-zero-on-finding` exits 1 on capabilities alone (`requests`: 3 issues, label `no_risks_detected`), so the `guarddog` dimension reports findings and blocks where the rows show none. `pkgcheck` solved the same problem with a measured BLOCK list; whether the dimension should use that list, any non-capability rule, or stay as it is, is the user's call. Next: S6 npm audit.
+
+**Decision (user, 2026-11-20) and change:** the `guarddog` dimension uses `pkgcheck`'s measured block list. `native.py guarddog-gate` reads `pkgcheck.BLOCK_RULES` (one list, two users) with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA`: a block-list rule blocks, any other non-capability rule is `findings` with gate `allow`, capabilities only is `pass`. `scan_guarddog` takes JSON whenever python3 is there (the record is kept only with `SARIF=1`). Live: a `requests`-only project, blocked before, now passes. 5 unit tests, 2 more e2e checks (off-list reported, `typosquatting` blocks).
+
+**Slice S6 — npm audit adapter, 2026-11-20 (`feat/f16-npm-audit-adapter`):** recorded with npm 11.9.0 on a lockfile pinning `lodash@4.17.20` and `minimist@1.2.5` (auditReportVersion 2; `tests/fixtures/native/npm-audit/`, manifests as `.fixture`): 5 advisories, npm's own severities and GitHub CVSS. `scan_js_deps` keeps each npm project's `--json` report in `npm-audit.native.json` with `SARIF=1` and reads it with `native.py npm-add`; the `--audit-level=high` exit code still makes the gate. npm's error object (no registry) is now exit 5 inside the loop and `error` for the dimension, not findings. pnpm and yarn stay log-only, as decided. 8 unit tests, 3 e2e checks with an npm shim, one live run. **F16b is complete** for the scanners the decision named: pip-audit, checkov, guarddog, npm; every dimension that writes findings now has rows except pnpm/yarn and `staged`.
+
+**Slice S2 — trivy/uv.lock recorded, 2026-11-17 (`test/f16-uvlock-recording`):** `tests/fixtures/native/uvlock/`, with the pinned tools. trivy 0.58.0 does not read `uv.lock` (no result, not even packages); the same pin in `requirements.txt` gives CVE-2021-33503 and seven more HIGH. osv-scanner v2.4.0 reads `uv.lock`; it and pip-audit 2.10.1 name the advisory `PYSEC-2021-108` (CVE and GHSA as aliases). `.trivyignore.yaml` suppresses only by trivy's own id: `PYSEC-…` or `GHSA-…` entries suppress nothing. Follow-ups: (1) `scan.sh allowlist`'s cross-file check compares ids literally, so an alias-equivalent entry reads as a gap or a match it is not — it needs the alias map F19 builds; (2) a trivy pin that reads `uv.lock` would add a third reporter of the same advisory, which the F19 identity must collapse by alias. `tests/unit/test_native_fixtures.py` pins the three facts; free-text advisory fields were stripped from the recordings, and the manifests carry a `.fixture` suffix so the kit's own scans do not treat the vulnerable pin as its dependency.
+
+**Decision (user, 2026-11-17, on the research recommendations):** native JSON per tool, normalised in `lib/` (option B), checkov included; a finding with no severity gets `unknown` with `severity_source: "<tool>:none"`; new adapters' rows stay out of Code Scanning until alias dedup exists; JS audit starts with npm only, pnpm/yarn shown honestly as "no per-finding rows"; tool-native suppressions: read what SARIF already carries now, the rest in F19. The trivy/uv.lock recording needs Docker and network and is run by the user. Slice 0's "silent 0" header fix shipped in `aab7b38`.
+
+
 **F16a validation:** A command → native output → evidence → HTML/SARIF matrix must be published. The third trivy/uv.lock suppression path left open in old plan #12 must be validated with the relevant advisory/package fixture; it must not be assumed that the same CVE exists in every tool. **F16b adapters:** pip-audit, JS audit, checkov and GuardDog adapters must be implemented as separate small items. Each adapter must be tested with clean/with-findings/erroring native fixtures. For a dimension with no output, missing evidence must be shown instead of “0 findings”. The severity source must be preserved and CVSS must not be fabricated.
 
 ### F17 — Modular maintenance
@@ -310,9 +338,19 @@ First, the status/exit code/output contract must be pinned down. Adapters, disco
 
 ### F18 — Platform and paths
 
+**Decision (user, 2026-11-17, on the research recommendations):** minimum Python 3.9; WSL2 marked "not verified" now, a `setup-wsl` spike after slices 1–3; space-separated config lists stay and are documented; NFD names are documented and pinned by a fixture, not normalised; slice 1 ships as a fix.
+
+**Slice 1 — 2026-11-17 (`fix/f18-paths-with-spaces`):** git paths read with `core.quotepath=off` (previous commit); `py_manifests`, `js_dirs`, `changed_targets`, the osv-scanner targets, semgrep's output and targets, the Terraform directory and `scan.sh evidence`'s arguments carry paths with spaces whole (bash 3.2 arrays, `${a[@]+"${a[@]}"}` for empty ones). e2e: a repo root and folders with spaces and Turkish letters. Unit tests pass on Python 3.9.6. CI: new non-required jobs `pytest-versions` (Linux/macOS × 3.9/3.13) and `e2e-macos`; the required `pytest`/`e2e` checks keep their names. Remaining: repo-state fixtures (unborn, shallow, rename, NFD), shallow-history notice, `-z` for file names with newlines, the `.shellcheckrc` global SC2086/SC2046 disables, the WSL2 spike.
+
+**Slice 2 — 2026-11-17 (`fix/f18-repo-states`):** e2e fixtures for an unborn repo (staged list, `doctor`), an NFD-named file, a staged rename (new name only) and a depth-1 clone. A shallow clone is named by `secret` (dimension reason) and `doctor`; `doctor` no longer says WSL2 is "full support". SC2086/SC2046 are enabled: the 11 hits were 8 quoted `return "$rc"`-style fixes and annotations, plus one real bug — the worktree git-dir mount for gitleaks was a printed string, split under a path with a space; it is an argument array (`git_mounts`/`GITM`). Local shellcheck of `scan.sh` and the other scripts passes with the pinned image; `tests/e2e.sh` alone is OOM-killed in the local Docker VM (the committed version too), so it is confirmed by CI. Remaining: `-z` for names with newlines (rare; not taken without a case), the WSL2 spike. `trivy_cache_mount` (a printed `-v` string) fixed on `fix/f18-trivy-cache-mount`: with a spaced `TRIVY_CACHE` docker read `cache:latest` as the image; now an argument array (`TCM`), checked against the real image and in e2e.
+
+
 Automated Linux and macOS smoke tests; for WSL2 there must be an actually executed result or an explicit “not verified” state. The minimum Python version must be documented. Repo and file paths containing spaces/Turkish characters, worktrees, unborn/shallow repos and deleted/renamed files must be tested. Arguments split on spaces must be moved to array/NUL-safe handling.
 
 ### F19 — Finding / decision lifecycle
+
+**Decision (user, 2026-11-17, on the research recommendations):** one writer per layer (option C) — AI decisions stay in the markdown findings file, human decisions and exceptions only in a CLI-written, committed `docs/security/decisions.json`, scanner records in `evidence.json`; OpenVEX as an export only (`scan.sh vex`, later); package identity from the tools' native JSON (F16b); the package version is a precondition, not part of the identity. Identity: code findings hash the normalised line content plus an occurrence index (GitHub's method), dependency findings `advisory + ecosystem + package + manifest`; the old `id` stays one version beside the new `fingerprint`.
+
 
 A line shift must not needlessly reopen the same finding; two different packages with the same CVE in the same manifest must not be lost. Fixtures must be prepared for package identity and tool fingerprint. The decision record must carry owner/rationale/due date/verification conditions. The alias mapping source and applicable scanners must be specified; an ambiguous match must not produce automatic suppression. A backward compatibility/migration design must be done. The JSONL event history left over from T3.1 and the Phase A SQLite/checkpoint idea are a conditional continuation of this model: two separate persistent storage systems must not be added without measuring the re-run cost of interrupted long AI runs; if needed, start with a single format and test crash/resume and idempotent replay.
 
@@ -531,6 +569,9 @@ The security of skill packages loaded into the agent is a concrete candidate tha
 
 ### R13 — Local UI that starts scans (planned, after F26 → F19a)
 
+**Decision (user, 2026-11-17, on the research recommendations):** session by a one-time URL token exchanged for an `HttpOnly; SameSite=Strict` cookie (works without JS); loopback only, exact Host check, Origin and `Sec-Fetch-Site` on every POST, fixed command table, no file serving; exceptions through the CLI with a maximum lifetime (180 days proposed). F26's filter script is checked by hand in a browser until a headless check is justified.
+
+
 **Direction — 2026-11-03 (user decision):** No longer conditional. As the product grows, it needs control a static report cannot give: new vs resolved findings, approving a time-bound exception, seeing expiries and starting a scan. The UI track is **F26 → F19a → R13**. F19a comes first because, without a stable finding identity, a line shift shows the same finding as new and the UI would be wrong about the one thing it exists to show. Shape:
 - `scan.sh ui` starts a localhost server built only on the Python standard library. It adds no new dependency and no install step. This settles the framework question left open below.
 - **R13a — read-only:** run history, coverage (including skipped and indeterminate), and findings with their evidence and decisions, read from `summary.json`, `evidence.json` and the F19a decision record.
@@ -636,6 +677,21 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - Existing installs (`marketplace add boraeresici/security-audit-kit`) keep working after an update; checked in a throwaway config.
 - CHANGELOG upgrade note for anyone who read the skills at `skills/` directly.
 
+### F37 — Release branch for the plugin directory
+
+**Finding — 2026-11-05 (V):** The directory listing tracks `main`. Every merge to `main` became a new directory version, and because the root-level scan holds every version for a person (R17), each merge restarted the review. The submission's repo and path are fixed; only the tracked branch or tag can change, and not while a version is under review.
+
+**Decision (user, 2026-11-05):** a `release` branch that only a final release moves; `main` and its PR flow stay as they are. Auto-publish is off in the portal. Created on GitHub at `af39eac` (the version under review) with ruleset `release-protection`: no deletion, fast-forward only, updates blocked except for repo admins. The admin bypass is permanent but covers this branch only.
+
+**Acceptance criteria:**
+- `release.sh final` fast-forwards `origin/release` to the final tag's commit, after the tag.
+- It checks that `release` can fast-forward before tagging; if not, it stops with nothing pushed.
+- An RC never moves `release`.
+- A fork without the branch is told so and releases as before; `RELEASE_BRANCH=` turns it off.
+- e2e on a bare origin: RC leaves `release`; a diverged `release` stops the final before any tag; the final tags the RC commit and moves `release` to it.
+- `.github/rulesets/release.json`, RELEASING step 6 and the rulesets README describe it.
+- After the review: the user switches the tracked branch in the portal from `main` to `release`.
+
 ### F29 — py-deps environment selection
 
 **Finding — 2026-10-21 (V+C):** `scan_py_deps()` (`scan.sh:252`) accepts the active `$VIRTUAL_ENV` as the project's environment when the repo has no `.venv` (`scan.sh:264`). It does not check whether this variable belongs to this repo, or even whether it is a real venv. The same function's comment defines auditing another project's environment as a “silently wrong answer”; this rule is applied when the repo `.venv` exists and not when it doesn't. On the developer machine, with `VIRTUAL_ENV` pointing to pyenv's global interpreter (`~/.pyenv/versions/3.12.9`), the global interpreter was audited in a venv-less fixture containing only `pyproject.toml` instead of the expected INDETERMINATE. pip-audit raised `Dependency not found on PyPI` and the gate HARD-blocked (rc=1). The same path can also produce a false `pass` in a clean foreign environment; this second outcome is inferred from the code path and was not measured separately. Since `VIRTUAL_ENV` is not set in CI, e2e did not see this; e2e was made hermetic on the F01 branch with `unset VIRTUAL_ENV`, product behavior did not change.
@@ -722,6 +778,7 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 
 - **F33a — SessionStart context:** The latest `summary.json` dimension statuses and the open follow-up count must be added to the context as a short summary. `skipped`, `error` and `indeterminate` dimensions must be written separately and not shown as clean. No new scan is done; only the existing record is read. If there is no record or it is stale, this must be said explicitly and its TTL must be explicit. Because finding messages come from scanned code, they must be added with F35's data framing; the text is not placed as-is in an instruction position. There must be a size limit.
 - **F33b — PostToolUse single-file check:** An advisory-only check must be run on the single edited file with the kit's pinned semgrep. It never blocks. The time budget and skip reason must be visible in the output. If Docker or `uvx` is missing, it must not silently say "clean"; it must say it was skipped. Repeated warnings for the same file and rule must be suppressed (once per session).
+  **Status — 2026-11-05: implemented** (unreleased; v1.22.0). `scan.sh edit <file>` plus the plugin's `hooks/hooks.json` (PostToolUse, `Edit|Write`) and `hooks/post-edit-check.sh`, which runs the repo's vendored `scan.sh`, never the plugin's copy. Advisory output goes to the agent as `hookSpecificOutput.additionalContext` (exit 0 always; Claude Code's documented contract). No record, no lock. Off with `EDIT_CHECK=0`, because Claude Code has no per-hook switch for plugin hooks. Budget `EDIT_CHECK_TIMEOUT_SEC` (30, max 55; the hook times out at 60). 15 e2e checks: finding, once per session, new session, clean = silent, no uvx, over budget, scanner error, injection text, off via env and config, file outside the repo, no vendored kit (once), old vendored kit, `hooks.json` wiring. Real semgrep: an eval injection on a small Flask file was reported in 3.8 s. A vendored install without the plugin does not get this hook (not wired by `install.sh`); open if asked.
 - **Optional SessionEnd:** A one-line reminder that spends no tokens ("files changed in this session were not scanned"). Not added without a measured need.
 - **Install:** Hooks come with the plugin's `hooks.json` file. In a vendored install, F10's rule of preserving existing hooks applies; user settings are not overwritten by merging. Each hook must be disableable individually.
 - **Tests:** What SessionStart writes must be tested with no record, with a stale record, and with an injection string in the finding text. For PostToolUse, the timeout and the missing-tool case must be tested.
@@ -778,6 +835,149 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - The "would anyone notice?" question goes into the T and R cells of processes and data stores, with no product recommendation.
 - Earlier dated models are not rewritten. Not merged with F27.
 
+### F38 — Answer-only mode in the skills
+
+**Source — 2026-11-17 (C):** Cloudflare re-read (local note `docs/compare/cloudflare-security-audit-skill.local.md`). Upstream's last commit `c1c8a8c` ("Clarify guidance and full audit modes") adds an "Operating modes" section: loading the skill does not authorize the full workflow or file creation; a question or a focused review uses only the relevant part and writes nothing; an ambiguous request gets one question first ([`SKILL.md:10-17`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/SKILL.md#L10-L17)).
+
+**Gap in the kit:** the plugin loads a skill from its `description` (`skills/*/SKILL.md:3`). `sec-triage` then scans, writes `findings-<TODAY>.md`, writes allowlist entries and applies patches (steps 4–6). `sec-audit` announces deep passes before running them (`Transparency contract`), but no skill says what to do when the user only asked a question, such as "is this semgrep finding real?" or "how does the confidence gate work?".
+
+**Acceptance criteria:**
+
+- One short, identical section in all five skills: a security question, a methodology question or a look at one named finding is answered in the conversation with the skill's evidence bar; no scan is started, and no findings file, allowlist entry, exclusion or patch is written. The full flow runs when the user asks for a scan, triage, audit or review of the repo, or asks for the record. If the request can mean either, ask once.
+- The answer still says which evidence it rests on (sink, source, path) and that nothing was recorded.
+- e2e guards that the section exists and is identical in all five skills, as it does for the F35 rule.
+- `docs/skills.md` describes the two modes. The skill `description` lines are reviewed so that they do not promise a write on every load.
+- The text is written independently; the idea is credited in the skill as the other inspirations are.
+
+**Status — 2026-11-17:** implemented on `feat/f38-answer-only` (skill text, `docs/skills.md`, three e2e checks). The description review also made the four descriptions that said "with Claude" host-neutral, as F43 asked; e2e now fails a description that names a host. Not measured with F12: the eval prompt judges a verdict, which this section does not change. `lib/released-skills.sums` gets the new templates at release, as usual.
+
+### F39 — Severity anchors for judgment findings
+
+**Source — 2026-11-17 (C):** Cloudflare re-read. Upstream separates priority from certainty ([`SKILL.md:150-162`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/SKILL.md#L150-L162)): anchors for critical/high/medium/low/informational, a high/medium question ("does the shown result fully defeat an explicit control, or only weaken it?"), and two rules its validator enforces: overall severity cannot exceed the demonstrated impact, and an unresolved record carries no severity ([`validate-findings.cjs:556-567`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/validate-findings.cjs#L556-L567)).
+
+**Gap in the kit:** `sec-sast-deep` and `sec-ai-review` ask for a severity per finding (`skills/sec-sast-deep/SKILL.md:187`, `skills/sec-ai-review/SKILL.md:142`) and say "severity ranks, never decides", but give no scale. A scanner finding has the tool's severity; a judgment finding has only the model's word. `docs/schema/evidence.md` rule 2 already keeps CVSS off judgment findings; this card gives the bucket a meaning.
+
+**Acceptance criteria:**
+
+- A short anchor table shared by `sec-sast-deep`, `sec-ai-review` and the whole-repo mode of `sec-audit`, tied to who the actor is and what the path in the evidence chain actually reaches. The severity of a REAL may not exceed the impact its evidence chain shows.
+- A scanner finding keeps the tool's severity (`severity_source`); the anchors apply to judgment findings only.
+- F12 dev cases: one over-stated impact (a crash called code execution) and one same-principal action called privilege gain; expected severity is checked, not only the decision.
+- Whether UNCERTAIN carries a severity at all is decided with F12c/F19, not here.
+- Skill text is written independently. No calibration claim is made without an F12 run.
+
+**Status — 2026-11-17:** implemented on `feat/eval-deep` after measurement in the deep-review eval (18 dev cases, `claude-opus-4-8`, three uncached runs per variant, holdout not used):
+
+| Prompt | Correct, each of 3 runs | Regex called RCE | Own quota called privilege | Other 16 cases |
+|---|---|---|---|---|
+| Baseline (skill before F39) | 16/18 | FP 3/3 | FP 3/3 | all correct |
+| Candidate v1 (anchors + "the label does not decide") — shipped | 17/18 | REAL, medium 3/3 | FP 3/3 | all correct |
+| Candidate v2 (v1 + "the verdict answers one question") | 17/18 | REAL 3/3 | FP 3/3 | all correct |
+| v1 + "a bounded impact lowers severity, not the verdict" (one run) | 16/18 | FP | FP | all correct |
+
+The baseline already saw both smaller flaws (ReDoS, a client-only quota) and called them FP because recon's label was wrong. v1 fixes the first; the quota case stays FP in every variant, the model calling a bounded bypass of the actor's own limit not worth raising. The label stays REAL (the skill's Class 3 names an unenforced business rule as a flaw); it is an open gap, not tuned further against one dev case. Before the runs, one dev case (the role-confusion FP twin) was corrected: it did not say that a customer may self-serve a refund up to 50 EUR, which made the model's REAL defensible. A first measurement claimed two identical runs showed low noise; they came from promptfoo's cache, and the table above uses `--no-cache`. `tests/eval/deep_prompt.md` is now the shipped text; e2e checks the anchor lines match. Whether UNCERTAIN carries a severity is still F12c/F19.
+
+### F40 — `sec-ai-review`: six classes it does not name
+
+**Source — 2026-11-17 (C):** Cloudflare re-read, [`AI-AND-LLM.md`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/AI-AND-LLM.md) at `c1c8a8c`. The kit's skill follows the OWASP LLM ids (`skills/sec-ai-review/SKILL.md:75-113`); memory and MCP output appear only in the surface list (`:115-120`), and the "known attack classes" are jailbreak families (`:122-126`), not code-level defects.
+
+**Classes to add, each as an "A flaw / Not a flaw" pair:**
+
+| Class | What the code gets wrong | Upstream |
+|---|---|---|
+| Persistent memory poisoning | low-trust content or a model summary is written to memory that later steers another task, user or privileged session | `AI-AND-LLM.md:28` |
+| Cross-session / cross-tenant context bleed | history, embeddings, retrieval or a prompt cache keyed too broadly; the tenant filter is missing from the query or the cache key | `:25` |
+| Role and provenance confusion | prompt assembly lets untrusted text pass as a system message, tool result or prior turn (string concatenation, caller-set role field) | `:31` |
+| Approval binding | the action that runs is not the action the user approved (arguments change after the approval) | `:42` |
+| Tool schema vs dispatcher | the handler accepts what the schema forbids, or trusts schema validation as authorization | `:45` |
+| MCP tool identity | two servers or tools share a name; tool metadata is treated as policy | `:56`, `:59` |
+
+**Acceptance criteria:**
+
+- The six pairs are in the skill, each mapped to its OWASP LLM id where one fits, so the record format (`OWASP-LLM id` column) does not change.
+- Two framing rules are added ([`AI-AND-LLM.md:12-16`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/AI-AND-LLM.md#L12-L16)): prompt injection alone is not a finding without a code-level boundary failure; authorization and action binding are separate controls. The first is expected to lower FPs.
+- F12 dev cases: one REAL and one FP twin per class; the holdout is not touched.
+- The signal in `sec-audit` step 3 gains memory/vector-store and MCP-server terms.
+- Upstream is MIT (`LICENSE`, Cloudflare, Inc.); the text is written independently and credited in the skill header as the existing inspirations are.
+
+### F41 — `sec-sast-deep`: sibling paths and feature abuse
+
+**Source — 2026-11-17 (C):** Cloudflare re-read. Two things in upstream's hunting text have no counterpart in the kit:
+
+- **Sibling paths, compared for equivalence.** "Read sibling, legacy, batch, retry, cancellation, migration, and error paths that produce the same effect. Compare sibling controls for equivalence, not only presence" ([`HUNTING.md:37-41`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/HUNTING.md#L37-L41)). The kit's Class 2 has one such case (GET checked, POST not; `skills/sec-sast-deep/SKILL.md:98`) and the bonus pass looks for siblings of a past fix (`:151-159`), but Phase 1 does not ask for the other routes to the same state change.
+- **Feature abuse and data leakage** ([`ATTACK-CLASSES.md:74-79`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/ATTACK-CLASSES.md#L74-L79)): export or backup returning more than the caller may read, import or restore writing past validation, search/filter/sort as an existence oracle, and enumeration through different errors, timings or status codes.
+
+**Acceptance criteria:**
+
+- Phase 1 lists, per sensitive state change, every route to it (bulk, import, legacy version, retry, admin tool, background job). Classes 1 and 2 compare the guard on each route with the known-correct pattern; a weaker guard on one route is a candidate.
+- A fifth class, feature abuse, with "A flaw / Not a flaw" pairs. Not a flaw: a per-item permission check inside the export, a uniform not-found response, a search limited to the actor's scope.
+- The evidence bar does not change: sink `file:line`, untrusted source or actor, unbroken path, confidence ≥ 0.7.
+- F12 dev cases: one REAL and one FP twin for an unequal sibling guard and for an export that leaks.
+- This is the first slice of R14 and does not wait for its trigger; the other domains (HTTP framing, RPC, mobile/IPC, native) stay in R14.
+
+**Status of F39–F41 — 2026-11-17:** keyless preparation done on `feat/eval-deep`: a deep-review sub-eval (`tests/eval/promptfooconfig.deep.yaml`) with today's skill text as the baseline prompt, a grader that also checks `max_severity`, and 18 dev cases (F39 2, F40 12, F41 4). No paid run yet and no skill text changed. Baseline measured the same day (see F39). For F40 and F41 the baseline already gets 15 of their 16 cases right; the twins are too easy to show what those cards add, so they need harder cases (e.g. the guard present but weaker on the sibling route, memory written only through a tool the user triggers) before a candidate prompt can be judged.
+
+**Harder cases — 2026-11-17 (`feat/f40-f41-cases`):** 12 more dev twins written for what F40/F41 add (approval bound to the tool name only, injection with and without a sink, memory written through a model-callable tool, an answer cache keyed without the tenant, a sibling route that keeps the org filter but drops the permission, a count-only cross-tenant existence oracle). The baseline (the F39 text) got all 12 right in three uncached runs; on 30 cases its only miss is F39's own-quota case. Conclusion: given a candidate, the verify phase already judges these classes correctly on `claude-opus-4-8`, so F40/F41 text cannot be shown to improve verification. What they claim to add is recall in recon — naming a class so that it becomes a candidate at all — and this eval hands the candidate over. Before F40/F41 ship, a recon eval is needed: code in, candidate list out, scored on whether the planted flaw is listed (and how many decoys are). Until then their text would ship unmeasured, which the cards rule out.
+
+**Recon eval — 2026-11-17 (`feat/eval-recon`):** keyless parts built: `promptfooconfig.recon.yaml`, `recon_prompt.md` (today's recon text, the baseline), `grade_recon.mjs`, `score_recon.mjs` (hit@1/hit@2 per card next to chance), and 14 generated cases (`make_recon_cases.py`, fixed seed): each REAL F40/F41 case among two or three FP twins of other classes from the same skill. e2e checks the keyless skip, the scoring and that the generated file is current. No paid run yet.
+
+**Recon measurement — 2026-11-17:** `claude-opus-4-8`, 14 cases, three uncached runs per variant. Baseline (today's recon text): hit@1 13/14 in every run (F40 10/10, F41 3/4), hit@2 14/14. Candidate with the F40 classes, the F41 sibling-route and feature-abuse items and F40's two framing rules (`tests/eval/recon_prompt.f4041.md`): hit@1 14/14 in every run. The one difference is not evidence for F41: in the existence-oracle case the baseline ranks first a distractor (`billing/views.py`, the sibling-guard FP twin) that writes `status` from the request with no permission or transition check — an FP for its own twin's claim, but a plausible flaw of its own. Chance hit@1 is about 26%. **Conclusion:** on the host model the skills run on, F40/F41 text shows no measurable gain in verify (12/12 harder twins at baseline) or in recon. They are not shipped. Two things would reopen them: a backend where the baseline is not at the ceiling (the skills also load in Codex since F43, on other models), or distractors built to be flaw-free rather than taken from twins.
+
+**Distractor fix — 2026-11-17 (`test/recon-clean-distractors`):** both sibling-guard twins now carry the same role-and-transition check (`CanChangeInvoiceStatus`) on both routes, so the FP twin has no flaw of its own and the pair still differs only in the tenant scope of the bulk route. The other 13 FP twins were read for a flaw of their own; none found. `cases.recon.yaml` regenerated. The deep-review and recon numbers above were measured before this change; re-measuring is part of the next paid run.
+
+### F42 — Judgment parser: safe paths and text limits
+
+**Finding — 2026-11-17 (C):** `parse_location` takes the location cell of the model-written findings table as it is (`lib/evidence.py:196`): an absolute path, a `..` segment, a backslash path or a control character is accepted. The value goes into `evidence.json` and from there into the SARIF `artifactLocation.uri` (`lib/kit_sarif.py:77`), which is uploaded to GitHub Code Scanning. `lib/report_html.py:95` escapes HTML, so the report is not an injection path; bidirectional and control characters still pass through. The table is written by a model that read the scanned repo, so its cells are not trusted input (F35 is a rule the model is asked to follow, not a control). No exploit was built; this is a code-read finding.
+
+**Reference:** upstream's findings validator at `c1c8a8c`: `isSafeRelativeSourcePath` ([`validate-findings.cjs:473-483`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/skills/security-audit/validate-findings.cjs#L473-L483)), escaped diagnostics (`:60-84`), input limits (`:42-49`), duplicate-identity and positive-line checks (`:493-517`).
+
+**Acceptance criteria:**
+
+- A judgment row is kept only if its path is repo-relative with no empty, `.` or `..` segment, no leading `/`, `~` or drive letter, no backslash and no control, format or line-separator character, and its line is a positive integer. A rejected row is dropped with a line in `warnings`, as an unparseable row is today; nothing is dropped silently.
+- Free-text cells (`Why`, `Action`, `Untrusted source`) have control and bidirectional characters removed or escaped before they reach `evidence.json`, `kit.sarif` and the HTML report, and have a length limit. The findings file has a size limit; over it, the judgment layer is skipped with a warning.
+- Unit tests in `tests/unit/test_evidence.py` for each rejected shape and for a normal row that must still pass. Byte-identical output for existing fixtures.
+- Written in the kit's Python; no Node dependency is added and no upstream code is copied. If code is taken later, the MIT notice is kept.
+- F19b keeps the rest of the validator (verdict-specific fields, root-cause identity, migration). This card does not change the schema version.
+
+**Status — 2026-11-17:** implemented on `fix/f42-judgment-parser` (`lib/evidence.py`, 27 unit tests, `docs/schema/evidence.md`). Two changes beyond the criteria: a leading `./` is removed rather than rejected, since it names the same file; a line number is required only to be positive when given, since rows without one are valid today. Found while testing: `splitlines()` split a row at U+2028 before its cells were checked, and a non-ASCII digit (`:²`) crashed the parser; both fixed. Old and new parser give identical output on the e2e fixtures and every tracked `.md` file (38 files). Schema version unchanged.
+
+**Review — 2026-11-17:** an independent review (Fable) of `889111b` found a crash (a 5000-digit line), URI syntax that passed into `kit.sarif` (`https:/…`, `javascript:`, percent-encoded `..`), `nan`/`inf` confidence written as invalid JSON, uncapped path and warning volume, a markdown link in the SARIF message, Windows-equivalent `..` segments, and a pre-existing merge bug (a tool cell of `-` attached a row to any scanner finding). All fixed on `feat/eval-deep` with 40 tests; output for the existing fixtures is still identical. Not changed: scanner SARIF paths and messages are not cleaned; they reach only the escaped HTML report.
+
+### R18 — `npx skills add` as a second install channel (trial)
+
+**Record — 2026-11-17:** Upstream is not a Claude Code plugin; it installs with the Skills CLI ([`README.md:54-63`](https://github.com/cloudflare/security-audit-skill/blob/c1c8a8c/README.md#L54-L63)), and moved its files to `skills/<name>/SKILL.md` for that reason (upstream commit `75be8dd`). The kit already has that layout. The skills say what to do when the scanner is not vendored ("do not download, clone or install anything … state that the deterministic scan did not run"), so a skills-only install is a supported state since R02.
+
+**Trial, before any documentation:** in a throwaway directory and config, install the five skills with the CLI from a tag, and check: all five are found, the frontmatter is accepted, a skill runs in a repo without the vendored scanner and reports that, and no file outside the skills is copied. Record which agents the CLI installs to and whether it pins a version; a channel that follows `main` conflicts with the pinned-version promise and with `lib/released-skills.sums`.
+
+**Decision after the trial:** document it in `docs/install.md` as a third path, or record why not. The CLI is a third-party tool that downloads from GitHub: if documented, it gets a row in `docs/data-flow.md`. Not a release gate. F38 goes first.
+
+**Trial — 2026-11-17 (`feat/r18-skills-cli`):** `skills@1.7.4` (2026-10-19; 1.9.0 was a day old, so not used), installed into a throwaway directory with `--ignore-scripts` and run with `HOME` redirected and `DISABLE_TELEMETRY=1`. `pkgcheck`: `skills@1.7.4` clean; `tar@7.5.23` (6 days old) shows filesystem and network capabilities, expected for an archiver. Results: `#v1.21.0` and `/tree/v1.21.0` both pin; all five skills found and byte-identical to the tag; only `SKILL.md` copied; `skills-lock.json` records the ref and a hash per skill. Copies go to `.agents/skills/<name>`, `.claude/skills/<name>` is a link to them, and `-a '*'` also creates `agent/skills/` at the repo root. Telemetry is on by default (repo and skill names for public GitHub sources, plus security-audit requests). Not tried: `skills update` (whether it moves past the pinned ref) and a skill session without the scanner.
+
+**Bug found:** `install.sh --no-skills` and `--uninstall` deleted the `SKILL.md` behind each link (the copy in `.agents/skills`, which Codex and others read) while printing "removed the kit's copy"; a plain install wrote through the link. Fixed: a linked skill folder is left alone in every mode; e2e covers the three modes.
+
+**Decision:** documented in `docs/install.md` as a third path, with the tag and CLI version pinned and telemetry off; a row in `docs/data-flow.md`.
+
+### F43 — Codex as a second plugin host
+
+**Record — 2026-11-17:** tried with `codex-cli 0.145.0` in a throwaway `CODEX_HOME`, on a clone of `791f18c`, with no change to the repo:
+- `codex plugin marketplace add <clone>` reads `.claude-plugin/marketplace.json`; `codex plugin add security-audit-kit@security-audit-kit` installs 1.21.0. `codex debug prompt-input`, which renders the prompt without a model call, lists all five skills as `security-audit-kit:sec-*`, loaded from the plugin cache.
+- The install copies the whole repo, `.git` included (17 MB), into `$CODEX_HOME/plugins/cache/`. Same cause as R17: `source: "./"`.
+- `lib/pkgcheck.py --parse` reads a Codex-shaped `PreToolUse` payload (`tool_input.command`) and returns its npm and PyPI targets.
+- Not tried: the hook inside a Codex session (needs a model call and the user's trust step), and the desktop app.
+
+**From the Codex docs (read 2026-11-17: `developers.openai.com/codex/plugins/build`, `/codex/hooks`, `/plugins/deploy/submission`):** Claude-compatible manifests are accepted. Plugin hook commands get `PLUGIN_ROOT` and also `CLAUDE_PLUGIN_ROOT`; exit 2 with stderr blocks, as in Claude Code. Plugin hooks are skipped until the user reviews and trusts them. The public directory, shared by ChatGPT and Codex, takes a ZIP at `platform.openai.com/plugins` from a verified developer identity. It wants `.codex-plugin/plugin.json` with an `interface` block (`displayName` and `shortDescription` at most 30 characters, `capabilities`, `composerIcon`, `logo`), and it refuses packages that contain lifecycle hooks.
+
+**Consequence for F33:** a `hooks/hooks.json` at the plugin root is found by both hosts by default discovery, and it would keep the package out of the Codex directory. Decide with F33 whether the Codex package is built without hooks or names its hooks explicitly.
+
+**Acceptance criteria:**
+- **F43a — the channel that works today:** `docs/install.md` gets a Codex section: the two commands, the skill names, and that the scanner contract is the same (the skills use the repo's vendored copy and never download one). e2e: when `codex` is on PATH, the throwaway-`CODEX_HOME` check above runs (marketplace add, plugin add, the five skills in `prompt-input`); otherwise it is skipped, as the `claude plugin validate` check is.
+- **F43b — Codex public directory, after R17:** `.codex-plugin/plugin.json` whose version `release.sh` checks as it checks `plugin.json`; the `interface` block, with the listing icon reused; a ZIP built from the R17 plugin folder only, with no lifecycle hooks. The developer identity is the user's decision, as in R07.
+- **F43c — the agent hook in vendored installs:** `install.sh --with-agent-hook` can also write `.codex/hooks.json`, under the same rule as F10 (existing hooks are kept, removed on uninstall). The docs name the trust step. Run once in a real Codex session before it is documented.
+- Four skill descriptions say "with Claude". Make them host-neutral in F38's description review, in one change with the released sums.
+
+**Order:** F43a any time; F43b after R17; F43c with the F33 decision. Not a release gate.
+
+**F43b — 2026-11-20 (prepared, not submitted):** the OpenAI directory takes an uploaded ZIP, not a repository path, so it does not wait for R17 after all. `.codex-plugin/plugin.json` (listing fields within the stated limits: displayName 18/30, shortDescription 29/30, 5 capabilities, 3 default prompts; logo and composer icon = the 1024 px listing icon) and `scripts/build_codex_zip.py` (checks the stated rules, then writes a reproducible ZIP of 8 files: manifest, icon, five skills, LICENSE; never `hooks/`, which the directory refuses since F33b added one). Codex still installs the repo with the new manifest and loads all five skills (checked with codex-cli). `release.sh` checks both manifests' versions; e2e builds the ZIP and refuses an over-long field. Remaining, the account owner's: verified developer identity in the OpenAI organization, upload, submit, publish (`RELEASING.md`). Not stated by OpenAI: fees, verification documents, review times, ZIP size limit.
+
 ## Current delivery order — primary planning source
 
 The order below is the suggested default for a single team; items on the same row do not have to be a single PR. Conditional items that are not opened do not hold up the next independent item. The earlier Package A/B/C order was replaced by this table.
@@ -801,6 +1001,8 @@ The order below is the suggested default for a single team; items on the same ro
 | 8b | **R12a → R12b if the condition is met** SkillSpector | First a fixture-based benefit/false positive measurement, then a pinned optional adapter; the default gate does not change |
 | 8c | **F33a → F33b → F34** plugin hook set and `pkgcheck` signals | Added on 2026-11-03 (Phoenix comparison). Comes after R02 because hooks come with the plugin's `hooks.json` file. F34 waits for F06's cache policy. Not in scope for the plugin-ready release |
 | 8d | **F36** STRIDE-per-element completeness check | Added on 2026-11-03. A small skill text change with no dependencies; can be slotted in |
+| 8e | **F38 → F42 → F39 + F40 + F41**; **R18** trial alongside | Added on 2026-11-17 (Cloudflare re-read). F38 first: the plugin is public and its skills load from their descriptions. F42 is a parser check with no dependency. F39–F41 are skill text and go in one change with their F12 dev cases; no prompt change ships unmeasured. None of them waits for F19/F27 |
+| 8f | **F43a**; **F43b** after R17; **F43c** with F33 | Added on 2026-11-17. Codex installs the plugin as it is today; F43a documents and tests that. The public Codex listing needs the R17 folder and refuses lifecycle hooks, so F33's hooks decide its shape |
 | 9 | **F19b** (F19a moved to 8a on 2026-11-03) finding/decision and evidence contract | Stable identity, uncertainty, schema validation and backward compatibility; JSONL/resume only with a measured need |
 | 9a | **F27 → F28a → F28b if the condition is met** deep review quality | Coverage record followed by an independent validation pilot; F28 also waits for F12c. This AI track does not block the independent F20/F21 work |
 | 10 | **F20 → F31b + F14b → F21a** measurement, parallel dimensions, quiet output and opt-in dimension cache | No cache without measuring speed gain and invalidation equivalence. F31b only gives a meaningful gain after F30; F14b uses the same output infrastructure |

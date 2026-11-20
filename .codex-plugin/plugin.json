@@ -1,0 +1,43 @@
+{
+  "name": "security-audit-kit",
+  "version": "1.21.0",
+  "description": "Judgment layer for a pinned, local security scan: triage scanner findings real-vs-false-positive with an evidence bar, semantic SAST (authz/IDOR/logic), AI/LLM security review, STRIDE threat modeling, and a one-command audit. The skills drive the repo's own vendored, pinned scanner (tools/security-audit-kit/scan.sh); the plugin never downloads one.",
+  "author": {
+    "name": "studiobinary.co",
+    "url": "https://studiobinary.co"
+  },
+  "homepage": "https://github.com/boraeresici/security-audit-kit",
+  "repository": "https://github.com/boraeresici/security-audit-kit",
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "sast",
+    "secrets",
+    "dependencies",
+    "triage",
+    "threat-model",
+    "supply-chain",
+    "local"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Security Audit Kit",
+    "shortDescription": "Judge your local scan results",
+    "longDescription": "Skills that judge what a pinned, local security scan found: triage each finding as real or a false positive against an evidence bar (sink, untrusted source, unbroken path), semantic SAST for authorization, IDOR and business logic, an AI/LLM security review mapped to the OWASP LLM Top 10, a STRIDE threat model, and a one-command audit. The skills drive the repository's own vendored scanner (tools/security-audit-kit/scan.sh, installed with bootstrap.sh); the plugin downloads nothing.",
+    "developerName": "studiobinary.co",
+    "capabilities": [
+      "Triage scanner findings as real or false positive, with the evidence each verdict rests on",
+      "Semantic SAST: horizontal and vertical authorization, IDOR, business-logic flaws",
+      "AI/LLM security review mapped to the OWASP LLM Top 10",
+      "STRIDE and data-flow threat modeling",
+      "One-command audit that runs only the deep passes the repository calls for"
+    ],
+    "defaultPrompt": [
+      "Triage the findings of the last security scan",
+      "Run a security audit of this repository",
+      "Threat model this service"
+    ],
+    "logo": "./.claude-plugin/icon.png",
+    "composerIcon": "./.claude-plugin/icon.png"
+  }
+}

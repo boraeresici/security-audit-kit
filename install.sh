@@ -58,13 +58,29 @@ state_get(){ [ -f "$STATE" ] || return 0; sed -n "s/^$1=//p" "$STATE" | tail -1;
 state_set(){ local tmp; tmp="$(mktemp)"; { [ -f "$STATE" ] && grep -v "^$1=" "$STATE"; printf '%s=%s\n' "$1" "$2"; } > "$tmp"; mv -f "$tmp" "$STATE"; }
 state_del(){ [ -f "$STATE" ] || return 0; local tmp; tmp="$(mktemp)"; grep -v "^$1=" "$STATE" > "$tmp" || true; mv -f "$tmp" "$STATE"; }
 fsum(){ cksum < "$1" | awk '{print $1"-"$2}'; }
+kit_sha256(){
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else openssl dgst -sha256 "$1" | awk '{print $NF}'; fi
+}
 # Is .claude/skills/<s>/SKILL.md provably a copy the kit installed (and nobody edited)? Recorded at
 # install, identical to this kit's template, or identical to a RELEASED template: a copy an older kit
 # put there is recognised although this kit's template changed since (lib/released-skills.sums,
 # generated from the release tags by scripts/skill-sums.sh). Anything else is someone's edit: kept.
+# A link on the way to .claude/skills/<s>/SKILL.md means another tool installed it (the Skills CLI
+# links .claude/skills/<s> to .agents/skills/<s>): writing or deleting through it would change
+# that tool's copy, which other agents read.
+linked(){
+  local p
+  for p in "$ROOT/.claude" "$ROOT/.claude/skills" "$ROOT/.claude/skills/$1" "$ROOT/.claude/skills/$1/SKILL.md"; do
+    [ -L "$p" ] && return 0
+  done
+  return 1
+}
 kit_copy(){
   local s="$1" f="$ROOT/.claude/skills/$1/SKILL.md" sum
   [ -f "$f" ] || return 1
+  linked "$s" && return 1
   sum="$(fsum "$f")"
   [ "$sum" = "$(state_get "skill_$s")" ] && return 0
   [ -f "$KIT/skills/$s/SKILL.md" ] && [ "$sum" = "$(fsum "$KIT/skills/$s/SKILL.md")" ] && return 0
@@ -98,7 +114,9 @@ uninstall(){
   [ -d "$CHAIN_DIR" ] && rm -rf "$CHAIN_DIR" && ok "removed the hook wrappers (.git/security-audit-hooks)"
   for s in $SKILLS; do
     f="$ROOT/.claude/skills/$s/SKILL.md"; [ -f "$f" ] || continue
-    if kit_copy "$s"; then
+    if linked "$s"; then
+      miss "kept .claude/skills/$s — it is a link, so another tool installed it; not touched"
+    elif kit_copy "$s"; then
       rm -f "$f"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true; ok "removed .claude/skills/$s"
     else
       miss "kept .claude/skills/$s/SKILL.md — it was edited after install (delete it yourself if you want)"
@@ -106,7 +124,7 @@ uninstall(){
   done
   rmdir "$ROOT/.claude/skills" "$ROOT/.claude" 2>/dev/null || true
   if [ "$(state_get agent_hook)" = 1 ] && [ -f "$ROOT/.claude/settings.json" ] && have python3; then
-    SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 - <<'PYEOF2' && ok "removed the agent hook from .claude/settings.json" || miss ".claude/settings.json left as is (not valid JSON?)"
+    SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 -I - <<'PYEOF2' && ok "removed the agent hook from .claude/settings.json" || miss ".claude/settings.json left as is (not valid JSON?)"
 import json, os, pathlib
 path = pathlib.Path(os.environ["SETTINGS"]); cmd = os.environ["HOOKCMD"]
 doc = json.loads(path.read_text() or "{}")
@@ -147,7 +165,21 @@ chain_wrapper(){
     printf 'kit="$top/%s/%s"; own="$udir/%s"\n' "$KIT_HOOKS" "$name" "$name"
     # A worktree whose branch does not carry the kit: say so, never just skip in silence.
     case "$name" in pre-commit|pre-push)
-      printf '[ -x "$kit" ] || echo "security-audit-kit: not in this worktree ($top) - its %s check did not run" >&2\n' "$name" ;;
+      printf '[ -x "$kit" ] || echo "security-audit-kit: not in this worktree ($top) - its %s check did not run" >&2\n' "$name"
+      # Integrity BEFORE the kit runs (N1/C): the kit's hook is a file of the checked-out tree, so a
+      # branch could edit it, or the scan.sh it calls. This wrapper and integrity.sh live in the git
+      # dir, which no branch can change, and hold the tree to the manifest recorded at install.
+      printf 'gd="$(git rev-parse --git-common-dir)"; case "$gd" in /*) ;; *) gd="$top/$gd" ;; esac\n'
+      printf 'if [ -x "$kit" ] && [ "${SKIP_SECURITY:-0}" != 1 ]; then\n'
+      printf '  anchor="$(sed -n "s/^kit_anchor=//p" "$gd/security-audit-install.state" 2>/dev/null | tail -1)"\n'
+      printf '  if [ -z "$anchor" ] || [ ! -f "$gd/security-audit-hooks/integrity.sh" ]; then\n'
+      printf '    echo "security-audit-kit: no install record for the kit here - NOT running it. Run: bash %s/install.sh" >&2; exit 1\n' "$KIT_REL"
+      printf '  fi\n'
+      printf '  if ! out="$(bash "$gd/security-audit-hooks/integrity.sh" "$top/%s" "$anchor" 2>&1)"; then\n' "$KIT_REL"
+      printf '    echo "security-audit-kit: BLOCKED - the vendored kit is not the one installed here, so it was NOT run:" >&2\n'
+      printf '    printf "%%s\\n" "$out" | sed "s/^/  /" >&2\n'
+      printf '    echo "  A kit update you reviewed? Accept it: bash %s/install.sh  ·  Emergency: SKIP_SECURITY=1 (or --no-verify)" >&2\n' "$KIT_REL"
+      printf '    exit 1\n  fi\nfi\n' ;;
     esac
     if [ "$stdin" = 1 ]; then
       printf 'in="$(mktemp)"; trap '"'"'rm -f "$in"'"'"' EXIT; cat > "$in"\n'
@@ -181,28 +213,37 @@ else
   # Worktrees share one config: a hooksPath into ONE worktree's copy of the kit runs no hooks at all
   # (silently) in every worktree whose branch lacks it. The wrappers live in the shared git dir.
   worktrees="$(git worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
-  if [ -z "$own" ] && [ "${worktrees:-1}" -le 1 ]; then
-    rm -rf "$CHAIN_DIR"
-    git config core.hooksPath "$KIT_HOOKS"
-    ok "core.hooksPath -> $KIT_HOOKS (pre-commit=staged+deps, pre-push=all)"
+  # Hooks run from the git dir, never from the tree (N1): a core.hooksPath into the vendored kit ran
+  # ANY file a checked-out branch put there by hook name (a post-checkout ran on `git checkout`).
+  # Only pre-commit and pre-push are generated, plus this repo's own hooks, chained.
+  rm -rf "$CHAIN_DIR"; mkdir -p "$CHAIN_DIR"
+  cp "$KIT/lib/integrity.sh" "$CHAIN_DIR/integrity.sh" && chmod +x "$CHAIN_DIR/integrity.sh"
+  # The trust anchor: the manifest of the kit you are installing now (you vetted it: --expect, review).
+  # A later edit of the vendored kit, with or without a regenerated CHECKSUMS, no longer matches it.
+  if ia="$(bash "$CHAIN_DIR/integrity.sh" "$KIT" 2>&1)"; then
+    state_set kit_anchor "$(kit_sha256 "$KIT/CHECKSUMS")"
+    ok "kit integrity recorded (sha256 of CHECKSUMS, in .git) — the hooks refuse a kit that differs"
   else
-    # This repo already runs hooks: chain them instead of silencing them.
-    rm -rf "$CHAIN_DIR"; mkdir -p "$CHAIN_DIR"
-    names="$(printf '%s\n' pre-commit pre-push $own | sort -u | tr '\n' ' ')"
-    for n in $names; do chain_wrapper "$n" "$prev"; done
-    git config core.hooksPath "$CHAIN_DIR"
-    if [ -n "$own" ]; then
-      ok "found this repo's own hooks in ${prev:-.git/hooks}: $own"
-      ok "  -> they keep running, after the kit's (chained via .git/security-audit-hooks; core.hooksPath points there)"
-    fi
-    if [ "${worktrees:-1}" -gt 1 ]; then
-      ok "this repo has $worktrees worktrees: hooks run through .git/security-audit-hooks (shared by all of them);"
-      echo "      a worktree whose branch lacks the kit says so on commit/push instead of running no hooks"
-    fi
-    if [ -f "$ROOT/.pre-commit-config.yaml" ] || grep -qs 'pre-commit' "$udir_abs/pre-commit" 2>/dev/null && grep -qs 'File generated by pre-commit' "$udir_abs/pre-commit"; then
-      ok "  pre-commit framework detected: its hook stays in the chain. Alternative: install.sh --skills-only"
-      echo "      and add this kit to .pre-commit-config.yaml (.pre-commit-hooks.yaml: sec-staged / sec-deps / sec-all)"
-    fi
+    miss "the vendored kit does not match its own CHECKSUMS — no integrity record written; the hooks will refuse to run it:"
+    printf '%s\n' "$ia" | sed 's/^/      /'
+    state_del kit_anchor
+  fi
+  # shellcheck disable=SC2086  # $own: hook names (no spaces), one per word
+  names="$(printf '%s\n' pre-commit pre-push $own | sort -u | tr '\n' ' ')"
+  for n in $names; do chain_wrapper "$n" "$prev"; done
+  git config core.hooksPath "$CHAIN_DIR"
+  ok "core.hooksPath -> .git/security-audit-hooks (pre-commit=staged+deps, pre-push=all; integrity first)"
+  if [ -n "$own" ]; then
+    ok "found this repo's own hooks in ${prev:-.git/hooks}: $own"
+    ok "  -> they keep running, after the kit's (chained via .git/security-audit-hooks; core.hooksPath points there)"
+  fi
+  if [ "${worktrees:-1}" -gt 1 ]; then
+    ok "this repo has $worktrees worktrees: hooks run through .git/security-audit-hooks (shared by all of them);"
+    echo "      a worktree whose branch lacks the kit says so on commit/push instead of running no hooks"
+  fi
+  if [ -f "$ROOT/.pre-commit-config.yaml" ] || grep -qs 'pre-commit' "$udir_abs/pre-commit" 2>/dev/null && grep -qs 'File generated by pre-commit' "$udir_abs/pre-commit"; then
+    ok "  pre-commit framework detected: its hook stays in the chain. Alternative: install.sh --skills-only"
+    echo "      and add this kit to .pre-commit-config.yaml (.pre-commit-hooks.yaml: sec-staged / sec-deps / sec-all)"
   fi
 fi
 
@@ -243,7 +284,9 @@ if [ "$NO_SKILLS" = "1" ]; then
   # Copies a previous install left would load next to the plugin's: remove the kit's own, keep edits.
   for s in $SKILLS; do
     [ -f "$ROOT/.claude/skills/$s/SKILL.md" ] || continue
-    if kit_copy "$s"; then
+    if linked "$s"; then
+      miss "kept .claude/skills/$s — it is a link, so another tool installed it; not touched"
+    elif kit_copy "$s"; then
       rm -f "$ROOT/.claude/skills/$s/SKILL.md"; rmdir "$ROOT/.claude/skills/$s" 2>/dev/null || true
       state_del "skill_$s"; ok "removed .claude/skills/$s (the kit's copy; the plugin provides it)"
     else
@@ -256,23 +299,24 @@ else
   state_set skills_mode copy
   # Source templates live in the kit under skills/; they are installed into the TARGET
   # repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
-  mkdir -p "$ROOT/.claude/skills/sec-triage"
-  cp "$KIT/skills/sec-triage/SKILL.md" "$ROOT/.claude/skills/sec-triage/SKILL.md"
-  ok ".claude/skills/sec-triage/SKILL.md (finding triage)"
-  mkdir -p "$ROOT/.claude/skills/sec-sast-deep"
-  cp "$KIT/skills/sec-sast-deep/SKILL.md" "$ROOT/.claude/skills/sec-sast-deep/SKILL.md"
-  ok ".claude/skills/sec-sast-deep/SKILL.md (semantic SAST: authz/IDOR/logic)"
-  mkdir -p "$ROOT/.claude/skills/sec-ai-review"
-  cp "$KIT/skills/sec-ai-review/SKILL.md" "$ROOT/.claude/skills/sec-ai-review/SKILL.md"
-  ok ".claude/skills/sec-ai-review/SKILL.md (AI/LLM security: prompt injection/agency)"
-  mkdir -p "$ROOT/.claude/skills/sec-threat-model"
-  cp "$KIT/skills/sec-threat-model/SKILL.md" "$ROOT/.claude/skills/sec-threat-model/SKILL.md"
-  ok ".claude/skills/sec-threat-model/SKILL.md (STRIDE + data-flow threat modeling)"
-  mkdir -p "$ROOT/.claude/skills/sec-audit"
-  cp "$KIT/skills/sec-audit/SKILL.md" "$ROOT/.claude/skills/sec-audit/SKILL.md"
-  ok ".claude/skills/sec-audit/SKILL.md (one-command orchestrator: scan + triage + signal-gated deep)"
+  for s in $SKILLS; do
+    if linked "$s"; then
+      miss ".claude/skills/$s is a link (another tool installed it) -> not overwritten"; continue
+    fi
+    mkdir -p "$ROOT/.claude/skills/$s"
+    cp "$KIT/skills/$s/SKILL.md" "$ROOT/.claude/skills/$s/SKILL.md"
+    case "$s" in
+      sec-triage)       what="finding triage" ;;
+      sec-sast-deep)    what="semantic SAST: authz/IDOR/logic" ;;
+      sec-ai-review)    what="AI/LLM security: prompt injection/agency" ;;
+      sec-threat-model) what="STRIDE + data-flow threat modeling" ;;
+      sec-audit)        what="one-command orchestrator: scan + triage + signal-gated deep" ;;
+      *)                what="" ;;
+    esac
+    ok ".claude/skills/$s/SKILL.md${what:+ ($what)}"
+    state_set "skill_$s" "$(fsum "$ROOT/.claude/skills/$s/SKILL.md")"
+  done
   mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
-  for s in $SKILLS; do state_set "skill_$s" "$(fsum "$ROOT/.claude/skills/$s/SKILL.md")"; done
 fi
 
 echo "== agent hook (pre-install package check) =="
@@ -280,7 +324,7 @@ if [ "$AGENT_HOOK" = "1" ]; then
   chmod +x "$KIT/hooks/pre-tool-install.sh"
   if have python3; then
     # `set -e` would abort the installer on a non-zero python exit, so branch on it directly.
-    if SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 - <<'PYEOF'
+    if SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 -I - <<'PYEOF'
 import json, os, pathlib
 path = pathlib.Path(os.environ["SETTINGS"])
 cmd = os.environ["HOOKCMD"]

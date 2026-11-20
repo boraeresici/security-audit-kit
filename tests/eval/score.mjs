@@ -2,6 +2,7 @@
 // Dev-only, zero deps. Usage: node score.mjs [output.json]
 // Optional regression gates (exit 1 if unmet): EVAL_MIN_RECALL, EVAL_MIN_PRECISION (0-1).
 import { readFileSync } from "node:fs";
+import { RANK, severityOf } from "./grade_deep.mjs";
 
 const path = process.argv[2] || "output.json";
 let doc;
@@ -16,6 +17,8 @@ function findResults(d) {
   return [];
 }
 const results = findResults(doc);
+// The config's description names the eval (triage or deep review); older outputs carry none.
+const TITLE = doc?.config?.description || "sec-triage eval";
 if (!results.length) { console.error(`[score] no results found in ${path}`); process.exit(2); }
 
 function rawTextOf(r) {
@@ -140,7 +143,7 @@ function scoreOf(rs) {
   const errs = rs.filter(isProviderError);
   const allowPartial = !!process.env.EVAL_ALLOW_PARTIAL;
   let tp = 0, fp = 0, fn = 0, tn = 0, unknown = 0;
-  const rows = [];
+  const rows = [], sevRows = [];
   for (const r of rs) {
     const expected = String(r?.vars?.expected || "").toUpperCase();
     if (expected !== "REAL" && expected !== "FP") continue;
@@ -160,6 +163,12 @@ function scoreOf(rs) {
     else if (expected === "REAL" && pred === "FP") fn++;
     else tn++;
     rows.push({ expected, pred, ok, conf });
+    // F39: a REAL the model also called REAL is checked against the impact its evidence shows.
+    const max = String(r?.vars?.max_severity || "").toLowerCase();
+    if (max && expected === "REAL" && pred === "REAL") {
+      const sev = severityOf(rawTextOf(r));
+      sevRows.push({ sev, max, ok: sev in RANK && RANK[sev] <= RANK[max] });
+    }
   }
   const total = tp + fp + fn + tn;
   // Zero scored cases must never render as a score: the empty-denominator guards below default
@@ -177,6 +186,7 @@ function scoreOf(rs) {
     accuracy: (tp + tn) / total,
     misses: rows.filter(r => !r.ok),
     calibration: calibrationOf(rows),
+    severity: sevRows,
   };
 }
 
@@ -211,6 +221,12 @@ function printCalibration(cal, indent = "  ") {
   console.log(`${indent}    noise FPs:        ${cal.noiseFP}   (false alarms that passed the cutoff)`);
 }
 
+function printSeverity(rows, indent = "  ") {
+  if (!rows.length) return;
+  const over = rows.filter(r => !r.ok);
+  console.log(`${indent}severity:   ${rows.length - over.length}/${rows.length} REALs within the impact their evidence shows` + (over.length ? ` (over: ${over.map(r => `${r.sev}>${r.max}`).join(", ")})` : ""));
+}
+
 if (scored.length === 1) {
   const [name, s] = scored[0];
   if (!s.ok) {
@@ -224,7 +240,7 @@ if (scored.length === 1) {
     process.exit(2);
   }
   const skipped = s.errs ? ` — ${s.errs} skipped (provider error)` : "";
-  console.log(`\n== sec-triage eval — ${s.total} labeled cases (positive class = REAL)${skipped} ==`);
+  console.log(`\n== ${TITLE} — ${s.total} labeled cases (positive class = REAL)${skipped} ==`);
   console.log(`  provider:   ${name}`);
   console.log(`  confusion:  TP=${s.tp}  FP=${s.fp}  FN=${s.fn}  TN=${s.tn}${s.unknown ? `  (unparseable=${s.unknown})` : ""}`);
   console.log(`  precision:  ${pct(s.precision)}   (of findings called REAL, how many truly are)`);
@@ -233,11 +249,12 @@ if (scored.length === 1) {
   console.log(`  accuracy:   ${pct(s.accuracy)}`);
   if (s.misses.length) console.log(`  misses:     ` + s.misses.map(m => `${m.expected}->${m.pred}`).join(", "));
   printCalibration(s.calibration);
+  printSeverity(s.severity);
   gate(name, s);
 } else {
   // Head-to-head: one row per backend, same corpus, same prompt, same grader, one run.
   const w = Math.max(8, ...scored.map(([n]) => n.length));
-  console.log(`\n== sec-triage eval — ${scored.length} backends, same corpus + prompt + grader ==`);
+  console.log(`\n== ${TITLE} — ${scored.length} backends, same corpus + prompt + grader ==`);
   console.log(`  ${"backend".padEnd(w)}  cases  prec    recall  f1      acc     confusion`);
   for (const [name, s] of scored) {
     if (!s.ok) {
@@ -260,6 +277,7 @@ if (scored.length === 1) {
     if (!s.ok || !s.calibration) continue;
     console.log(`  [${name}]`);
     printCalibration(s.calibration, "    ");
+    printSeverity(s.severity, "    ");
   }
 }
 process.exit(code);

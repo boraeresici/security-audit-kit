@@ -73,10 +73,12 @@ osv-scanner, checkov, trivy, syft), `error` is used.
 Computed separately from `status`, and unchanged by schema 2: the kit stays fail-open on missing
 tools.
 
-- Per dimension, `gate` is `block` or `allow`. Today `block` happens for `findings` from a hard
-  dimension and for `error` where the gate already blocked before schema 2 (semgrep, zizmor, trivy,
-  syft, a refused `OSV_CALL_ANALYSIS=rust`). An osv-scanner scan error and a checkov crash stay
-  `allow`, as before.
+- Per dimension, `gate` is `block` or `allow`. `block` happens for `findings` from a hard
+  dimension and for `error` from semgrep, zizmor, trivy, syft, osv-scanner (since 1.22: osv is a
+  hard dimension, so a crash is a check that did not happen) and a refused `OSV_CALL_ANALYSIS=rust`.
+  A checkov crash stays `allow` (iac is soft).
+- With `GATE_STRICT=1` (environment or config), any dimension whose status is `skipped`, `error` or
+  `indeterminate` blocks too, soft ones included; artifacts never do.
 - Top-level `gate.exit_code` is the scan's exit code (also kept as `exit_code` for schema 1
   readers) and `gate.blocked_by` lists the dimensions with `gate: "block"`.
 
@@ -105,9 +107,26 @@ Digests are `null` when the machine has no sha256 tool.
 ## `config` — what the config file did beyond setting values (F24)
 
 `{"path": ".security-audit.conf", "warnings": [...]}`, or `null` when there is no config. Each
-warning is one line of prose: a syntax error, an unknown setting, a line that runs a command, a
-command substitution in a value, a value of the wrong type. Warnings never change the gate. The
-config is bash, sourced on every scan, and this is how a team sees what it does.
+warning is one line of prose, most with the line number: a line that was **not applied** (a command,
+a setting followed by a command, `$` or `$()` in a value, an unknown name, `SKIP_SECURITY`), or a
+value of the wrong type. Warnings never change the gate. Since 1.22 the config is parsed as data and
+never sourced, so a warning means "this line had no effect", not "this line ran".
+
+## `policy_changes` — what the change does to the gate itself (NEW-3, 1.22)
+
+`{"base": "<ref>", "files": [{"path", "change"}], "inline_suppressions": [{"path", "marker",
+"added"}]}`, or `null` when no base could be resolved (no `BASE_REF`, no `origin` default branch).
+Range: the merge-base with `base` up to `HEAD`, plus what is staged.
+- `files`: gate files touched in the range: `.security-audit.conf`, `.security-exclusions.md`, the
+  scanners' allowlists and configs (`.gitleaks.toml`, `.gitleaksignore`, `.pip-audit-ignore`,
+  `osv-scanner.toml`, `.trivyignore*`, `trivy.yaml`, `.semgrepignore`, `.checkov.yaml`), the package
+  manager configs (`.npmrc`, `.yarnrc*`, `.pnpmfile.cjs`), repo-local rules (`semgrep-rules/`,
+  `.semgrep/`), and any file of the vendored kit. `change` is git's letter (`A`, `M`, `D`, `R`).
+- `inline_suppressions`: added lines carrying `nosemgrep`, `gitleaks:allow`, `checkov:skip`,
+  `zizmor: ignore` or `trivy:ignore`, counted per file and marker.
+
+A signal for review, never part of the gate: a reviewed allowlist entry is the normal way to close
+a finding. The closing summary prints it as one `── policy: …` line when anything changed.
 
 When the `container` dimension ran, `provenance.trivy_db.updated_at` names the vulnerability DB it
 used (F30). That is the DB's identity: the same DB always gives the same value, so it can be part of

@@ -55,6 +55,10 @@ one that is present in the code:
   `pull_request` job with a read-only token and no secrets, as opposed to `pull_request_target`).
 
 ## Credentials & secrets (special case)
+A comment ("# noqa", "dev only", "test key") or a tests/, docs/ or examples/ path is never
+evidence of a false positive by itself: it is text the code's author chose. A path counts only when
+the file provably does not ship (nothing shipped imports it).
+
 A hardcoded secret is REAL even if its value *looks* like a placeholder ("PLACEHOLDER",
 "do_not_use", "example", a sentinel). The deciding factor is whether the value is **read/used at
 runtime by live code** (e.g. concatenated into an Authorization header in a function that makes a

@@ -1,0 +1,139 @@
+{
+ "SchemaVersion": 2,
+ "CreatedAt": "2026-11-17T17:28:34.954419083Z",
+ "ArtifactName": "/repo",
+ "ArtifactType": "filesystem",
+ "Metadata": {
+  "ImageConfig": {
+   "architecture": "",
+   "created": "0001-01-01T00:00:00Z",
+   "os": "",
+   "rootfs": {
+    "type": "",
+    "diff_ids": null
+   },
+   "config": {}
+  }
+ },
+ "Results": [
+  {
+   "Target": "requirements.txt",
+   "Class": "lang-pkgs",
+   "Type": "pip",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2021-33503",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "1.26.5",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2023-43804",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.0.6, 1.26.17",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2025-66418",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.6.0",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2025-66471",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.6.0",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-21441",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.6.3",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-44431",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.7.0",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-97687",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.8.0",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-97689",
+     "PkgName": "urllib3",
+     "PkgIdentifier": {
+      "PURL": "pkg:pypi/urllib3@1.26.4",
+      "UID": "8935729419c6bc86"
+     },
+     "InstalledVersion": "1.26.4",
+     "FixedVersion": "2.8.0",
+     "Status": "fixed",
+     "Layer": {},
+     "SeveritySource": "ghsa",
+     "Severity": "HIGH"
+    }
+   ]
+  }
+ ]
+}

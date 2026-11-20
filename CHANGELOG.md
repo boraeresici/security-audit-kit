@@ -6,11 +6,255 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Upgrade notes
+- The plugin now carries one hook: after each agent Edit/Write it runs the repo's vendored
+  `scan.sh edit` on that file (advisory, never blocks). Plugin users get it on update; turn it off
+  with `EDIT_CHECK=0` in `.security-audit.conf`. It needs the vendored kit at this release or later;
+  with an older pin it says once per session that the file was not checked, and runs nothing.
+
+### Security
+- **Hooks no longer run from the vendored tree (N1).** `core.hooksPath` pointed at
+  `tools/security-audit-kit/hooks/`, a directory of the checked-out branch: a branch that added
+  `hooks/post-checkout` got it run by a plain `git checkout`, and one that edited `hooks/pre-commit`
+  got its copy run on the next commit. `install.sh` now always generates wrappers in
+  `.git/security-audit-hooks/` (only `pre-commit` and `pre-push`, plus your own hooks, chained), and
+  each wrapper first runs its own copy of `lib/integrity.sh` against the kit. A kit that differs from
+  the manifest recorded in `.git` at install is not run, and the commit or push is blocked with the
+  files named. **Upgrade:** re-run `install.sh` (bootstrap does) once; after a kit update you have
+  reviewed, re-running it is how you accept the new kit.
+- **`.security-audit.conf` is data, never code (A).** It was sourced as bash, before every command,
+  `verify` included: a committed `exit 0` defeated the pre-push integrity check, `SKIP_SECURITY=1`
+  switched every scan off for everyone on the branch, and any line ran with your privileges. It is now
+  parsed line by line: known names only, literal values (no `$`, no command substitution), env wins
+  over the file for every form, and `SKIP_SECURITY` is read from the environment only. A line that is
+  not a plain setting is not applied and is named with its line number (doctor, verify, the closing
+  summary, `summary.json`). The F24 check no longer reports "settings only, all known" for a line
+  such as `SARIF=0 touch x` (N4). **Upgrade:** a value that used `$VAR`, or a plain `NAME=value` meant
+  to override the environment, behaves differently; `scan.sh doctor` lists such lines.
+- **`verify` sees an extra file in any directory of the kit (C).** It looked for extras under
+  `skills/` only, by substring match: an added `lib/json.py`, `hooks/post-merge` or a symlink passed.
+  It now compares every file and link of the kit against `CHECKSUMS` exactly (python bytecode caches
+  aside), through the same `lib/integrity.sh` the hooks use.
+
+- **The scan no longer runs code a branch committed (B, N2, N3, I).** Each was reproduced first:
+  - python helpers that read stdin or `-c` run with `-I`: a repo-root `json.py` was imported by
+    `doctor` and the merge-mode secret scan;
+  - py-deps does not use a venv with files tracked by git, or without `pyvenv.cfg`: pip-audit ran a
+    committed `.venv/bin/python` in pre-commit and pre-push;
+  - checkov gets the kit's own empty `--external-checks-dir`, so a repo `.checkov.yaml` cannot make
+    it import Python; with `external-checks-git` checkov is not run and `iac` reports an error;
+  - js-deps forces the registry (`JS_AUDIT_REGISTRY`, environment only; a repo `.npmrc` registry
+    answered "0 vulnerabilities" for a vulnerable lockfile), ignores `.pnpmfile.cjs` and yarn's
+    `yarn-path`, and does not run yarn when `.yarnrc.yml` loads repo JavaScript (`yarnPath`,
+    `plugins`; use `scan.sh osv` for that lockfile).
+
+- **Cross-check fixes (independent review of this branch).**
+  - Linked worktrees: a commit in one was blocked with the whole worktree listed as EXTRA, because
+    git hands hooks `GIT_DIR`/`GIT_INDEX_FILE`; the integrity check now clears them.
+  - Bytecode: a committed `lib/__pycache__/*.pyc` with an unchecked hash (PEP 552) ran without its
+    source and was excluded from the check. It is now an EXTRA, and the kit's python reads and
+    writes no bytecode beside its sources (`PYTHONPYCACHEPREFIX`).
+  - `PY_VENV` gets the same check as the repo `.venv` (a committed interpreter is not run).
+  - **Tool pins are environment-only.** A `*_VER` / `*_DIGEST` line in the config is not applied: a
+    branch could re-pin a scanner to an image of its choosing, which reads the repo with network.
+    `OSV_ALLOW_BUILD_SCRIPTS` likewise. **Upgrade:** pins move with the kit (`bootstrap.sh <tag>`);
+    a config that set them gets a warning per line.
+  - List values cannot smuggle scanner flags: `SEMGREP_CONFIGS` takes `--config <rules>` pairs only,
+    and a path list (`SAST_PATHS`, `JS_DIRS`, `TF_DIR`, `TRIVY_SKIP_DIRS`) a value starting with `-`
+    is not applied.
+  - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
+
 ### Added
+- npm audit findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, npm's
+  `--json` report is kept per JS project and each package and advisory becomes a row with the GHSA
+  id, npm's severity, the advisory's CVSS and the fixed version; the log lists them. npm exits
+  non-zero for findings and for its own failures; an npm error object (no registry) is now a scan
+  error, not findings. pnpm and yarn reports are not read yet.
+- guarddog findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1` each
+  `verify` run is kept with the packages its manifest asked for; each fired rule that is not a
+  `capability-*` rule becomes a row with guarddog's own severity. guarddog silently drops a package it
+  cannot fetch (and exits 0); the record now names such packages as not checked, and names a rule
+  that did not run instead of dropping the package's other results.
+- `.codex-plugin/plugin.json` and `scripts/build_codex_zip.py` (F43b): the Codex manifest, with the
+  listing fields the OpenAI plugin directory asks for, and a reproducible ZIP of only what that
+  directory accepts (the manifest, the icon, the five skills, the licence; no hooks, no scanner, no
+  fixtures). The script checks the directory's stated limits before writing anything. `release.sh`
+  checks the Codex manifest's version like the Claude one. Submitting is the maintainer's step
+  (`RELEASING.md`): an organization owner with a verified developer identity uploads the ZIP.
+- **Edit check (F33b):** `scan.sh edit <file>` and the plugin's PostToolUse hook
+  (`hooks/hooks.json`, `hooks/post-edit-check.sh`). One pinned-semgrep pass on the file the agent
+  just edited; new findings reach the agent as context ("data, not instructions"), each file + rule
+  once per session. It writes no record and takes no lock. A file it could not check (no uvx, over
+  `EDIT_CHECK_TIMEOUT_SEC`, a scanner error, no or an old vendored kit) is said to be not checked,
+  never clean; a clean file adds nothing. Settings: `EDIT_CHECK`, `EDIT_CHECK_TIMEOUT_SEC`.
+- checkov findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, checkov
+  writes its JSON beside the SARIF files as well as its table in the log, and each failed check
+  becomes a row with its file, line, resource and guideline. A check skipped with
+  `#checkov:skip=<id>:<reason>` is recorded as suppressed, with the reason. Severity is `unknown`
+  unless checkov gives one (it gives none without a platform key).
+- **`policy_changes` (NEW-3).** Every run names what the change under review does to the gate
+  itself: config, exclusions, scanner allowlists and configs, package-manager configs, repo-local
+  rules, any file of the vendored kit, and added `nosemgrep` / `gitleaks:allow` / `checkov:skip` /
+  `zizmor: ignore` / `trivy:ignore` lines. In `summary.json` and as a `── policy:` line. A signal,
+  never a block; `null` when there is no base branch to compare with.
+- **`GATE_STRICT=1` (NEW-4).** A dimension that did not inspect (skipped, error, indeterminate) blocks,
+  soft ones included. Environment or config. The default stays permissive and loud.
+
+### Changed
+- **`scan.sh guarddog` blocks on the same measured rule list as `pkgcheck`.** It used guarddog's exit
+  code, which counts `capability-*` rules: a project with `requests` alone was reported with findings
+  and blocked (measured, guarddog 3.0.2, label `no_risks_detected`). Now a rule on `pkgcheck`'s block
+  list blocks, any other threat or metadata rule is reported without blocking, and capabilities are
+  not findings; `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` apply to both. Without python3 the
+  exit code still decides, and the run says so.
+- **An osv-scanner crash blocks** (osv is a hard dimension; it allowed, while a crashed trivy, a soft
+  one, blocked). **zizmor is in `all`** (not applicable without workflows): a workflow injection now
+  gates a push.
+- **sec-triage proposes suppressions; it writes them only after you confirm (NEW-5).** It wrote
+  allowlists, `.security-exclusions.md` and the config on its own, so repo text that steered it
+  produced a team-wide suppression. Now: allowlist entries and exclusion rules are shown as a diff
+  and written once the user confirms in the conversation (unattended: left as a proposal);
+  `.security-audit.conf` is never written. A `# noqa` / "dev only" comment or a `tests/`/`docs/`
+  path is no longer evidence of a false positive by itself, and an exclusion rule added in the range
+  under review is not applied. The eval prompt carries the same rule.
+- **`bootstrap.sh --expect` needs the full commit id.** It was a prefix match, so `--expect=a`
+  accepted one commit in sixteen. A short id is now refused with the full one in the message.
+- `docs/threat-model.md` lists the bypasses that exist by design and what shows each one (F11-r).
+
+### Tests
+- `tests/trust-gate.sh`: 48 offline cases, one reproduction per finding above (the N1/A/C ones: 19 fail on
+  1.21). CI runs it on Linux and macOS. e2e vendors the kit the way bootstrap does (the files git
+  knows, not the working tree's run debris), since the integrity check now counts every file.
+
+### Added
+- `scripts/release.sh final` fast-forwards a `release` branch to the final tag. The plugin
+  directory tracks `release`, so merges to `main` between releases no longer become directory
+  versions. The final checks that `release` can fast-forward before it tags anything.
+  `.github/rulesets/release.json` protects the branch. Forks without it are told and release as
+  before; `RELEASE_BRANCH=` turns it off.
 - The plugin has a listing icon, `.claude-plugin/icon.png`: the banner's shield mark, drawn by
   `scripts/make_icon.py` with no dependencies. e2e checks its size and that the script redraws it.
 - `PRIVACY.md`: the privacy policy the plugin directory asks for. The kit and the plugin collect
   nothing; it summarises what the scanner's lookups send and points at `docs/data-flow.md`.
+- The skills install in Codex from the same plugin, with no separate package:
+  `codex plugin marketplace add` and `codex plugin add` (`docs/install.md`, "The skills in
+  Codex"). e2e installs it in a throwaway `CODEX_HOME` and counts the five skills when `codex` is
+  on PATH. Not yet: the agent hook for Codex and a Codex directory listing.
+- `docs/install.md` documents the Skills CLI (`npx skills add`) as a third install path, tried with
+  `skills@1.7.4`: pin the tag and the CLI version, and turn its telemetry off
+  (`DISABLE_TELEMETRY=1`); `docs/data-flow.md` has its row.
+
+### Changed
+- ShellCheck's word-splitting checks (SC2086, SC2046) are on again. They were off for the whole kit,
+  which is how the space-splitting bugs above got in; the few places that split on purpose
+  (space-separated flags from the config) say so on the line.
+- Python 3.9 is the documented minimum (macOS's own `python3`); CI now also runs the unit tests on
+  Python 3.9 and 3.13 on Linux and macOS, and the offline e2e on macOS (bash 3.2, BSD tools). These
+  are new, non-required checks. WSL2 is marked "not verified" in `docs/install.md` until a run is
+  recorded.
+- Every skill answers a question without running its flow: asked about one finding or the method,
+  it answers in the conversation, starts no scan, writes nothing, and says so. A scan, triage,
+  audit or review of the repo still runs the full flow; an ambiguous request gets one question
+  (`docs/skills.md`, "Asking versus auditing"). The skill descriptions no longer name one host.
+- `sec-sast-deep`, `sec-ai-review` and `sec-audit`'s whole-repo mode share one severity scale for
+  judgment findings, tied to the impact the evidence shows; a candidate whose claimed impact is
+  wrong but whose path still shows a smaller flaw is REAL at the smaller severity, not FP. Measured
+  first: on the 18 dev cases of the new deep-review eval it fixed one of two over-stated cases with
+  no regression in three runs (`docs/skills.md`, "Severity of a judgment finding").
+
+### Added
+- pip-audit findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, pip-audit
+  writes its JSON beside the SARIF files and `lib/native.py` turns it into one row per package and
+  advisory, with `package`, `aliases` and `fixed_in`; the severity is `unknown` (pip-audit gives none,
+  and the kit does not guess). The scan log lists them instead of pip-audit's own table. pip-audit
+  exits 1 for findings and for its own failures; now an exit 1 with no readable output is recorded as
+  a scan error, not as findings. The rows do not go to Code Scanning.
+
+### Documented
+- The README has an architecture diagram: how the kit and the plugin reach a repo, what the hooks
+  check before they run, what a scan writes and how the skills' findings come back into the same
+  record. The long lifecycle diagram and the text finding loop moved to `docs/lifecycle.md`, brought
+  up to date: hook wrappers and their integrity check, the config read as data, `policy_changes`,
+  `GATE_STRICT`, suppressions proposed by `/sec-triage` and written after you confirm, native JSON
+  beside SARIF. README-tr follows; both diagrams were rendered with mermaid-cli 11.4.2 to check them.
+- `docs/evidence-matrix.md`: per scan unit, the tool, its native output, whether it writes rows to
+  `evidence.json`, where its severity comes from and what happens to a suppressed finding; e2e checks
+  it against the dimension registry and the SARIF sources.
+- Measured with the pinned tools (`tests/fixtures/native/uvlock/`): trivy 0.58.0 does not read
+  `uv.lock`, so in a uv project the `container` dimension reports nothing about Python dependencies;
+  `py-deps` and `osv` cover them. The same advisory is `CVE-2021-33503` to trivy and
+  `PYSEC-2021-108` to osv-scanner and pip-audit, and `.trivyignore.yaml` matches trivy's own id
+  only, so a suppression copied from pip-audit's output into it suppresses nothing.
+
+### Security
+- The judgment parser treats the model-written findings table as untrusted input. A row whose
+  location is not a safe repo-relative path (absolute, `~`, drive letter, backslash, `.`/`..`
+  segment, control or bidirectional character, line 0) is dropped with an escaped warning instead
+  of reaching `evidence.json` and the `kit.sarif` uploaded to Code Scanning. Free-text cells lose
+  control and bidirectional characters and are capped at 2000 characters; a findings file over
+  2 MiB skips the judgment layer. Rows are split on newlines only, so U+2028 can no longer cut one
+  in two (`docs/schema/evidence.md`). After an independent review, the path rules also refuse a
+  colon (`https:`, `javascript:`), segments Windows would turn into `..`, non-ASCII spaces,
+  private-use characters, fullwidth dots and paths over 1024 characters; `kit.sarif`
+  percent-encodes the path; a confidence of `nan`, `inf` or outside `[0, 1]` is dropped rather than
+  written as invalid JSON; a markdown link in a message is broken apart; at most 20 dropped rows are
+  named. A tool cell of `-` no longer attaches a judgment row to any scanner finding at that
+  location.
+
+### Fixed
+- `tests/trust-gate.sh` (N2) compared the interpreter path pip-audit was given with the unresolved
+  temp path, so on macOS (`/var` -> `/private/var`) the positive check failed in CI and the negative
+  one passed without testing anything. Both now accept either spelling.
+- A finding suppressed with `# nosemgrep` was counted as a live finding in `evidence.json` and the
+  HTML report. semgrep (1.166.0, measured) writes such hits into its SARIF with
+  `suppressions: [{kind: inSource}]`, which the evidence builder ignored. A tool suppression is now
+  recorded as `decision: "suppressed"` with the tool's note, so it is on record and not reported; one
+  whose status is `rejected` or `underReview` stays live. The gate was never affected.
+- **The run lock was not exclusive on Ubuntu 25.10 and later.** Its atomic step was `mkdir`, and the
+  uutils coreutils `mkdir` those releases ship (0.10.0) lets several concurrent callers all "create"
+  the same directory: in 200 rounds of four racers, 319 won. Two scans could both hold the lock and
+  both write the shared record (F01), and a reclaim could delete a fresh lock. Ownership is now taken
+  by creating a file under bash's noclobber (`O_CREAT|O_EXCL`, done by bash itself), so there is one
+  winner whatever `mkdir` does. Found when the e2e lock test failed on CI's Ubuntu 26.04 runner and
+  reproduced in an `ubuntu:26.04` container (6 of 30 runs before, 0 of 30 after).
+- A project in a folder with a non-ASCII name (`güvenlik/requirements.txt`) was not scanned: git
+  quotes such paths by default, so no manifest pattern matched, `py-deps` reported "not applicable"
+  and `p/python` was not selected, and the pre-commit dependency gate did not fire. `scan.sh` and
+  the pre-commit hook now read paths with `core.quotepath=off`. Paths with spaces are still split in
+  places; that is F18's next slice.
+- Paths with spaces were split: a manifest in `güvenlik modülü/` reached osv-scanner as two
+  arguments, a JS project in `src dir/` was audited as `src` and `dir`, changed files with spaces
+  were dropped from `sast-changed`, the Terraform directory was cut at the space, and `scan.sh
+  evidence` crashed under a repo root with a space. Lists from git are now one path per line and
+  reach each tool as one argument (bash 3.2 arrays). The lists in `.security-audit.conf`
+  (`SAST_PATHS`, `JS_DIRS`) stay space-separated; `docs/install.md` says so.
+- In a git worktree whose main repo path has a space, the extra read-only mount for gitleaks was
+  split into several `docker run` arguments, so the `secret` dimensions failed there. The mount is an
+  argument array now.
+- A `TRIVY_CACHE` path with a space broke the `container` dimension and `scan.sh warm`: the cache
+  mount was one printed string, split so that docker read part of the path as the image name. It is
+  an argument array now.
+- A shallow clone was scanned as "full history". `secret` now says how many commits were fetched and
+  that older history was not scanned (in the dimension's reason, so it reaches `summary.json` and the
+  report), and `doctor` says the same. `doctor` no longer calls WSL2 "full support".
+- `scan.sh allowlist` read a `.trivyignore.yaml` expiry under `expiredAt`, but Trivy's key is
+  `expired_at`: an expired Trivy deferral was counted as one with no expiry and passed. Both are read
+  now, and osv-scanner's newer `effectiveUntil` next to `ignoreUntil`. The `sec-triage` skill named
+  the wrong key too.
+- The HTML report said "0 finding(s) present" when a dimension with no per-finding adapter yet
+  (checkov, pip-audit, the JS audit, guarddog) had findings. The header now names those dimensions
+  and points at the scan log, and `evidence.json` warns about each of them.
+- `docs/schema/evidence.md` claimed `sakFindingId` keeps a Code Scanning alert across runs; GitHub
+  matches on `primaryLocationLineHash`, and the kit's id changes with the line.
+- `install.sh` no longer writes or deletes through a link. The Skills CLI (`npx skills add`) links
+  `.claude/skills/<name>` to `.agents/skills/<name>`; `--no-skills` and `--uninstall` used to delete
+  the `SKILL.md` behind the link, the copy Codex and other agents read, while reporting "removed the
+  kit's copy", and a plain install wrote over it. A linked skill folder is now left alone in every
+  mode, and the output says so.
+- A location such as `app.py:²`, or a line number of 5000 digits, no longer crashes
+  `scan.sh evidence`. A findings file that is not UTF-8 is reported and skipped instead of raising;
+  one that starts with a BOM is read. `path:line:column` keeps the line, not the column. A
+  scanner's `security-severity` of `NaN` is ignored.
 
 ## [1.21.0] - 2026-11-04
 

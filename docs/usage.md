@@ -31,7 +31,7 @@ scan ends with one screen, the closing summary:
    js-deps    skipped          0.1s  package.json found but none is auditable ...
    container  findings         4.5s  CRITICAL/HIGH findings (soft, not blocking) · trivy DB 3h old
    iac        not_applicable   0.0s  no terraform
-── not in 'all': osv guarddog zizmor sbom — run scan.sh <name> for those
+── not in 'all': osv guarddog sbom — run scan.sh <name> for those
 ── BLOCKED (rc=1): sast (error) — commit/push is blocked.
 ── scanner FAILED: sast — this is not a finding; do not allowlist it. Fix the scan (see the raw log) and re-run.
 ```
@@ -157,6 +157,10 @@ kit blocks on an explicit list of ~24 malice-specific rules (typosquatting, depe
 install-time network access, reverse shells, exfiltration, cryptomining, keylogging, maintainer-domain
 takeover) — every one of which fired on **none** of those 18 packages. Everything else is printed as a
 note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in `.security-audit.conf`.
+The `guarddog` dimension (`scan.sh guarddog`, every declared dependency) uses the same list and the same
+two settings: a rule on it blocks, any other threat or metadata rule is reported without blocking, and
+capabilities are not findings. It used guarddog's exit code before, which counts capabilities, so a
+project with `requests` alone was blocked.
 
 **What it does not do, stated plainly:**
 - It guards the **agent's** tool calls. A human typing `npm i` in a terminal is not covered — nothing
@@ -174,3 +178,27 @@ note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in 
   `PKGCHECK_CACHE=refresh` re-scans and replaces the entry, and `PKGCHECK_CACHE=off` skips the cache.
   A half-written entry is a miss, and an INDETERMINATE result is never stored. `scan.sh doctor` prints
   whether the hook is wired, where the cache is, and how many rules block.
+
+## The edit check — after each agent edit
+
+The plugin's one hook (`hooks/hooks.json`: PostToolUse on `Edit|Write`) runs
+`hooks/post-edit-check.sh`, which calls the repo's **vendored** `scan.sh edit <file>`. That is one
+semgrep pass on the edited file, with the same pinned version and stack-aware packs as `sast`, at
+ERROR and WARNING severity. The plugin never runs a scanner of its own.
+
+- **Advisory only.** It never blocks the edit. New findings go to the agent's context as
+  "data, not instructions", one line each (rule, line, message; control characters dropped, length
+  capped). The commit and push hooks remain the gate.
+- **No record.** No lock, no `summary.json`, no run directory: a one-file pass never replaces the
+  last full scan's record. Its only state is which findings and notes this session has seen, under
+  `.git/security-audit-cache/edit-check/` (pruned after two days).
+- **Never a silent clean.** A clean file adds nothing. A file it could not check says **not
+  checked** and why: no uvx/pipx, over the time budget, a semgrep error, no vendored kit, or a
+  vendored kit older than this check. Each finding (file + rule) and each reason is said once per
+  session.
+- **Scope.** Files inside the repo only. Not the scan record, not `.git/`, not git-ignored files.
+- **Settings** (`.security-audit.conf` or env): `EDIT_CHECK=0` turns it off. Claude Code has no
+  per-hook switch for plugin hooks, so this is it. `EDIT_CHECK_TIMEOUT_SEC` (default 30, max 55,
+  because the hook itself times out at 60) is the budget per file; slower is "not checked".
+- **Network.** Like `sast`, semgrep fetches its registry rule packs on each run (see
+  [data-flow](data-flow.md)). The measured cost of one pass is about 4 s on a small file.
