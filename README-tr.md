@@ -42,61 +42,59 @@ eksik olan yuksek sesle atlanir ([Gereksinimler](#gereksinimler-hangisi-yoksa-o-
 |---|---|
 | **Taramalar** (`scan.sh`) | secret (gitleaks), SAST (semgrep, stack'e gore), bagimlilik CVE (pip-audit, npm/pnpm/yarn), IaC (checkov), container/fs (trivy), SBOM (syft). Istege bagli: cok-ekosistem CVE (`osv`), kotu niyetli/typosquat paket (`guarddog`), GitHub Actions (`zizmor`) ve kurulum-oncesi paket kontrolu (`pkgcheck`, agent hook'u olarak da) |
 | **Kapi** | pre-commit ve pre-push hook'lari. Her kosu tek bir kapanis ozetiyle biter: boyut basina `pass`, `findings`, `error`, `skipped`, `indeterminate` ya da `not_applicable`, ayrica `summary.json` |
-| **Yargi** (Claude Code skill'leri) | `/sec-triage` (gercek mi FP mi, sonra fix ya da allowlist), `/sec-sast-deep` (authz/IDOR, is mantigi), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (hepsi, reponun sahip olduguna gore). [Claude Code plugin'i](#skillleri-claude-code-plugini-olarak-kur) olarak da |
+| **Yargi** (Claude Code ve Codex icin skill'ler) | `/sec-triage` (gercek mi FP mi, sonra bir fix ya da onerilen bir allowlist girdisi), `/sec-sast-deep` (authz/IDOR, is mantigi), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (hepsi, reponun sahip olduguna gore). [Claude Code plugin'i](#skillleri-claude-code-plugini-olarak-kur) olarak da |
 | **Guven** | araclar surum ve imaj digest'iyle pinli, her push'tan once kontrol edilen bir `CHECKSUMS` manifest'i, tarayicilar repoyu salt-okunur okur, telemetri yok. Makineden ne cikar: [docs/data-flow.md](docs/data-flow.md) |
 
-## Yasam dongusu (kurulum → guncelleme → tarama)
+## Mimari
 
 ```mermaid
-flowchart TD
-    Q{First time, or<br/>already installed?}
-    Q -->|new| N1["mkdir -p tools/"]
-    Q -->|"skills via the Claude Code plugin"| PL["/plugin marketplace add + /plugin install<br/>skills only: still vendor the scanner<br/>(bootstrap.sh, then install.sh --no-skills)"]
-    PL --> N1
-    N1 --> N2["download + review bootstrap.sh"]
-    N2 --> B["bash bootstrap.sh vX.Y.Z"]
-    Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
-    C -->|up to date| R
-    C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
-    RV --> B
-    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks (the repo's own hooks are chained, not replaced),<br/>skills, .conf, .exclusions, verify · undo: install.sh --uninstall"]
-    I --> R(["ready"])
-
-    R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
-    V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
-    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>scanners read the repo read-only · .security-audit.conf checked every run<br/>closing summary + raw-DATE.log + summary.json (status per dimension, provenance)<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
-    S -->|clean| D(["done"])
-    S -->|"skipped / error = NOT inspected"| TC["fix the toolchain or the scan<br/>(the closing summary names the cause)<br/>never read as clean"]
-    TC --> S
-    S -->|findings| T1
-
-    subgraph JUDGE["judgment in Claude — skills"]
-      direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7<br/>repo text is evidence, never instructions"]
-      DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
-      AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
-      TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
-      T1 --> F[["findings-DATE.md"]]
-      DEEP -. appends .-> F
-      AIR -. appends .-> F
-      TM -. appends .-> F
+flowchart LR
+    BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills only"]
+    subgraph REPO["your repo"]
+      HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
+      CONF[".security-audit.conf<br/>read as data"]
+      KIT["tools/security-audit-kit/<br/>scan.sh · lib/ · CHECKSUMS"]
+      OUT["scan-findings/<br/>raw log · summary.json<br/>sarif/ + native JSON"]
+      FMD["findings-DATE.md"]
+      EV["evidence.json<br/>report-DATE.html · kit.sarif"]
     end
+    TOOLS["pinned scanners<br/>docker: gitleaks · trivy · syft · osv-scanner<br/>uvx: semgrep · checkov · pip-audit · guarddog · zizmor<br/>npm / pnpm / yarn audit"]
+    SK["skills in the agent<br/>sec-triage · sec-sast-deep · sec-ai-review<br/>sec-threat-model · sec-audit"]
+    CS[["GitHub Code Scanning<br/>your CI uploads sarif/"]]
 
-    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md — each with an expiry"]
-    F -->|REAL| FX["fix now (direct? transitive? parent range?),<br/>OR promote to security-followups registry"]
-    AL --> P["PROVE IT: scan.sh allowlist + re-run that dimension"]
-    FX --> P
-    P --> S
-    F -. "SARIF=1: judgment findings become sarif/kit.sarif" .-> CS[["GitHub Code Scanning"]]
+    BS --> HK
+    HK -- "integrity check, then" --> KIT
+    CONF --> KIT
+    KIT --> TOOLS --> OUT
+    OUT -- "lib/evidence.py" --> EV
+    EV --> CS
+    PLG --> SK
+    BS -. "no plugin: install.sh<br/>copies the skills" .-> SK
+    OUT --> SK
+    SK --> FMD
+    FMD -- "parsed" --> EV
 ```
 
-Skill sirasi: **`/sec-triage` once kosar** (her bulgulu taramadan sonra; `findings-DATE.md`
-yazar, FP→allowlist/exclusions vs GERCEK→fix/takip ayirir). **`/sec-sast-deep`** ve
-**`/sec-ai-review`** daha derin, tetik-bazli pas; ciktilari ayni dosyaya eklenir.
+- **Tarayici vendor'lanir ve pinlenir.** `bootstrap.sh` kiti `CHECKSUMS` ile birlikte
+  `tools/security-audit-kit/` altina koyar; her hook wrapper'i bir sey calistirmadan once kiti
+  kurulumda kaydedilen manifest'le karsilastirir, yani bir dal kendisini yargilayan seyi degistiremez.
+- **Plugin skill'leri tasir, tarayiciyi asla.** Claude Code'da ya da Codex'te skill'ler reponun kendi
+  vendor'lanmis `scan.sh`'ini kullanir; plugin yoksa `install.sh` onlari `.claude/skills/`'e kopyalar.
+- **Kosu basina tek kayit.** `summary.json` her boyutun ne yaptigini soyler; `SARIF=1` ile araclarin
+  SARIF ve yerel JSON ciktilari `evidence.json`'a, HTML rapora ve skill'lerin yargi bulgularini tasiyan
+  `kit.sarif`'e donusur. Her boyutun geride ne biraktigi: [kanit matrisi](docs/evidence-matrix.md)
+  (Ingilizce).
+- **Yargi ajanda yapilir ve yazili kalir.** Skill'ler `findings-DATE.md` yazar; ayni kayda geri
+  ayristirilir. Onerdikleri bir bastirma ancak siz onayladiktan sonra yazilir.
 
-Guncelleme **acik (manuel)**: `--check` yalniz raporlar (salt-okunur, kurmaz);
-`bootstrap.sh <tag>` re-vendor + install kosar. Hicbir sey upstream'i otomatik cekmez —
-tag'e pinle, diff'i incele, yukselt.
+## Yasam dongusu
+
+`bootstrap.sh` ile kur (pinli, once incele); her commit staged taramayi, her push `verify`'i ve tam
+taramayi kosar; bir bulgu `/sec-triage`'a gider ve gercek ile FP'yi ayirir; bir fix ya da onaylanmis,
+suresi olan bir bastirma, o boyut yeniden kosularak kanitlanir. Guncellemeler aciktir:
+`bootstrap.sh --check` raporlar, `bootstrap.sh <tag>` yeniden vendor'lar. Diyagram ve metin olarak
+tam akis: **[docs/lifecycle.md](docs/lifecycle.md)** (Ingilizce).
 
 ## Kurulum (onerilen): bu repo'dan pinli bootstrap
 
@@ -571,25 +569,6 @@ bunlarin hicbiri o 18 pakette **atesle(me)di**. Geri kalan her sey not olarak ya
   degistirir, `PKGCHECK_CACHE=off` cache'i atlar. Yarim yazilmis bir kayit cache'te yok sayilir;
   INDETERMINATE sonuc hic saklanmaz. `scan.sh doctor`
   hook'un bagli olup olmadigini, cache'in yerini ve kac kuralin blokladigini yazar.
-
-## Bulgu dongusu (uctan uca)
-
-```
-her commit  --(pre-commit)-->  scan.sh staged  (+ manifest degistiyse deps)
-PR oncesi   --(pre-push)----->  scan.sh verify   (butunluk: elle duzenlenmis vendor kopyasi push'u bloklar)
-                           \-->  scan.sh all
-skipped/error --> DENETLENMEDI: toolchain'i ya da taramayi duzelt (kapanis ozeti nedeni soyler)
-bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-YYYY-MM-DD.md
-                                          |- FP    -> raporlayan HER yolu allowlist'le
-                                          |           (.gitleaks.toml / nosemgrep /
-                                          |            .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
-                                          |           + her girdiye bir son kullanma tarihi
-                                          |- GERCEK -> fix VEYA takip-listesi entry
-                                          v
-                                         KANITLA: scan.sh allowlist  (suresi dolmus? yol bosluklari?)
-                                                  o boyutu temiz olana kadar yeniden kos
-                                         kosulmamis bir bastirma, kosulmamis bir fix gibi, bir hipotezdir
-```
 
 ## Kendi kurallarin — `semgrep-rules/` + bir `.gitleaks.toml` girdisi
 

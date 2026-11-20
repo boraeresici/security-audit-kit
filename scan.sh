@@ -1089,7 +1089,7 @@ EOF
   return "$rc"
 }
 
-# ---- zizmor — GitHub Actions security, OPTIONAL (not in 'all') ----
+# ---- zizmor — GitHub Actions security, in 'all' (not applicable without workflows) ----
 # Static analysis of GitHub Actions workflows/actions (template injection, dangerous triggers,
 # token over-permissioning, unpinned actions). Runs OFFLINE by default (no GitHub API), so it is
 # deterministic and air-gap friendly. Standalone + opt-in. Tune with ZIZMOR_ARGS (e.g. --min-severity).

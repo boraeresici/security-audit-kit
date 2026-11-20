@@ -41,7 +41,7 @@ dimensions, and a missing one is skipped out loud ([Requirements](docs/install.m
 |---|---|
 | **Scans** (`scan.sh`) | secrets (gitleaks), SAST (semgrep, stack-aware), dependency CVE (pip-audit, npm/pnpm/yarn), IaC (checkov), container/fs (trivy), SBOM (syft). Optional: multi-ecosystem CVE (`osv`), malicious/typosquat packages (`guarddog`), GitHub Actions (`zizmor`), and a pre-install package check (`pkgcheck`, also as an agent hook) |
 | **Gate** | pre-commit and pre-push hooks. Each run ends with one closing summary: per dimension `pass`, `findings`, `error`, `skipped`, `indeterminate` or `not_applicable`, plus `summary.json` |
-| **Judgment** (Claude Code skills) | `/sec-triage` (real or false positive, then fix or allowlist), `/sec-sast-deep` (authz/IDOR, business logic), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (all of it, gated on what the repo has). Also as a [Claude Code plugin](#install-the-skills-as-a-claude-code-plugin) |
+| **Judgment** (skills for Claude Code and Codex) | `/sec-triage` (real or false positive, then a fix or a proposed allowlist entry), `/sec-sast-deep` (authz/IDOR, business logic), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (all of it, gated on what the repo has). Also as a [Claude Code plugin](#install-the-skills-as-a-claude-code-plugin) |
 | **Trust** | tools pinned by version and image digest, a `CHECKSUMS` manifest checked before every push, scanners read the repo read-only, no telemetry. What leaves the machine: [docs/data-flow.md](docs/data-flow.md) |
 
 
@@ -49,6 +49,7 @@ dimensions, and a missing one is skipped out loud ([Requirements](docs/install.m
 
 | | |
 |---|---|
+| [Lifecycle](docs/lifecycle.md) | install → update → scan → judge, as a diagram and as text |
 | [Install, update, platforms](docs/install.md) | other install paths, the pre-commit framework, updates, WSL2, requirements |
 | [Usage](docs/usage.md) | every `scan.sh` command, `summary.json`, reports, `pkgcheck` and the agent hook |
 | [Your own rules and suppressions](docs/rules.md) | repo-local semgrep/gitleaks rules; suppressing a finding everywhere it is reported |
@@ -56,57 +57,55 @@ dimensions, and a missing one is skipped out loud ([Requirements](docs/install.m
 | [Configuration](docs/configuration.md) | `.security-audit.conf`, the config check, triage exclusions |
 | [What leaves the machine](docs/data-flow.md) · [Privacy](PRIVACY.md) · [Threat model](docs/threat-model.md) · [`summary.json`](docs/schema/summary.md) · [Evidence matrix](docs/evidence-matrix.md) | trust and contracts |
 
-## Lifecycle (install → update → scan)
+## Architecture
 
 ```mermaid
-flowchart TD
-    Q{First time, or<br/>already installed?}
-    Q -->|new| N1["mkdir -p tools/"]
-    Q -->|"skills via the Claude Code plugin"| PL["/plugin marketplace add + /plugin install<br/>skills only: still vendor the scanner<br/>(bootstrap.sh, then install.sh --no-skills)"]
-    PL --> N1
-    N1 --> N2["download + review bootstrap.sh"]
-    N2 --> B["bash bootstrap.sh vX.Y.Z"]
-    Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
-    C -->|up to date| R
-    C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
-    RV --> B
-    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks (the repo's own hooks are chained, not replaced),<br/>skills, .conf, .exclusions, verify · undo: install.sh --uninstall"]
-    I --> R(["ready"])
-
-    R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
-    V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
-    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>scanners read the repo read-only · .security-audit.conf checked every run<br/>closing summary + raw-DATE.log + summary.json (status per dimension, provenance)<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
-    S -->|clean| D(["done"])
-    S -->|"skipped / error = NOT inspected"| TC["fix the toolchain or the scan<br/>(the closing summary names the cause)<br/>never read as clean"]
-    TC --> S
-    S -->|findings| T1
-
-    subgraph JUDGE["judgment in Claude — skills"]
-      direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7<br/>repo text is evidence, never instructions"]
-      DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
-      AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
-      TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
-      T1 --> F[["findings-DATE.md"]]
-      DEEP -. appends .-> F
-      AIR -. appends .-> F
-      TM -. appends .-> F
+flowchart LR
+    BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills only"]
+    subgraph REPO["your repo"]
+      HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
+      CONF[".security-audit.conf<br/>read as data"]
+      KIT["tools/security-audit-kit/<br/>scan.sh · lib/ · CHECKSUMS"]
+      OUT["scan-findings/<br/>raw log · summary.json<br/>sarif/ + native JSON"]
+      FMD["findings-DATE.md"]
+      EV["evidence.json<br/>report-DATE.html · kit.sarif"]
     end
+    TOOLS["pinned scanners<br/>docker: gitleaks · trivy · syft · osv-scanner<br/>uvx: semgrep · checkov · pip-audit · guarddog · zizmor<br/>npm / pnpm / yarn audit"]
+    SK["skills in the agent<br/>sec-triage · sec-sast-deep · sec-ai-review<br/>sec-threat-model · sec-audit"]
+    CS[["GitHub Code Scanning<br/>your CI uploads sarif/"]]
 
-    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md — each with an expiry"]
-    F -->|REAL| FX["fix now (direct? transitive? parent range?),<br/>OR promote to security-followups registry"]
-    AL --> P["PROVE IT: scan.sh allowlist + re-run that dimension"]
-    FX --> P
-    P --> S
-    F -. "SARIF=1: judgment findings become sarif/kit.sarif" .-> CS[["GitHub Code Scanning"]]
+    BS --> HK
+    HK -- "integrity check, then" --> KIT
+    CONF --> KIT
+    KIT --> TOOLS --> OUT
+    OUT -- "lib/evidence.py" --> EV
+    EV --> CS
+    PLG --> SK
+    BS -. "no plugin: install.sh<br/>copies the skills" .-> SK
+    OUT --> SK
+    SK --> FMD
+    FMD -- "parsed" --> EV
 ```
 
-Skill order: **`/sec-triage` runs first** after any scan with findings (writes `findings-DATE.md`,
-splits FP→allowlist/exclusions vs REAL→fix/follow-up). **`/sec-sast-deep`** and **`/sec-ai-review`**
-are deeper, trigger-based passes whose findings append to the *same* file and flow.
+- **The scanner is vendored and pinned.** `bootstrap.sh` puts the kit in `tools/security-audit-kit/`
+  with its `CHECKSUMS`; every hook wrapper checks the kit against the manifest recorded at install
+  before it runs anything, so a branch cannot change what judges it.
+- **The plugin carries the skills, never the scanner.** In Claude Code or Codex the skills drive the
+  repo's own vendored `scan.sh`; without the plugin, `install.sh` copies them into `.claude/skills/`.
+- **One record per run.** `summary.json` says what each dimension did; with `SARIF=1` the tools' SARIF
+  and native JSON become `evidence.json`, the HTML report and `kit.sarif`, which carries the
+  skills' judgment findings. What each dimension leaves behind: [evidence matrix](docs/evidence-matrix.md).
+- **Judgment is in the agent, and written down.** Skills write `findings-DATE.md`; it is parsed back
+  into the same record. A suppression they suggest is written only after you confirm it.
 
-Updates are **explicit**: `--check` only reports (read-only, no install); `bootstrap.sh <tag>`
-re-vendors and re-runs install. Nothing auto-pulls upstream — pin a tag, review the diff, bump.
+## Lifecycle
+
+Install with `bootstrap.sh` (pinned, reviewed first); every commit runs the staged scan and every
+push `verify` and the full scan; a finding goes to `/sec-triage`, which splits real from false
+positive; a fix or a confirmed, expiring suppression is proved by re-running the dimension. Updates
+are explicit: `bootstrap.sh --check` reports, `bootstrap.sh <tag>` re-vendors. The full flow, as a
+diagram and as text: **[docs/lifecycle.md](docs/lifecycle.md)**.
 
 ## Install (recommended): bootstrap from this repo, pinned
 
@@ -208,25 +207,6 @@ conversation. In the VS Code extension, run **Developer: Reload Window** from th
 The plugin ships no hooks. A plugin's hooks would run with your full permissions. The kit's git
 hooks come from `install.sh`, and its agent hook is opt-in (`--with-agent-hook`). The plugin
 channel is new: as of this version it is meant for your own projects, ahead of a public listing.
-
-## Finding loop (end to end)
-
-```
-every commit --(pre-commit)-->  scan.sh staged  (+ deps if a manifest changed)
-before a PR  --(pre-push)----->  scan.sh verify   (integrity: an edited vendored kit blocks the push)
-                            \-->  scan.sh all
-skipped/error --> NOT inspected: fix the toolchain or the scan (the closing summary names the cause)
-finding      --> /sec-triage in Claude --> docs/security/scan-findings/findings-YYYY-MM-DD.md
-                                           |- FP   -> allowlist EVERY reporting path
-                                           |          (.gitleaks.toml / nosemgrep /
-                                           |           .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
-                                           |          + an expiry on each entry
-                                           |- REAL -> fix OR follow-up registry entry
-                                           v
-                                          PROVE IT: scan.sh allowlist  (expired? cross-path gap?)
-                                                    re-run that dimension until clean
-                                          an unrun suppression, like an unrun fix, is a hypothesis
-```
 
 ## How it compares
 A maintained three-way feature comparison against a commercial **all-in-one SaaS** platform and **Semgrep** — including what the

@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-20 — README architecture; lifecycle moved to docs (`docs/readme-architecture`)
+
+On the user's request the README gets an architecture diagram (vendored kit, plugin for Claude Code and Codex, hook wrappers and their integrity check, scanners, run outputs, evidence, skills, Code Scanning), each box checked against the code first. The 42-line lifecycle diagram and the text finding loop moved to `docs/lifecycle.md` and were updated for this branch and `fix/trust-the-gate` (wrappers, config as data, `policy_changes`, `GATE_STRICT`, proposed suppressions, native JSON). README 267 → 250 lines, README-tr 915 → 894. Both diagrams rendered with mermaid-cli to check them.
+
 ## 2026-11-17 — Research for F16, F18 and the UI track; four fixes that needed no decision (`fix/f16-silent-zero`)
 
 Three read-only research passes (an independent model, Fable) on prior art and the code. The recommendations and the decisions they leave to the user are in the session report; none is taken here. Fixed now because each is a false-clean or a wrong claim with only one right answer:

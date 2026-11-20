@@ -127,6 +127,12 @@ All notable changes to this project are documented here. The format is based on
   a scan error, not as findings. The rows do not go to Code Scanning.
 
 ### Documented
+- The README has an architecture diagram: how the kit and the plugin reach a repo, what the hooks
+  check before they run, what a scan writes and how the skills' findings come back into the same
+  record. The long lifecycle diagram and the text finding loop moved to `docs/lifecycle.md`, brought
+  up to date: hook wrappers and their integrity check, the config read as data, `policy_changes`,
+  `GATE_STRICT`, suppressions proposed by `/sec-triage` and written after you confirm, native JSON
+  beside SARIF. README-tr follows; both diagrams were rendered with mermaid-cli 11.4.2 to check them.
 - `docs/evidence-matrix.md`: per scan unit, the tool, its native output, whether it writes rows to
   `evidence.json`, where its severity comes from and what happens to a suppressed finding; e2e checks
   it against the dimension registry and the SARIF sources.
