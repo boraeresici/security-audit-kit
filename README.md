@@ -62,7 +62,7 @@ dimensions, and a missing one is skipped out loud ([Requirements](docs/install.m
 ```mermaid
 flowchart LR
     BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
-    PLG["plugin: Claude Code · Codex<br/>the five skills only"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills + an advisory edit hook"]
     subgraph REPO["your repo"]
       HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
       CONF[".security-audit.conf<br/>read as data"]
@@ -91,8 +91,9 @@ flowchart LR
 - **The scanner is vendored and pinned.** `bootstrap.sh` puts the kit in `tools/security-audit-kit/`
   with its `CHECKSUMS`; every hook wrapper checks the kit against the manifest recorded at install
   before it runs anything, so a branch cannot change what judges it.
-- **The plugin carries the skills, never the scanner.** In Claude Code or Codex the skills drive the
-  repo's own vendored `scan.sh`; without the plugin, `install.sh` copies them into `.claude/skills/`.
+- **The plugin carries the skills and one advisory hook, never the scanner.** In Claude Code or Codex
+  the skills drive the repo's own vendored `scan.sh`, and the edit check runs `scan.sh edit` on a file
+  the agent just changed; without the plugin, `install.sh` copies the skills into `.claude/skills/`.
 - **One record per run.** `summary.json` says what each dimension did; with `SARIF=1` the tools' SARIF
   and native JSON become `evidence.json`, the HTML report and `kit.sarif`, which carries the
   skills' judgment findings. What each dimension leaves behind: [evidence matrix](docs/evidence-matrix.md).

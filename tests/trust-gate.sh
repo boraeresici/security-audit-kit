@@ -158,16 +158,20 @@ printf 'open("%s/b-json","w").write("x")\n' "$M" > "$H/json.py"; printf 'open("%
 hscan doctor >/dev/null
 [ ! -e "$M/b-json" ] && [ ! -e "$M/b-subprocess" ] && ok "B: a repo-root json.py/subprocess.py is not imported (doctor)" || no "B: repo-root module shadowed the stdlib"
 rm -f "$H/json.py" "$H/subprocess.py"
-# N2: a committed .venv is not the interpreter pip-audit is told to run.
+# N2: a committed .venv is not the interpreter pip-audit is told to run. The kit reports the resolved
+# path (macOS: /var -> /private/var), so look for either spelling — a test that matches neither would
+# pass the negative check below without testing anything.
+HR="$(cd "$H" && pwd -P)"
+n2used(){ grep -q -e "pyloc=$H/.venv/bin/python" -e "pyloc=$HR/.venv/bin/python" "$LOG"; }
 mkdir -p "$H/.venv/bin"; : > "$H/.venv/pyvenv.cfg"; printf '#!/bin/sh\ntouch "%s/n2"\n' "$M" > "$H/.venv/bin/python"; chmod +x "$H/.venv/bin/python"
 printf 'requests==2.0.0\n' > "$H/requirements.txt"
 ( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm venv -n ) >/dev/null 2>&1
 : > "$LOG"; out="$(hscan deps)"
-grep -q 'tracked by git' <<<"$out" && ! grep -q "pyloc=$H/.venv/bin/python" "$LOG" \
+grep -q 'tracked by git' <<<"$out" && ! n2used \
   && ok "N2: a tracked .venv is named and its python is not handed to pip-audit" || no "N2: tracked venv used: $(cat "$LOG") $out"
 ( cd "$H" && git rm -rq --cached .venv && SKIP_SECURITY=1 git "${G[@]}" commit -qm rmvenv -n ) >/dev/null 2>&1
 : > "$LOG"; hscan deps >/dev/null
-grep -q "pyloc=$H/.venv/bin/python" "$LOG" && ok "N2: an untracked .venv you built is still the one audited" || no "N2: untracked venv not used: $(cat "$LOG")"
+n2used && ok "N2: an untracked .venv you built is still the one audited" || no "N2: untracked venv not used: $(cat "$LOG")"
 rm -rf "$H/.venv" "$H/requirements.txt"; ( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm c -n ) >/dev/null 2>&1
 # N3: checkov is told to load no external checks; a git source of checks means checkov is not run.
 mkdir -p "$H/infra"; printf 'resource "x" "y" {}\n' > "$H/infra/main.tf"; printf 'external-checks-dir:\n  - checks\n' > "$H/.checkov.yaml"

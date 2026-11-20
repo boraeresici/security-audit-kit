@@ -50,7 +50,7 @@ eksik olan yuksek sesle atlanir ([Gereksinimler](#gereksinimler-hangisi-yoksa-o-
 ```mermaid
 flowchart LR
     BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
-    PLG["plugin: Claude Code · Codex<br/>the five skills only"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills + an advisory edit hook"]
     subgraph REPO["your repo"]
       HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
       CONF[".security-audit.conf<br/>read as data"]
@@ -79,8 +79,10 @@ flowchart LR
 - **Tarayici vendor'lanir ve pinlenir.** `bootstrap.sh` kiti `CHECKSUMS` ile birlikte
   `tools/security-audit-kit/` altina koyar; her hook wrapper'i bir sey calistirmadan once kiti
   kurulumda kaydedilen manifest'le karsilastirir, yani bir dal kendisini yargilayan seyi degistiremez.
-- **Plugin skill'leri tasir, tarayiciyi asla.** Claude Code'da ya da Codex'te skill'ler reponun kendi
-  vendor'lanmis `scan.sh`'ini kullanir; plugin yoksa `install.sh` onlari `.claude/skills/`'e kopyalar.
+- **Plugin skill'leri ve tavsiye niteliginde tek bir hook'u tasir, tarayiciyi asla.** Claude Code'da ya
+  da Codex'te skill'ler reponun kendi vendor'lanmis `scan.sh`'ini kullanir, duzenleme kontrolu de ajanin
+  az once degistirdigi dosyada `scan.sh edit` kosar; plugin yoksa `install.sh` skill'leri
+  `.claude/skills/`'e kopyalar.
 - **Kosu basina tek kayit.** `summary.json` her boyutun ne yaptigini soyler; `SARIF=1` ile araclarin
   SARIF ve yerel JSON ciktilari `evidence.json`'a, HTML rapora ve skill'lerin yargi bulgularini tasiyan
   `kit.sarif`'e donusur. Her boyutun geride ne biraktigi: [kanit matrisi](docs/evidence-matrix.md)
