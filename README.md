@@ -249,7 +249,9 @@ protection*). The kit produces **internal evidence
 with no warranty**. Pin a tag/SHA, **review skills before running**, and review diffs on
 update. Full trust model, supply-chain guidance, and vulnerability reporting:
 [SECURITY.md](SECURITY.md). What the kit itself reads, writes and runs, and with which
-privileges, is in [docs/threat-model.md](docs/threat-model.md). In short:
+privileges, is in [docs/threat-model.md](docs/threat-model.md). The kit itself was reviewed as a target
+in November 2026, every finding reproduced and fixed in 1.22 with a regression test:
+[docs/reviews/security-review-2026-11-20.md](docs/reviews/security-review-2026-11-20.md). In short:
 - `.security-audit.conf` is data: parsed, never sourced; a line that is not a plain setting is not applied, and named.
 - The git hooks run from `.git/`, never from the vendored tree, and refuse a kit that differs from the one you installed.
 - Docker scanners read the repo read-only.

@@ -897,7 +897,9 @@ override etmen gerekir. Fork'u sen yonetiyorsan: `main`'in hangi CI kontrollerin
 repo admin'inin secimidir, `plugin` istege baglidir (RELEASING.md → *Branch protection*). Kit **ic kanit uretir, garanti yok**. Bir tag/SHA pinle, **skill'leri
 calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, tedarik-zinciri
 rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md). Kitin kendisinin neyi okudugu, yazdigi ve calistirdigi, hangi
-yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kisaca:
+yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kitin kendisi Kasim 2026'da hedef
+olarak incelendi; her bulgu yeniden uretildi ve 1.22'de bir regresyon testiyle duzeltildi:
+[docs/reviews/security-review-2026-11-20.md](docs/reviews/security-review-2026-11-20.md). Kisaca:
 - `.security-audit.conf` veridir: ayristirilir, asla source edilmez; duz ayar olmayan satir uygulanmaz ve adiyla soylenir.
 - Git hook'lari vendor edilmis agactan degil `.git/` icinden calisir ve kurulumdakinden farkli bir kiti calistirmaz.
 - Docker tarayicilari repoyu salt-okunur okur.
