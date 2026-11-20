@@ -411,9 +411,9 @@ scan_py_deps(){
   # through to the no-env path (static manifests or INDETERMINATE) and the run says why.
   local venv="" why=""
   if [ -n "$PY_VENV" ]; then
-    venv_untracked "$PY_VENV" || { dim_error deps "PY_VENV=$PY_VENV is not a venv you built (see above) -> its python is NOT run"; return 1; }
     [ -x "$PY_VENV/bin/python" ] \
       || { dim_error deps "PY_VENV=$PY_VENV has no bin/python -> cannot audit the env you named"; return 1; }
+    venv_untracked "$PY_VENV" || { dim_error deps "PY_VENV=$PY_VENV is not a venv you built (see above) -> its python is NOT run"; return 1; }
     venv="$PY_VENV"; why="PY_VENV"
   elif [ -x "$ROOT/.venv/bin/python" ] && venv_untracked "$ROOT/.venv"; then
     venv="$ROOT/.venv"; why="repo .venv"
