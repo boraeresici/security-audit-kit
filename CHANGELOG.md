@@ -30,8 +30,20 @@ All notable changes to this project are documented here. The format is based on
   It now compares every file and link of the kit against `CHECKSUMS` exactly (python bytecode caches
   aside), through the same `lib/integrity.sh` the hooks use.
 
+- **The scan no longer runs code a branch committed (B, N2, N3, I).** Each was reproduced first:
+  - python helpers that read stdin or `-c` run with `-I`: a repo-root `json.py` was imported by
+    `doctor` and the merge-mode secret scan;
+  - py-deps does not use a venv with files tracked by git, or without `pyvenv.cfg`: pip-audit ran a
+    committed `.venv/bin/python` in pre-commit and pre-push;
+  - checkov gets the kit's own empty `--external-checks-dir`, so a repo `.checkov.yaml` cannot make
+    it import Python; with `external-checks-git` checkov is not run and `iac` reports an error;
+  - js-deps forces the registry (`JS_AUDIT_REGISTRY`, environment only; a repo `.npmrc` registry
+    answered "0 vulnerabilities" for a vulnerable lockfile), ignores `.pnpmfile.cjs` and yarn's
+    `yarn-path`, and does not run yarn when `.yarnrc.yml` loads repo JavaScript (`yarnPath`,
+    `plugins`; use `scan.sh osv` for that lockfile).
+
 ### Tests
-- `tests/trust-gate.sh`: 28 offline cases, one reproduction per finding above (19 of them fail on
+- `tests/trust-gate.sh`: 38 offline cases, one reproduction per finding above (the N1/A/C ones: 19 fail on
   1.21). CI runs it on Linux and macOS. e2e vendors the kit the way bootstrap does (the files git
   knows, not the working tree's run debris), since the integrity check now counts every file.
 

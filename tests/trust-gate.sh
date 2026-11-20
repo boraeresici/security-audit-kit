@@ -136,6 +136,65 @@ mkdir -p "$R/$K/lib/__pycache__" && echo x > "$R/$K/lib/__pycache__/evidence.cpy
 ( cd "$R" && bash $K/scan.sh verify >/dev/null 2>&1 ) && ok "C: python's own bytecode cache is not an extra" || no "C: __pycache__ flagged"
 ( cd "$R" && bash $K/scan.sh verify >/dev/null 2>&1 ) && ok "C: clean kit verifies again" || no "C: clean kit fails verify"
 
+echo "-- host execution: the scan never runs code a branch committed (B, N2, N3, I) --"
+# Shims stand in for the tools: they record how they were called and run nothing of the repo's.
+S="$W/shims"; mkdir -p "$S"; LOG="$W/shim.log"
+for t in uvx pnpm yarn npm; do
+  printf '#!/bin/sh\n{ printf "%%s ARGS:" "%s"; for a in "$@"; do printf " [%%s]" "$a"; done; printf " ENV: pnpmfile=%%s yarnpath=%%s yarnreg=%%s pyloc=%%s\\n" "$npm_config_ignore_pnpmfile" "$YARN_IGNORE_PATH" "$YARN_NPM_REGISTRY_SERVER" "$PIPAPI_PYTHON_LOCATION"; } >> "%s"\nexit 0\n' "$t" "$LOG" > "$S/$t"
+  chmod +x "$S/$t"
+done
+SPATH="$S:/usr/bin:/bin:/usr/sbin:/sbin"
+H="$W/h"; newrepo "$H"
+hscan(){ (cd "$H" && env PATH="$SPATH" bash $K/scan.sh "$@" 2>&1); }
+# B: a repo-root module with a stdlib name must not be imported by the kit's own python.
+printf 'open("%s/b-json","w").write("x")\n' "$M" > "$H/json.py"; printf 'open("%s/b-subprocess","w").write("x")\n' "$M" > "$H/subprocess.py"
+hscan doctor >/dev/null
+[ ! -e "$M/b-json" ] && [ ! -e "$M/b-subprocess" ] && ok "B: a repo-root json.py/subprocess.py is not imported (doctor)" || no "B: repo-root module shadowed the stdlib"
+rm -f "$H/json.py" "$H/subprocess.py"
+# N2: a committed .venv is not the interpreter pip-audit is told to run.
+mkdir -p "$H/.venv/bin"; : > "$H/.venv/pyvenv.cfg"; printf '#!/bin/sh\ntouch "%s/n2"\n' "$M" > "$H/.venv/bin/python"; chmod +x "$H/.venv/bin/python"
+printf 'requests==2.0.0\n' > "$H/requirements.txt"
+( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm venv -n ) >/dev/null 2>&1
+: > "$LOG"; out="$(hscan deps)"
+grep -q 'tracked by git' <<<"$out" && ! grep -q "pyloc=$H/.venv/bin/python" "$LOG" \
+  && ok "N2: a tracked .venv is named and its python is not handed to pip-audit" || no "N2: tracked venv used: $(cat "$LOG") $out"
+( cd "$H" && git rm -rq --cached .venv && SKIP_SECURITY=1 git "${G[@]}" commit -qm rmvenv -n ) >/dev/null 2>&1
+: > "$LOG"; hscan deps >/dev/null
+grep -q "pyloc=$H/.venv/bin/python" "$LOG" && ok "N2: an untracked .venv you built is still the one audited" || no "N2: untracked venv not used: $(cat "$LOG")"
+rm -rf "$H/.venv" "$H/requirements.txt"; ( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm c -n ) >/dev/null 2>&1
+# N3: checkov is told to load no external checks; a git source of checks means checkov is not run.
+mkdir -p "$H/infra"; printf 'resource "x" "y" {}\n' > "$H/infra/main.tf"; printf 'external-checks-dir:\n  - checks\n' > "$H/.checkov.yaml"
+( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm tf -n ) >/dev/null 2>&1
+: > "$LOG"; hscan iac >/dev/null
+grep -q 'checkov.*\[--external-checks-dir\]' "$LOG" && ok "N3: checkov gets the kit's own --external-checks-dir (the repo's is overridden)" \
+  || no "N3: checkov args: $(cat "$LOG")"
+printf 'external-checks-git:\n  - https://example.invalid/x.git\n' > "$H/infra/.checkov.yml"
+: > "$LOG"; out="$(hscan iac)"
+! grep -q checkov "$LOG" && grep -q 'external-checks-git' <<<"$out" && ok "N3: a config with external-checks-git: checkov NOT run, the dimension says why" \
+  || no "N3: external-checks-git: $(cat "$LOG") $out"
+rm -rf "$H/infra" "$H/.checkov.yaml"
+# I: the JS package managers get the kit's registry and ignore the repo's pnpmfile / yarn-path.
+mkdir -p "$H/web"; printf '{"name":"w","version":"1.0.0"}\n' > "$H/web/package.json"; : > "$H/web/pnpm-lock.yaml"
+printf 'registry=http://127.0.0.1:9/\n' > "$H/web/.npmrc"
+( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm js -n ) >/dev/null 2>&1
+: > "$LOG"; hscan deps >/dev/null
+grep -q 'pnpm ARGS: \[audit\].*\[--registry=https://registry.npmjs.org/\].*pnpmfile=true' "$LOG" \
+  && ok "I: pnpm audit runs with the kit's registry and the repo pnpmfile ignored" || no "I: pnpm: $(cat "$LOG")"
+rm "$H/web/pnpm-lock.yaml"; : > "$H/web/yarn.lock"; printf 'yarnPath: .yarn/releases/evil.cjs\n' > "$H/web/.yarnrc.yml"
+( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm yarn -n ) >/dev/null 2>&1
+: > "$LOG"; out="$(hscan deps)"
+! grep -q '^yarn' "$LOG" && grep -q 'loads repo JavaScript' <<<"$out" && ok "I: a .yarnrc.yml with yarnPath: yarn NOT run, said why" || no "I: yarnPath: $(cat "$LOG") $out"
+rm "$H/web/.yarnrc.yml"; ( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm y2 -n ) >/dev/null 2>&1
+: > "$LOG"; hscan deps >/dev/null
+grep -q '^yarn ARGS:.*yarnpath=1 yarnreg=https://registry.npmjs.org/' "$LOG" && ok "I: yarn runs with YARN_IGNORE_PATH=1 and the kit's registry" || no "I: yarn: $(cat "$LOG")"
+rm "$H/web/yarn.lock"; printf '{"lockfileVersion":3}\n' > "$H/web/package-lock.json"; ( cd "$H" && git add -A && SKIP_SECURITY=1 git "${G[@]}" commit -qm n -n ) >/dev/null 2>&1
+: > "$LOG"; hscan deps >/dev/null
+grep -q '^npm ARGS: \[audit\].*\[--registry=https://registry.npmjs.org/\]' "$LOG" && ok "I: npm audit runs with the kit's registry (beats the repo .npmrc)" || no "I: npm: $(cat "$LOG")"
+printf 'JS_AUDIT_REGISTRY=http://127.0.0.1:9/\n' > "$H/.security-audit.conf"
+: > "$LOG"; hscan deps >/dev/null
+grep -q '\[--registry=https://registry.npmjs.org/\]' "$LOG" && ok "I: JS_AUDIT_REGISTRY is not read from the config (environment only)" || no "I: conf registry used: $(cat "$LOG")"
+rm -f "$H/.security-audit.conf"
+
 echo
 printf 'trust-gate: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

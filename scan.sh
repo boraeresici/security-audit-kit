@@ -64,7 +64,7 @@ KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # A value may not expand anything: no $, no backquote (in single quotes $ is a literal).
 CONF="${SECURITY_AUDIT_CONF:-$ROOT/.security-audit.conf}"
 CONFIG_ENV_KNOBS="SARIF REPORT BASE_REF"   # per-run knobs that also work from the config
-CONFIG_ENV_ONLY="SKIP_SECURITY"            # read from the environment only, never from the file
+CONFIG_ENV_ONLY="SKIP_SECURITY JS_AUDIT_REGISTRY"   # read from the environment only, never from the file
 CONF_LOAD_WARNINGS=""
 conf_warn(){ CONF_LOAD_WARNINGS="${CONF_LOAD_WARNINGS:+$CONF_LOAD_WARNINGS
 }$1"; }
@@ -351,6 +351,19 @@ py_manifests(){   # -> one path per line (a path may contain spaces, F18)
   done <<<"$(git ls-files -- '*requirements*.txt' '*uv.lock' '*Pipfile.lock' '*poetry.lock' '*pdm.lock' 2>/dev/null)"
 }
 
+# A venv the scan may RUN (pip-audit executes its bin/python) must be one you built, not one a branch
+# committed (N2): a tracked .venv/bin/python is a script of the branch author, run by pre-commit and
+# pre-push. A venv with any tracked file, or without pyvenv.cfg, is not used; the static path is.
+venv_untracked(){   # <venv dir>
+  local d="$1" rel
+  [ -f "$d/pyvenv.cfg" ] || { warn deps "${d#"$ROOT"/} has no pyvenv.cfg -> not a venv, not run"; return 1; }
+  rel="$(real_dir "$d")"; rel="${rel#"$(real_dir "$ROOT")"/}"
+  if [ -n "$(git -C "$ROOT" ls-files -- "$rel" 2>/dev/null | head -c1)" ]; then
+    warn deps "$rel has files tracked by git -> it came with the branch, so its python is NOT run; reading the manifests instead"
+    return 1
+  fi
+  return 0
+}
 scan_py_deps(){
   has_tracked '(^|/)(pyproject\.toml|requirements[^/]*\.txt|uv\.lock|Pipfile)$' \
     || { dim_na deps "no Python project"; return 0; }
@@ -368,7 +381,7 @@ scan_py_deps(){
     [ -x "$PY_VENV/bin/python" ] \
       || { dim_error deps "PY_VENV=$PY_VENV has no bin/python -> cannot audit the env you named"; return 1; }
     venv="$PY_VENV"; why="PY_VENV"
-  elif [ -x "$ROOT/.venv/bin/python" ]; then
+  elif [ -x "$ROOT/.venv/bin/python" ] && venv_untracked "$ROOT/.venv"; then
     venv="$ROOT/.venv"; why="repo .venv"
     [ -n "${VIRTUAL_ENV:-}" ] && [ "$(real_dir "$VIRTUAL_ENV")" != "$(real_dir "$venv")" ] \
       && warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not this repo's venv -> auditing .venv"
@@ -378,7 +391,7 @@ scan_py_deps(){
       warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not a venv (no pyvenv.cfg) -> ignored"
     else
       case "$ve" in
-        "$(real_dir "$ROOT")"/*) venv="$VIRTUAL_ENV"; why="active venv inside the repo" ;;
+        "$(real_dir "$ROOT")"/*) venv_untracked "$VIRTUAL_ENV" && { venv="$VIRTUAL_ENV"; why="active venv inside the repo"; } ;;
         *) warn deps "active VIRTUAL_ENV ($VIRTUAL_ENV) is not inside this repo -> ignored (set PY_VENV to audit it anyway)" ;;
       esac
     fi
@@ -486,9 +499,21 @@ scan_js_deps(){
     ( cd "$ROOT/$dir" || exit 1
       # Audit ALL deps (incl. dev/build) — vulns in build tooling (vite/undici/…) are real; the
       # triage layer decides reachability. (Previously --prod/--omit=dev hid them.)
-      if   [ -f pnpm-lock.yaml ]    && have pnpm; then say deps "pnpm audit ($dir)"; pnpm audit --audit-level high
-      elif [ -f yarn.lock ]         && have yarn; then say deps "yarn audit ($dir)"; yarn npm audit --severity high
-      elif [ -f package-lock.json ] && have npm;  then say deps "npm audit ($dir)";  npm audit --audit-level=high
+      # The package manager runs in the repo, so the repo's own config must not run code or pick
+      # the answer (I): .pnpmfile.cjs and yarn's yarnPath/plugins are repo JavaScript, and a repo
+      # .npmrc registry= answered "0 vulnerabilities" for a vulnerable lockfile. The registry is the
+      # kit's (JS_AUDIT_REGISTRY, environment only), the pnpmfile and yarn-path are ignored, and a
+      # yarn config that loads repo JavaScript is not run at all (use `scan.sh osv` for that lockfile).
+      local reg="${JS_AUDIT_REGISTRY:-https://registry.npmjs.org/}"
+      if   [ -f pnpm-lock.yaml ]    && have pnpm; then say deps "pnpm audit ($dir)"
+        npm_config_ignore_pnpmfile=true pnpm audit --audit-level high --registry="$reg"
+      elif [ -f yarn.lock ]         && have yarn; then
+        if [ -f .yarnrc.yml ] && grep -qE '^[[:space:]]*(yarnPath|plugins)[[:space:]]*:' .yarnrc.yml; then
+          warn deps "$dir: .yarnrc.yml loads repo JavaScript (yarnPath/plugins) -> yarn NOT run; audit this lockfile with: scan.sh osv"; exit 4
+        fi
+        say deps "yarn audit ($dir)"
+        YARN_IGNORE_PATH=1 YARN_NPM_REGISTRY_SERVER="$reg" yarn npm audit --severity high
+      elif [ -f package-lock.json ] && have npm;  then say deps "npm audit ($dir)";  npm audit --audit-level=high --registry="$reg"
       else warn deps "$dir: no lockfile with an installed package manager (pnpm/yarn/npm) -> skipped"; exit 4; fi )
     c=$?
     # 4 = this directory was not audited (the subshell's warn cannot reach DIM_* out here)
@@ -579,7 +604,7 @@ scan_secret_merge(){
   rc=$?
   [ "$rc" -eq 0 ] && [ -f "$od/staged.json" ] || { rm -rf "$od"; dim_error secret "gitleaks exit $rc (staged scan of a merge failed)"; return 1; }
   local lines own=0 inc=0
-  lines="$(python3 - "$od/staged.json" <<'PY'
+  lines="$(python3 -I - "$od/staged.json" <<'PY'
 import json, subprocess, sys
 def lines(spec):
     r = subprocess.run(["git", "show", spec], capture_output=True)
@@ -706,11 +731,26 @@ scan_iac(){
     [ -n "$tf" ] && tf="$(dirname "$tf")"
   fi
   [ -z "$tf" ] && { dim_na iac "no terraform"; return 0; }
+  # checkov reads a .checkov.yaml/.yml from the cwd and from the scanned dir, and its
+  # external-checks-dir / external-checks-git IMPORT Python from there (N3): a branch's config ran its
+  # code on the host and reported "iac pass". The kit passes its own empty --external-checks-dir (the
+  # command line wins over the file), and refuses to run checkov at all when a repo config names a
+  # git source of checks, which no flag overrides.
+  local cfgf
+  for cfgf in "$ROOT/.checkov.yaml" "$ROOT/.checkov.yml" "$tf/.checkov.yaml" "$tf/.checkov.yml"; do
+    [ -f "$cfgf" ] || continue
+    if grep -qE '^[[:space:]]*external[-_]checks[-_]git' "$cfgf"; then
+      dim_error iac "${cfgf#"$ROOT"/} names external-checks-git (code fetched and run by checkov) -> checkov NOT run"
+      return 0
+    fi
+  done
+  local nochecks; nochecks="$(mktemp -d)"
   say iac "checkov ($tf, ==$CHECKOV_VER)"
   # Soft: --soft-fail keeps the gate open, so the exit code no longer says whether checks failed;
   # the summary line does. Read it, so failed checks are recorded as findings and not as a pass.
   local out rc failed
-  out="$(pyrun checkov "$CHECKOV_VER" checkov --directory "$tf" --framework terraform --soft-fail)"; rc=$?
+  out="$(pyrun checkov "$CHECKOV_VER" checkov --directory "$tf" --framework terraform --soft-fail --external-checks-dir "$nochecks")"; rc=$?
+  rmdir "$nochecks" 2>/dev/null
   [ -n "$out" ] && printf '%s\n' "$out"
   case "$rc" in
     0) ;;
@@ -1207,7 +1247,7 @@ scan_doctor(){
     printf '  --  findings cache off (PKGCHECK_CACHE=off or not a git repo) — every check re-scans\n'
   fi
   printf '      blocks on %s malice-specific guarddog rules; everything else prints as a note\n' \
-    "$(PYTHONDONTWRITEBYTECODE=1 python3 -B -c 'import sys;sys.path.insert(0,"'"$KIT_DIR"'/lib");import pkgcheck;print(len(pkgcheck.BLOCK_RULES))' 2>/dev/null || echo '?')"
+    "$(PYTHONDONTWRITEBYTECODE=1 python3 -I -B -c 'import sys;sys.path.insert(0,"'"$KIT_DIR"'/lib");import pkgcheck;print(len(pkgcheck.BLOCK_RULES))' 2>/dev/null || echo '?')"
 }
 
 # ---- allowlist audit: the decay detector ----

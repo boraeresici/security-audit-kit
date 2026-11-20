@@ -40,7 +40,21 @@ The kit never builds, installs or runs the scanned project. There are two except
 - **py-deps with a virtualenv**: pip-audit asks that venv's own Python interpreter which packages
   are installed. Starting an interpreter runs `.pth` files and `sitecustomize` from that
   environment. That is code from the environment, not from the repo's source. **Unverified risk.**
-  Since F29 the venv is the repo's own, or one you named with `PY_VENV`.
+  Since F29 the venv is the repo's own, or one you named with `PY_VENV`. Since 1.22 a venv with any
+  file tracked by git, or without `pyvenv.cfg`, is not used: a committed `.venv/bin/python` is the
+  branch author's script (verified, tests/trust-gate.sh).
+
+Places where a scanner would otherwise load code or answers from the repo, closed in 1.22 (each a
+reproduction in tests/trust-gate.sh):
+- **python helpers** run with `-I` when they read stdin or `-c`, so a repo-root `json.py` is not
+  imported.
+- **checkov** reads `.checkov.yaml` from the cwd and the scanned dir, and imports Python from its
+  `external-checks-dir`. The kit passes its own empty `--external-checks-dir` (the command line
+  wins). A config with `external-checks-git` means checkov is not run, and `iac` says so.
+- **js-deps** runs the package manager in the repo. The registry is forced (`JS_AUDIT_REGISTRY`,
+  environment only), pnpm ignores `.pnpmfile.cjs`, yarn ignores `yarn-path`, and a `.yarnrc.yml`
+  with `yarnPath` or `plugins` (repo JavaScript) means yarn is not run for that directory.
+  Unverified: yarn berry and corepack were not run in the tests (shims only).
 
 Docker is used for isolation from the host's processes and filesystem. It is **not** a sandbox
 claim:

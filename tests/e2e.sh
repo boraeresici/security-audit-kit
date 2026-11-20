@@ -494,7 +494,7 @@ echo "-- py-deps venv selection (this repo's .venv wins over an unrelated active
 # lockfile for the later osv/guarddog assertions.
 VP="$(mktemp -d)"
 mkdir -p "$VP/repo/.venv/bin" "$VP/foreign/bin"
-printf '#!/bin/sh\nexit 0\n' > "$VP/repo/.venv/bin/python"; chmod +x "$VP/repo/.venv/bin/python"
+printf '#!/bin/sh\nexit 0\n' > "$VP/repo/.venv/bin/python"; chmod +x "$VP/repo/.venv/bin/python"; : > "$VP/repo/.venv/pyvenv.cfg"   # a real venv has one (N2)
 printf '#!/bin/sh\nexit 0\n' > "$VP/foreign/bin/python";    chmod +x "$VP/foreign/bin/python"
 echo 'requests==2.31.0' > "$VP/repo/requirements.txt"
 ( cd "$VP/repo" && git init -q . && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1
@@ -1814,7 +1814,7 @@ rm -rf "$F29"
 # F16b — the pip-audit adapter. A uvx shim plays pip-audit: it writes the recorded JSON (or nothing,
 # or something else) to --output and exits 1, which is what pip-audit does for findings AND crashes.
 if have python3; then
-  F16B="$(mktemp -d)"; mkdir -p "$PYR/.venv/bin"; printf '#!/bin/sh\nexit 0\n' > "$PYR/.venv/bin/python"; chmod +x "$PYR/.venv/bin/python"
+  F16B="$(mktemp -d)"; mkdir -p "$PYR/.venv/bin"; printf '#!/bin/sh\nexit 0\n' > "$PYR/.venv/bin/python"; chmod +x "$PYR/.venv/bin/python"; : > "$PYR/.venv/pyvenv.cfg"
   cat > "$F16B/uvx" <<'SH'
 #!/bin/sh
 out=""; while [ $# -gt 0 ]; do [ "$1" = "--output" ] && out="$2"; shift; done

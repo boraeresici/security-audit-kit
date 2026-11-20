@@ -124,7 +124,7 @@ uninstall(){
   done
   rmdir "$ROOT/.claude/skills" "$ROOT/.claude" 2>/dev/null || true
   if [ "$(state_get agent_hook)" = 1 ] && [ -f "$ROOT/.claude/settings.json" ] && have python3; then
-    SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 - <<'PYEOF2' && ok "removed the agent hook from .claude/settings.json" || miss ".claude/settings.json left as is (not valid JSON?)"
+    SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 -I - <<'PYEOF2' && ok "removed the agent hook from .claude/settings.json" || miss ".claude/settings.json left as is (not valid JSON?)"
 import json, os, pathlib
 path = pathlib.Path(os.environ["SETTINGS"]); cmd = os.environ["HOOKCMD"]
 doc = json.loads(path.read_text() or "{}")
@@ -324,7 +324,7 @@ if [ "$AGENT_HOOK" = "1" ]; then
   chmod +x "$KIT/hooks/pre-tool-install.sh"
   if have python3; then
     # `set -e` would abort the installer on a non-zero python exit, so branch on it directly.
-    if SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 - <<'PYEOF'
+    if SETTINGS="$ROOT/.claude/settings.json" HOOKCMD="$HOOK_CMD" python3 -I - <<'PYEOF'
 import json, os, pathlib
 path = pathlib.Path(os.environ["SETTINGS"])
 cmd = os.environ["HOOKCMD"]
