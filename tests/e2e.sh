@@ -468,11 +468,16 @@ SARIF
   REPORT=html $SCAN evidence >/dev/null 2>&1
   RPT="$TARGET/docs/security/scan-findings/report-$(date +%F).html"
   python3 - "$RPT" <<'PY' && ok "report.html: self-contained, escaped, renders scanner + judgment findings" || no "report.html: wrong shape"
-import re, sys
+import base64, hashlib, re, sys
 h = open(sys.argv[1], encoding="utf-8").read()
 assert h.startswith("<!doctype html>")
-# Self-contained: no script tags, and no src/href pointing anywhere but an in-page anchor.
-assert "<script" not in h, "report must not carry JS"
+# Self-contained: the one inline filter script (F26) is pinned by hash in the page's own CSP,
+# which also forbids any network fetch; no src/href points anywhere but an in-page anchor.
+scripts = re.findall(r"<script>(.*?)</script>", h, re.S)
+assert len(scripts) == 1 and h.count("<script") == 1, "exactly one inline script"
+sha = "sha256-" + base64.b64encode(hashlib.sha256(scripts[0].encode()).digest()).decode()
+csp = re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', h).group(1)
+assert f"script-src '{sha}'" in csp and "default-src 'none'" in csp, csp
 external = [u for u in re.findall(r'(?:src|href)=["\'](?!#)([^"\']+)', h)]
 assert not external, f"external references: {external}"
 # Untrusted tool/skill text must be escaped — this is a security tool's own report.
@@ -481,7 +486,7 @@ assert "@media print" in h, "must be printable to PDF"
 # Renders BOTH halves: the scanner CVE and the deep-pass judgment finding, plus the suppressed one.
 assert "CVE-1" in h and "requirements.txt" in h
 assert "SAK-sast-deep-horizontal-authz-idor" in h and "app/api.py:88" in h
-assert "Suppressed (1)" in h and "app/admin.py:9" in h
+assert "Suppressed (1)" in re.sub(r"<[^>]+>", "", h) and "app/admin.py:9" in h
 PY
   cp "$RPT" "$RPT.first"; REPORT=html $SCAN evidence >/dev/null 2>&1
   cmp -s "$RPT" "$RPT.first" && ok "report.html: re-render is byte-identical" || no "report.html: not deterministic"

@@ -17,7 +17,9 @@ Usage:  report_html.py --evidence <evidence.json> --out <report.html> [--repo <n
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime
+import hashlib
 import html
 import json
 import sys
@@ -80,9 +82,24 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .ev{color:var(--muted);font-size:.82rem;margin-top:.25rem}
 .scroll{overflow-x:auto}
 .empty{color:var(--muted);font-style:italic;padding:.6rem 0}
+.filters{display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:end;margin:0 0 1rem}
+.filters label{display:flex;flex-direction:column;gap:.2rem;font-size:.76rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.06em}
+.filters input,.filters select,.filters button{font:inherit;font-size:.88rem;padding:.32rem .5rem;
+  border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.filters input{min-width:14rem}
+.filters button{cursor:pointer}
+.filters :focus-visible{outline:2px solid var(--low);outline-offset:1px}
+.fstate{flex-basis:100%;font-size:.82rem;color:var(--muted)}
+details.more{margin-top:.3rem;font-size:.82rem}
+details.more summary{cursor:pointer;color:var(--muted)}
+details.more dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .8rem;margin:.35rem 0 0}
+details.more dt{color:var(--muted)}
+details.more dd{margin:0;word-break:break-word}
 footer{margin-top:2.6rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.82rem}
 @media print{
   body{padding:0;background:#fff;color:#000;font-size:11pt}
+  .filters label,.filters button{display:none}
   .panel{border:1px solid #bbb;break-inside:avoid}
   tr,.bar{break-inside:avoid}
   h2{break-after:avoid}
@@ -113,6 +130,34 @@ def severity_bars(counts: dict, total: int) -> str:
     return f'<div class="bars">{"".join(rows)}</div>'
 
 
+# Fields some adapters add (F16b) and the evidence the skills record, shown on demand. Plain text:
+# a guideline URL is shown, not linked, so the file still loads nothing when clicked around in.
+MORE_FIELDS = (
+    ("package", lambda f: " ".join(str(x) for x in ((f.get("package") or {}).get(k) for k in ("ecosystem", "name", "version")) if x)),
+    ("affected", lambda f: f.get("affected")),
+    ("fixed in", lambda f: ", ".join(f.get("fixed_in") or [])),
+    ("aliases", lambda f: ", ".join(f.get("aliases") or [])),
+    ("direct", lambda f: {True: "yes", False: "no (transitive)"}.get(f.get("direct"))),
+    ("resource", lambda f: f.get("resource")),
+    ("detail", lambda f: f.get("detail")),
+    ("guideline", lambda f: f.get("guideline")),
+    ("sink", lambda f: (f.get("evidence") or {}).get("sink")),
+    ("id", lambda f: f.get("id")),
+)
+
+NO_MATCH = ("No finding in this section matches the filters. That says nothing about the scan: it is "
+            "not a clean result. Reset the filters to see every row.")
+
+
+def more(f: dict) -> str:
+    items = [(k, get(f)) for k, get in MORE_FIELDS]
+    items = [(k, v) for k, v in items if v not in (None, "", [])]
+    if len(items) <= 1:            # the id alone is not worth a toggle
+        return ""
+    dl = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in items)
+    return f'<details class="more"><summary>details</summary><dl>{dl}</dl></details>'
+
+
 def finding_rows(findings: list) -> str:
     if not findings:
         return '<tr><td colspan="5" class="empty">Nothing in this section.</td></tr>'
@@ -129,24 +174,83 @@ def finding_rows(findings: list) -> str:
         cvss = f" · CVSS {f['cvss']:g}" if f.get("cvss") is not None else ""
         conf = f"{f['confidence']:g}" if f.get("confidence") is not None else "—"
         rows.append(
-            "<tr>"
+            f'<tr data-sev="{esc(f.get("severity"))}" data-tool="{esc(f.get("tool"))}" '
+            f'data-dec="{esc(f.get("decision") or "none")}">'
             f'<td class="sev {esc(f.get("severity"))}">{esc(f.get("severity"))}'
             f'<div class="ev">{esc(f.get("severity_source"))}{cvss}</div></td>'
             f'<td>{esc(f.get("tool"))}<div class="ev">{esc(f.get("rule_id"))}</div></td>'
             f'<td class="loc">{esc(location(f))}</td>'
-            f'<td>{esc(f.get("message"))}{detail_html}</td>'
+            f'<td>{esc(f.get("message"))}{detail_html}{more(f)}</td>'
             f'<td class="dec">{esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))}'
             f'<div class="ev num">conf {conf}</div></td>'
             "</tr>"
         )
+    rows.append(f'<tr class="nomatch" hidden><td colspan="5" class="empty">{esc(NO_MATCH)}</td></tr>')
     return "".join(rows)
 
 
-def table(findings: list) -> str:
+def table(findings: list, section: str = "reported") -> str:
     return (
         '<div class="panel scroll"><table><thead><tr>'
         "<th>Severity</th><th>Tool / rule</th><th>Location</th><th>Finding</th><th>Decision</th>"
-        f"</tr></thead><tbody>{finding_rows(findings)}</tbody></table></div>"
+        f'</tr></thead><tbody data-section="{section}">{finding_rows(findings)}</tbody></table></div>'
+    )
+
+
+# The filters are progressive enhancement: the form ships `hidden`, so a reader without JS sees the
+# full tables and no control that does nothing. The script is fixed text; the page allows exactly it
+# by its sha256 in the CSP, and reads the rows' data-* attributes, never an embedded data blob.
+FILTER_JS = """(function () {
+  var form = document.getElementById("filters");
+  if (!form) { return; }
+  form.hidden = false;
+  var q = form.elements.q, sev = form.elements.sev, tool = form.elements.tool, dec = form.elements.dec;
+  var state = document.getElementById("fstate");
+  function apply() {
+    var term = q.value.trim().toLowerCase(), active = [];
+    if (term) { active.push("text \u201c" + q.value.trim() + "\u201d"); }
+    [sev, tool, dec].forEach(function (s) { if (s.value) { active.push(s.name + " " + s.options[s.selectedIndex].text); } });
+    Array.prototype.forEach.call(document.querySelectorAll("tbody[data-section]"), function (tb) {
+      var rows = tb.querySelectorAll("tr[data-sev]"), shown = 0;
+      Array.prototype.forEach.call(rows, function (r) {
+        var ok = (!sev.value || r.getAttribute("data-sev") === sev.value) &&
+                 (!tool.value || r.getAttribute("data-tool") === tool.value) &&
+                 (!dec.value || r.getAttribute("data-dec") === dec.value) &&
+                 (!term || r.textContent.toLowerCase().indexOf(term) !== -1);
+        r.hidden = !ok;
+        if (ok) { shown += 1; }
+      });
+      var none = tb.querySelector("tr.nomatch");
+      if (none) { none.hidden = !(rows.length && shown === 0); }
+      var c = document.getElementById("count-" + tb.getAttribute("data-section"));
+      if (c) { c.textContent = shown === rows.length ? String(rows.length) : shown + " of " + rows.length + " shown"; }
+    });
+    state.textContent = active.length ? "Filtered by " + active.join(", ") + "." : "";
+  }
+  form.addEventListener("input", apply);
+  form.addEventListener("change", apply);
+  form.addEventListener("reset", function () { window.setTimeout(apply, 0); });
+  form.addEventListener("submit", function (e) { e.preventDefault(); });
+})();"""
+SCRIPT_HASH = "sha256-" + base64.b64encode(hashlib.sha256(FILTER_JS.encode("utf-8")).digest()).decode("ascii")
+CSP = f"default-src 'none'; style-src 'unsafe-inline'; script-src '{SCRIPT_HASH}'; img-src 'none'; form-action 'none'; base-uri 'none'"
+
+
+def filters(findings: list) -> str:
+    def opts(name, values, label=lambda v: v):
+        o = "".join(f'<option value="{esc(v)}">{esc(label(v))}</option>' for v in values)
+        return f'<label>{name}<select name="{name}"><option value="">all</option>{o}</select></label>'
+    sevs = [s for s in SEVERITY_ORDER if any(f.get("severity") == s for f in findings)]
+    tools = sorted({str(f.get("tool")) for f in findings if f.get("tool")})
+    decs = [d for d in ("real", "uncertain", "fp", "suppressed", "none")
+            if any((f.get("decision") or "none") == d for f in findings)]
+    return (
+        '<form id="filters" class="filters" role="search" aria-label="Filter the findings" hidden>'
+        '<label>search<input type="search" name="q" placeholder="file, rule, package, text" autocomplete="off"></label>'
+        + opts("sev", sevs) + opts("tool", tools)
+        + opts("dec", decs, lambda d: DECISION_LABEL.get(None if d == "none" else d, d))
+        + '<button type="reset">reset filters</button>'
+        '<output id="fstate" class="fstate" aria-live="polite"></output></form>'
     )
 
 
@@ -285,6 +389,7 @@ def main() -> int:
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="{CSP}">
 <title>Security scan report — {esc(repo)} — {esc(date)}</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <h1>Security scan report</h1>
@@ -312,11 +417,12 @@ def main() -> int:
   <span class="chip">not triaged {by_dec.get("undecided", 0)}</span>
 </div></div>
 
-<h2>Findings ({len(reported)})</h2>
-{table(reported)}
+<h2>Findings (<span id="count-reported" aria-live="polite">{len(reported)}</span>)</h2>
+{filters(findings) if findings else ""}
+{table(reported, "reported")}
 
-<h2>Suppressed ({len(suppressed)}) — on record, not reported</h2>
-{table(suppressed)}
+<h2>Suppressed (<span id="count-suppressed" aria-live="polite">{len(suppressed)}</span>) — on record, not reported</h2>
+{table(suppressed, "suppressed")}
 {warn_html}
 
 <footer>
@@ -326,7 +432,9 @@ never invented; a CVSS is shown only where a tool supplied one. This is <b>inter
 it does not replace an external ASV scan or a penetration test. Findings marked
 <i>not triaged</i> have not been judged yet; run <code>/sec-triage</code>.
 </footer>
-</div></body></html>
+</div>
+<script>{FILTER_JS}</script>
+</body></html>
 """
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
