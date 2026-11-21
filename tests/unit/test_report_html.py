@@ -187,7 +187,7 @@ class TestTable:
         assert 'class="panel scroll"' in result
         assert "<table>" in result
         assert "<thead>" in result
-        assert "<tbody>" in result
+        assert "<tbody" in result
 
     def test_correct_headers(self):
         result = rh.table([])
@@ -444,3 +444,80 @@ class TestVerdictFindingsWithoutRows:
         dims = [{"name": "sast", "status": "findings"}]
         _, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 2, {"sast"})
         assert text == "passed (exit 0) — 2 finding(s) present, none blocking"
+
+
+
+# ---------------------------------------------------------------------------
+# F26 — filters, details, CSP
+# ---------------------------------------------------------------------------
+import base64 as _b64
+import hashlib as _hl
+import re as _re
+import subprocess as _sp
+
+
+def _render(tmp_path, findings, name="r.html"):
+    ev = {"schema": "security-audit-kit/evidence@1", "scan": {"exit_code": 0, "dimensions": []},
+          "counts": {"total": len(findings), "by_severity": {}, "by_decision": {}}, "findings": findings}
+    (tmp_path / "e.json").write_text(json.dumps(ev))
+    out = tmp_path / name
+    _sp.run([sys.executable, os.path.join(os.path.dirname(rh.__file__), "report_html.py"), "--evidence",
+             str(tmp_path / "e.json"), "--out", str(out), "--date", "2026-01-01"], check=True, capture_output=True)
+    return out.read_text()
+
+
+def _f(**kw):
+    f = {"id": "abc", "severity": "high", "tool": "semgrep", "rule_id": "R", "file": "a.py", "line": 3,
+         "message": "m", "decision": None, "confidence": None, "evidence": None}
+    f.update(kw)
+    return f
+
+
+class TestReportFilters:
+    def test_csp_pins_the_one_script_by_hash(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        scripts = _re.findall(r"<script>(.*?)</script>", page, _re.S)
+        assert len(scripts) == 1 and "<script src" not in page
+        digest = _b64.b64encode(_hl.sha256(scripts[0].encode()).digest()).decode()
+        csp = _re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', page).group(1)
+        assert f"script-src 'sha256-{digest}'" in csp and "default-src 'none'" in csp
+
+    def test_the_form_ships_hidden_so_no_js_shows_no_dead_control(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        assert _re.search(r'<form id="filters"[^>]*\bhidden\b', page)
+
+    def test_no_findings_no_form(self, tmp_path):
+        assert 'id="filters"' not in _render(tmp_path, [])
+
+    def test_options_are_only_the_values_present(self, tmp_path):
+        page = _render(tmp_path, [_f(tool="gitleaks", severity="critical"), _f(id="b", tool="semgrep", decision="fp")])
+        sel = lambda n: _re.findall(r'<option value="([^"]*)">', _re.search(f'<select name="{n}">(.*?)</select>', page, _re.S).group(1))
+        assert sel("sev") == ["", "critical", "high"] and sel("tool") == ["", "gitleaks", "semgrep"]
+        assert sel("dec") == ["", "fp", "none"]
+
+    def test_rows_carry_escaped_filter_attributes(self, tmp_path):
+        page = _render(tmp_path, [_f(tool='x"><script>alert(1)</script>', decision="real")])
+        assert 'data-tool="x&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in page and 'data-dec="real"' in page
+        assert page.count("<script>") == 1
+
+    def test_no_match_says_it_is_not_a_clean_result(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        assert '<tr class="nomatch" hidden>' in page and "not a clean result" in page
+
+    def test_details_show_adapter_fields_escaped(self, tmp_path):
+        page = _render(tmp_path, [_f(package={"ecosystem": "npm", "name": "<b>x</b>", "version": None},
+                                     fixed_in=["1.2.8"], aliases=["CVE-1"], direct=True)])
+        assert "<details class=\"more\">" in page and "&lt;b&gt;x&lt;/b&gt;" in page and "1.2.8" in page
+        assert "<dt>direct</dt><dd>yes</dd>" in page
+
+    def test_a_row_with_only_an_id_gets_no_toggle(self, tmp_path):
+        assert "<details" not in _render(tmp_path, [_f()])
+
+    def test_counts_are_addressable_for_the_script(self, tmp_path):
+        page = _render(tmp_path, [_f(), _f(id="s", decision="suppressed")])
+        assert '<span id="count-reported" aria-live="polite">1</span>' in page
+        assert '<span id="count-suppressed" aria-live="polite">1</span>' in page
+
+    def test_rendering_is_deterministic(self, tmp_path):
+        fs = [_f(), _f(id="b", tool="trivy", package={"ecosystem": "pypi", "name": "x"})]
+        assert _render(tmp_path, fs, "a.html") == _render(tmp_path, fs, "b.html")
