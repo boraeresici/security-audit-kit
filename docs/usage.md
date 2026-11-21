@@ -81,8 +81,13 @@ emitted *as suppressed*, with the triage reason, rather than vanishing. The exis
 workflow uploads the whole `sarif/` directory, so nothing needs wiring.
 
 For a human audience, `REPORT=html` (or `scan.sh report`) renders the same record as **one
-self-contained `report-<date>.html`** — no server, no JS, no external fetch, so it opens offline and
-prints straight to PDF. It shows what SARIF can't: the triage decision on each scanner finding, and
+self-contained `report-<date>.html`** — no server, no external fetch, so it opens offline and prints
+straight to PDF. With JavaScript on, a filter bar appears above the findings: text search, severity,
+tool and decision, a "shown of total" count per section, and a reset. With JavaScript off the bar is
+not shown and every row is there; nothing depends on it. The page's Content-Security-Policy allows
+exactly its own script, by hash, and nothing else to load. "No finding matches the filters" is said as
+what it is: not a clean scan. Each finding with more to say (package, fixed version, aliases, resource,
+guideline, sink) has a *details* toggle. It shows what SARIF can't: the triage decision on each scanner finding, and
 the suppressed ones on record. Its header says only what it can vouch for: *clean* only when every
 dimension that applies inspected something and nothing is reported. Otherwise it says *NOT complete*
 (naming what was skipped or crashed), *blocked* (naming each blocker, a crash as "scan error, not a

@@ -88,6 +88,17 @@ jobs:
       - name: trust-the-gate (a branch cannot run code through the kit or switch it off)
         run: PATH=/usr/bin:/bin:/usr/sbin:/sbin bash tests/trust-gate.sh
 
+  # Not a required check. The runner image's Chrome renders the HTML report under its own CSP: the
+  # filter script must run, and a tampered one must be blocked. No npm dependency (jsdom ignores CSP).
+  report-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+        with:
+          persist-credentials: false
+      - name: HTML report filters run in headless Chrome under the hash-pinned CSP
+        run: REQUIRE_BROWSER=1 bash tests/report-browser.sh
+
   plugin:
     runs-on: ubuntu-latest
     steps:

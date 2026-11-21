@@ -65,6 +65,14 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- The HTML report can be filtered (F26): text search, severity, tool and decision, a "shown of
+  total" count per section, reset, and a note that an empty filter result is not a clean scan. A
+  *details* toggle shows the fields the adapters add (package, fixed version, aliases, resource,
+  guideline, sink). The file still loads nothing: the filters are one inline script the page's CSP
+  allows by hash, the bar ships hidden and appears only when the script runs, and the report reads the
+  same with JavaScript off. CI checks it in a real browser (`tests/report-browser.sh`, headless
+  Chrome, no npm dependency): the script runs under the CSP, and a script changed by one byte is
+  blocked.
 - npm audit findings are rows in `evidence.json` and the HTML report (F16b). With `SARIF=1`, npm's
   `--json` report is kept per JS project and each package and advisory becomes a row with the GHSA
   id, npm's severity, the advisory's CVSS and the fixed version; the log lists them. npm exits
