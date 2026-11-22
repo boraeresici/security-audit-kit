@@ -18,6 +18,7 @@ import re
 import sys
 import unicodedata
 
+import decisions
 import fingerprint
 import native
 
@@ -606,6 +607,49 @@ def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
     return findings
 
 
+REVIEWS = tuple(decisions.DECISIONS)
+
+
+def attach_reviews(findings: list, path: str, warnings: list) -> dict:
+    """A person's decision (docs/security/decisions.json, F19a S3) shown on the finding it is about.
+
+    Display only: evidence.json is built after the gate, and nothing here can change it. A record
+    that cannot be read is a warning and no reviews, never a failed build — it is a committed,
+    branch-authored file. Whether a decision is past its `until` date is NOT decided here: that
+    depends on today's date, and evidence.json must diff to nothing over unchanged code. The report
+    compares it with its own date. What is decided here, from content alone: whether the finding
+    changed since the decision (the package version it was decided at)."""
+    counts = {d: 0 for d in REVIEWS}
+    counts["none"] = 0
+    record = None
+    if path and os.path.exists(path):
+        try:
+            record = decisions.load(path)
+        except decisions.Refused as exc:
+            warnings.append(f"decisions.json not used: {exc}")
+    by_fp = {d["fingerprint"]: d for d in (record or {}).get("decisions") or []}
+    seen = set()
+    for f in findings:
+        d = by_fp.get(f.get("fingerprint"))
+        if not d:
+            counts["none"] += 1
+            continue
+        seen.add(d["fingerprint"])
+        changed = []
+        then = ((d.get("subject") or {}).get("package") or {}).get("version")
+        now = (f.get("package") or {}).get("version") if isinstance(f.get("package"), dict) else None
+        if then and now and then != now:
+            changed.append(f"package version {then} -> {now}")
+        f["review"] = {k: d.get(k) for k in ("decision", "evidence_kind", "reason", "owner", "decided", "until", "verify")}
+        f["review"]["changed"] = changed
+        counts[d["decision"]] += 1
+    unseen = len(set(by_fp) - seen)
+    if unseen:
+        warnings.append(f"{unseen} decision(s) in decisions.json are about findings this scan did not report "
+                        "(fixed, renamed, or a dimension that did not run) — scan.sh decide list")
+    return counts
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Build evidence.json from SARIF + summary.json")
     ap.add_argument("--sarif-dir", required=True)
@@ -613,6 +657,7 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--findings", help="findings-<date>.md written by the judgment skills (optional)")
     ap.add_argument("--root", default=".", help="the scanned repo: reported lines are read from it for the fingerprint")
+    ap.add_argument("--decisions", help="docs/security/decisions.json: a person's decisions, shown on their findings")
     args = ap.parse_args()
 
     warnings: list = []
@@ -650,6 +695,7 @@ def main() -> int:
 
     # The identity a decision keys on (F19a): survives a line shift, where `id` does not.
     fingerprint.assign(findings, args.root)
+    by_review = attach_reviews(findings, args.decisions, warnings)
 
     findings.sort(key=lambda f: (f["dimension"], f["file"] or "", f["line"] or 0, f["rule_id"], f["id"]))
 
@@ -675,7 +721,8 @@ def main() -> int:
             # report tell whether a summary.json is this evidence's own run.
             **({"artifacts": summary["artifacts"]} if "artifacts" in summary else {}),
         },
-        "counts": {"total": len(findings), "by_severity": by_severity, "by_decision": by_decision},
+        "counts": {"total": len(findings), "by_severity": by_severity, "by_decision": by_decision,
+                   "by_review": by_review},
         "findings": findings,
         "warnings": warnings,
     }

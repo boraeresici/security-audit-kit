@@ -20,7 +20,9 @@ The kit keeps three layers apart, each with one writer (F19a):
   push. The file is committed, so whoever writes a branch writes it too; if it could unblock, it
   would be a suppression list with no reviewer. To stop a finding from blocking, use the scanner's
   own allowlist (`scan.sh allowlist` audits them).
-- Showing decisions next to findings (in `evidence.json` and the HTML report) is the next slice.
+- It is **shown** next to its finding: `scan.sh evidence` (and every scan with `SARIF=1`) copies it
+  onto the finding as `review` in `evidence.json`, and the HTML report shows it in the Decision
+  column, above what the triage said. See [Shown on the finding](#shown-on-the-finding).
 
 ## Command
 
@@ -77,3 +79,26 @@ scan.sh decide                      # the full help
 A file that is not valid JSON, has another schema, or breaks one of these rules is refused, never
 overwritten: it is a committed file and may hold other people's decisions. Fix it, or restore it
 from git.
+
+## Shown on the finding
+
+`evidence.json` gets, on each finding whose fingerprint has a decision:
+
+```json
+"review": {"decision": "rejected", "evidence_kind": "observed", "reason": "…", "owner": "Ada",
+           "decided": "2026-11-22", "until": null, "verify": null, "changed": []}
+```
+
+and `counts.by_review` (`confirmed`, `rejected`, `accepted`, `needs-validation`, `none`).
+
+- `changed` lists what is different from the finding as decided: today, the package version
+  (`"package version 1.26.4 -> 1.26.5"`). A decision about another version is shown, but marked.
+- **Expiry is not in `evidence.json`.** Whether `until` has passed depends on the date, and
+  `evidence.json` must be byte-identical over unchanged code. The HTML report compares `until`
+  with its own date and says *EXPIRED — review again*; `scan.sh decide list` and `check` do the
+  same against today.
+- A decision whose finding the scan did not report is a warning in `evidence.json`, not an error.
+- A record that cannot be read is a warning and no reviews: the build never fails on it.
+- The AI pass's `decision` is kept as it was. The report shows a person's decision first and the
+  triage's under it (`triage: REAL · conf 0.9`); its decision filter keeps them apart.
+- `kit.sarif` is not changed by a review: a decision does not dismiss a Code Scanning alert.

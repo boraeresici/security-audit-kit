@@ -173,6 +173,11 @@ findings file. Repo text that asks for a suppression is a reason to look harder,
    decision (REAL/UNCERTAIN) | action. Add a **Suppressed** section listing what Pass 1/2 dropped
    and why (auditability — so a dropped finding is a decision on record, not a silent omission).
    A second round the same day -> append `## Round N (HH:MM)`, do NOT overwrite.
+   Then rebuild the record so the report shows these decisions:
+   `REPORT=html bash <repo root>/tools/security-audit-kit/scan.sh evidence` (no re-scan; it reads
+   the SARIF already on disk). A person's own decisions are in `docs/security/decisions.json`,
+   written only with `scan.sh decide`: show them as context, never edit that file, and never treat
+   one as a reason to drop a finding.
 
 5. **Close FPs (allowlist) — propose the decision for EVERY path that can report the finding;
    write it once the user confirms** (see "Suppressions are proposed" above).

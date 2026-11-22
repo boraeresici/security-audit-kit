@@ -100,6 +100,15 @@ All notable changes to this project are documented here. The format is based on
   and no-longer-reported decisions; `decide check` exits 1 on an expired one. A decision never
   changes the gate: nothing outside `scan.sh decide` reads the file, which e2e checks.
   `scan.sh decide` alone prints the help; the format is in `docs/schema/decisions.md`.
+- **A person's decision is shown on its finding (F19a, fourth slice).** `scan.sh evidence` (and
+  every `SARIF=1` scan) copies each decision onto its finding as `review` in `evidence.json`, with
+  `counts.by_review`; the HTML report shows it in the Decision column (who, when, why, the kind of
+  evidence), with the triage's verdict under it, a decision filter that keeps a person's and the
+  AI pass's apart, and *EXPIRED* / *changed since* marks (an `until` date before the report date;
+  a package version that moved). This is what dependency findings were missing: a triage row
+  attaches by file and line, which they do not have; a decision attaches by fingerprint. Display
+  only: e2e checks the gate does not read the record and the report opens only its own inputs.
+  `/sec-triage` now rebuilds the report after writing the findings file.
 - The HTML report can be filtered (F26): text search, severity, tool and decision, a "shown of
   total" count per section, reset, and a note that an empty filter result is not a clean scan. A
   *details* toggle shows the fields the adapters add (package, fixed version, aliases, resource,

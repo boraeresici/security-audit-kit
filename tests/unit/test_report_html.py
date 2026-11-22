@@ -521,3 +521,45 @@ class TestReportFilters:
     def test_rendering_is_deterministic(self, tmp_path):
         fs = [_f(), _f(id="b", tool="trivy", package={"ecosystem": "pypi", "name": "x"})]
         assert _render(tmp_path, fs, "a.html") == _render(tmp_path, fs, "b.html")
+
+
+# ---------------------------------------------------------------------------
+# F19a S4 — a person's decision next to the finding
+# ---------------------------------------------------------------------------
+def _rev(**kw):
+    r = {"decision": "rejected", "evidence_kind": "observed", "reason": "only test code calls it", "owner": "Ada",
+         "decided": "2025-12-01", "until": None, "verify": None, "changed": []}
+    r.update(kw)
+    return r
+
+
+class TestReportReviews:
+    def test_a_person_decision_is_shown_with_who_when_why_and_the_triage_beside_it(self, tmp_path):
+        page = _render(tmp_path, [_f(decision="real", confidence=0.9, review=_rev())])
+        assert "rejected by a person" in page and "Ada · 2025-12-01 · observed" in page
+        assert "only test code calls it" in page and "triage: REAL · conf 0.9" in page
+        assert 'data-dec="p-rejected"' in page
+        assert "does not change what blocks a push" in page
+
+    def test_the_filter_keeps_person_and_ai_decisions_apart(self, tmp_path):
+        page = _render(tmp_path, [_f(id="1", review=_rev()), _f(id="2", decision="fp"), _f(id="3")])
+        opts = _re.findall(r'<select name="dec">(.*?)</select>', page, _re.S)[0]
+        assert _re.findall(r'value="([^"]*)"', opts) == ["", "p-rejected", "fp", "none"]
+        assert "rejected by a person" in opts and "false positive" in opts
+
+    def test_expired_and_changed_decisions_say_so(self, tmp_path):
+        page = _render(tmp_path, [_f(id="1", review=_rev(decision="accepted", until="2025-12-31")),
+                                  _f(id="2", review=_rev(changed=["package version 1.26.4 -> 1.26.5"]))])
+        assert page.count("EXPIRED — review again") == 1                 # report date 2026-01-01
+        assert "changed since: package version 1.26.4 -&gt; 1.26.5" in page
+        assert "expired or changed 2" in page
+        still = _render(tmp_path, [_f(review=_rev(decision="accepted", until="2026-06-01"))], "s.html")
+        assert "EXPIRED" not in still and "until 2026-06-01" in still
+
+    def test_review_text_is_escaped(self, tmp_path):
+        page = _render(tmp_path, [_f(review=_rev(reason="<img src=x onerror=alert(1)>", owner="<b>x</b>"))])
+        assert "<img src=x" not in page and "&lt;img src=x" in page and "&lt;b&gt;x&lt;/b&gt;" in page
+
+    def test_no_review_keeps_the_old_cell_and_says_how_to_add_one(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        assert "not triaged" in page and "triage:" not in page and "scan.sh decide" in page

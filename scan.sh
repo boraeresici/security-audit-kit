@@ -1638,6 +1638,9 @@ scan_evidence(){
   # exists so evidence.json carries both halves (what the tools found, what we decided).
   local fargs=()
   [ -f "$FINDINGS_MD" ] && fargs=(--findings "$FINDINGS_MD")
+  # A person's decisions (F19a), shown next to their findings. Display only: this runs after the
+  # gate, and its result never changes the scan's exit code.
+  [ -f "$DECISIONS_FILE" ] && fargs+=(--decisions "$DECISIONS_FILE")
   # Write-then-rename, like summary.json: a builder that dies (or is cancelled) mid-write must
   # leave the previous file whole, never half of a new one.
   python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --root "$ROOT" --out "$EVIDENCE.$$.tmp" ${fargs[@]+"${fargs[@]}"} | py_say \

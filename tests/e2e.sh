@@ -415,12 +415,33 @@ PY
     && ok "F19a: decide list shows it; decide check passes with nothing expired" || no "F19a: decide list/check"
   grep -q '^  decide ' <<<"$($SCAN help 2>&1)" && grep -q 'does NOT change the gate' <<<"$($SCAN decide 2>&1)" \
     && ok "F19a: scan.sh help names decide; scan.sh decide explains it" || no "F19a: decide missing from help"
-  # The record is not a suppression: outside `scan_decide`, nothing in the kit reads it. (A branch
-  # author writes the committed file; if the gate read it, a branch could unblock itself.)
-  F19R="$(cd "$KIT_SRC" && { grep -rlE 'decisions(\.json|\.py)|DECISIONS_FILE' lib hooks plugin install.sh bootstrap.sh 2>/dev/null | grep -vx 'lib/decisions.py'
-    awk '/^scan_decide\(\)\{/{d=1} d&&/^}/{d=0;next} !d' scan.sh | grep -nE 'decisions\.py|DECISIONS_FILE' | grep -v '^[0-9]*:DECISIONS_FILE='; } )"
-  [ -z "$F19R" ] && ok "F19a: only scan.sh decide reads or writes decisions.json — the gate does not" \
-    || no "F19a: decisions.json is read outside scan.sh decide: $F19R"
+  # S4: the decision shows on its finding, in evidence.json and the report, after a rebuild.
+  REPORT=html $SCAN evidence >/dev/null 2>&1
+  F19H="$TARGET/docs/security/scan-findings/report-$(date +%F).html"
+  python3 - "$EVD" "$F19FP" <<'PY' && grep -q 'rejected by a person' "$F19H" && grep -q 'pinned in a test-only image' "$F19H" \
+    && ok "F19a: the decision shows on its finding in evidence.json and in the HTML report" || no "F19a: decision not shown after scan.sh evidence"
+import json, sys
+d = json.load(open(sys.argv[1]))
+[f] = [x for x in d["findings"] if x["fingerprint"] == sys.argv[2]]
+assert f["review"]["decision"] == "rejected" and f["review"]["changed"] == [], f.get("review")
+assert d["counts"]["by_review"]["rejected"] == 1
+assert all("review" not in x for x in d["findings"] if x["fingerprint"] != sys.argv[2])
+PY
+  rm -f "$F19H"
+  # The record is not a suppression. It is written only by `scan_decide` and read only to SHOW
+  # decisions (evidence.py, called from scan_evidence, which runs after the gate). A branch author
+  # writes the committed file; if anything else read it, a branch could unblock itself. Code files
+  # only: the triage skill names the file in prose. report_html.py names it in the page's text and
+  # opens only the paths it is given (evidence, summary, out), checked below.
+  F19R="$(cd "$KIT_SRC" && { grep -rlE --include='*.py' --include='*.sh' --include='pre-*' 'decisions(\.json|\.py)|DECISIONS_FILE|attach_reviews' lib hooks plugin install.sh bootstrap.sh 2>/dev/null | grep -vxE 'lib/(decisions|evidence|report_html)\.py'
+    awk '/^scan_(decide|evidence)\(\)\{/{d=1} d&&/^}/{d=0;next} !d' scan.sh | grep -nE 'decisions\.py|DECISIONS_FILE' | grep -v '^[0-9]*:DECISIONS_FILE='; } )"
+  [ -z "$F19R" ] && ok "F19a: decisions.json is written by scan.sh decide and only read to show decisions — the gate does not read it" \
+    || no "F19a: decisions.json is read outside decide/evidence: $F19R"
+  grep -q 'the gate result is unchanged' "$KIT_SRC/scan.sh" && ! grep -qE 'review|decisions' <<<"$(sed -n '/^_dim()/,/^run_scans()/p' "$KIT_SRC/scan.sh")" \
+    && ok "F19a: the gate (_dim / run_scans) does not look at reviews" || no "F19a: the gate code mentions reviews or decisions"
+  [ "$(grep -oE 'open\(args\.[a-z_]+' "$KIT_SRC/lib/report_html.py" | sort -u | tr '\n' ' ')" = "open(args.evidence open(args.out open(args.summary " ] \
+    && [ "$(grep -c 'open(' "$KIT_SRC/lib/report_html.py")" = 3 ] \
+    && ok "F19a: report_html.py opens only the evidence, summary and output paths it is given" || no "F19a: report_html.py opens another file"
   rm -f "$F19D"
   # Scope: a dimension that did NOT run must not contribute leftover SARIF findings.
   printf '{"command":"secret","exit_code":0,"raw_log":"r.log","dimensions":[{"name":"secret","exit_code":0,"status":"pass"}]}\n' \

@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-22 — F19a slice 4: decisions shown on findings; F19a complete (`feat/f19a-decisions`, unreleased)
+
+Decisions appear on their findings in `evidence.json` (`review`) and in the report, kept apart from the AI pass's verdict, marked when expired or made at another package version. Dependency findings can now carry a decision (they have no file:line for a triage row to attach to). Expiry stays out of `evidence.json` to keep it byte-identical over unchanged code. `/sec-triage` rebuilds the report after writing its file. Next on the UI track: R13a (read-only local UI over `evidence.json` and `decisions.json`).
+
 ## 2026-11-22 — F19a slice 3: the decision record (`feat/f19a-decisions`, unreleased)
 
 `scan.sh decide` writes `docs/security/decisions.json`, keyed on the fingerprint, with owner, reason, until, verify, evidence kind and a snapshot of the finding. Decided while building, all on the side of not hiding findings: a decision never changes the gate, only a fingerprint the current scan reported can be decided, and a malformed record is refused rather than replaced. Next: S4 shows decisions next to findings.

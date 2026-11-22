@@ -177,3 +177,61 @@ def test_an_empty_or_missing_record(tmp_path, capsys):
     rec = str(tmp_path / "decisions.json")
     assert run("list", rec) == 0 and "no decisions" in capsys.readouterr().out
     assert run("check", rec) == 0
+
+
+# --- S4: evidence.py shows each decision on its finding -------------------------------------------
+
+import evidence as evidence_mod  # noqa: E402
+
+
+def _record(path, *entries):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    open(path, "w").write(json.dumps({"schema": decisions.SCHEMA, "decisions": list(entries)}))
+
+
+def _entry(fp, decision="rejected", version="1.26.4", **kw):
+    e = {"fingerprint": fp, "decision": decision, "evidence_kind": "observed", "reason": "r", "owner": "Ada",
+         "decided": "2026-11-22", "until": None, "verify": None,
+         "subject": {"rule_id": "CVE-2021-33503", "package": {"ecosystem": "pypi", "name": "urllib3", "version": version}}}
+    e.update(kw)
+    return e
+
+
+def test_attach_reviews_marks_each_finding_and_counts(tmp_path):
+    rec = str(tmp_path / "d.json")
+    _record(rec, _entry(FP1), _entry(FP2, decision="confirmed"), _entry("e" * 20))
+    rows = [row(FP1), row(FP1, tool="trivy"), row(FP2, package=None), row(FP3)]
+    warnings = []
+    counts = evidence_mod.attach_reviews(rows, rec, warnings)
+    assert [r.get("review", {}).get("decision") for r in rows] == ["rejected", "rejected", "confirmed", None]
+    assert counts == {"confirmed": 1, "rejected": 2, "accepted": 0, "needs-validation": 0, "none": 1}
+    assert rows[0]["review"]["changed"] == [] and rows[0]["review"]["owner"] == "Ada"
+    assert len(warnings) == 1 and "1 decision(s)" in warnings[0] and "did not report" in warnings[0]
+
+
+def test_a_decision_made_at_another_package_version_is_marked_changed(tmp_path):
+    rec = str(tmp_path / "d.json")
+    _record(rec, _entry(FP1, version="1.26.3"))
+    rows = [row(FP1)]
+    evidence_mod.attach_reviews(rows, rec, [])
+    assert rows[0]["review"]["changed"] == ["package version 1.26.3 -> 1.26.4"]
+
+
+def test_a_broken_record_is_a_warning_not_a_failed_build(tmp_path):
+    rec = str(tmp_path / "d.json")
+    open(rec, "w").write("{broken")
+    rows, warnings = [row(FP1)], []
+    counts = evidence_mod.attach_reviews(rows, rec, warnings)
+    assert "review" not in rows[0] and counts["none"] == 1
+    assert warnings and warnings[0].startswith("decisions.json not used")
+    assert evidence_mod.attach_reviews([row(FP1)], str(tmp_path / "missing.json"), []) ["none"] == 1
+    assert evidence_mod.attach_reviews([row(FP1)], None, [])["none"] == 1
+
+
+def test_attach_reviews_does_not_depend_on_the_date(tmp_path, monkeypatch):
+    # evidence.json must diff to nothing over unchanged code: an expired decision is the report's call
+    rec = str(tmp_path / "d.json")
+    _record(rec, _entry(FP1, decision="accepted", until="2020-01-01"))
+    rows = [row(FP1)]
+    evidence_mod.attach_reviews(rows, rec, [])
+    assert rows[0]["review"]["until"] == "2020-01-01" and "expired" not in json.dumps(rows[0]["review"]).lower()
