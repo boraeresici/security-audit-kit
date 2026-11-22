@@ -2,9 +2,11 @@
 # security-audit-kit — agent PostToolUse hook (F33b): one advisory semgrep pass on the file the
 # agent just edited, so a risky pattern is seen while the agent is still in that file, not at push.
 #
-# Shipped by the Claude Code plugin (plugin/hooks/hooks.json, matcher Edit|Write). It runs the REPO's
-# vendored, pinned scanner (tools/security-audit-kit/scan.sh edit), never a copy of its own: the
-# plugin downloads nothing, and the pin stays the team's decision.
+# OPT-IN, wired by `install.sh --with-edit-hook` into the project's .claude/settings.json
+# (PostToolUse, matcher Edit|Write). It runs the repo's vendored, pinned scanner
+# (tools/security-audit-kit/scan.sh edit); the pin stays the team's decision. It used to ship in the
+# plugin (1.22.0); the plugin directory takes hooks only from Verified organizations, so the plugin
+# is skills only and this hook belongs to the kit, like hooks/pre-tool-install.sh.
 #
 # Contract: it never blocks (always exit 0). What the agent should hear goes to its context as
 # hookSpecificOutput.additionalContext: new findings, or that the file was NOT checked and why.
@@ -48,7 +50,7 @@ kit="$root/tools/security-audit-kit"
 dir="$(cd -P -- "$(dirname -- "$file")" && pwd -P)"; rel="$dir/$(basename -- "$file")"
 rel="${rel#"$(cd -P -- "$root" && pwd -P)"/}"     # /var vs /private/var: compare physical paths
 if [ ! -f "$kit/scan.sh" ]; then
-  once no-kit && printf 'security-audit-kit: %s was not checked: this repo has no vendored scanner (tools/security-audit-kit). The plugin never downloads one; adding it is the user'"'"'s decision (bash bootstrap.sh <tag>, see the kit README). (Said once per session.)\n' "$rel" | emit
+  once no-kit && printf 'security-audit-kit: %s was not checked: this repo has no vendored scanner (tools/security-audit-kit). Adding it is the user'"'"'s decision (see the kit README, Install). (Said once per session.)\n' "$rel" | emit
   exit 0
 fi
 if ! grep -q '^scan_edit()' "$kit/scan.sh"; then

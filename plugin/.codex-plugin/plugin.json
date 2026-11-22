@@ -25,6 +25,11 @@
     "shortDescription": "Judge your local scan results",
     "longDescription": "Skills that judge what a pinned, local security scan found: triage each finding as real or a false positive against an evidence bar (sink, untrusted source, unbroken path), semantic SAST for authorization, IDOR and business logic, an AI/LLM security review mapped to the OWASP LLM Top 10, a STRIDE threat model, and a one-command audit. The skills drive the repository's own vendored scanner (tools/security-audit-kit/scan.sh, installed with bootstrap.sh); the plugin downloads nothing.",
     "developerName": "studiobinary.co",
+    "category": "Developer Tools",
+    "websiteURL": "https://github.com/boraeresici/security-audit-kit",
+    "supportURL": "https://github.com/boraeresici/security-audit-kit/issues",
+    "privacyPolicyURL": "https://github.com/boraeresici/security-audit-kit/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/boraeresici/security-audit-kit/blob/main/LICENSE",
     "capabilities": [
       "Triage scanner findings as real or false positive, with the evidence each verdict rests on",
       "Semantic SAST: horizontal and vertical authorization, IDOR, business-logic flaws",

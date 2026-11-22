@@ -31,6 +31,10 @@ SKILLS_ONLY=0
 # design — it runs on every Bash tool call the agent makes, and silently editing a consumer's
 # agent settings is not something an installer should do on its own.
 AGENT_HOOK=0
+# --with-edit-hook: also wire the PostToolUse edit check (hooks/post-edit-check.sh: one advisory
+# semgrep pass on the file the agent just edited; never blocks) into .claude/settings.json. OPT-IN
+# for the same reason. It shipped in the plugin in 1.22.0; the plugin is skills only since 1.22.1.
+EDIT_HOOK=0
 UNINSTALL=0
 # --no-skills: hooks + config only. For a repo whose skills come from the Claude Code plugin
 # (security-audit-kit@security-audit-kit): copying them too would load each skill twice.
@@ -40,11 +44,12 @@ for arg in "$@"; do
   case "$arg" in
     --skills-only)     SKILLS_ONLY=1 ;;
     --with-agent-hook) AGENT_HOOK=1 ;;
+    --with-edit-hook)  EDIT_HOOK=1 ;;
     --uninstall)       UNINSTALL=1 ;;
     --no-skills)       NO_SKILLS=1 ;;
     --with-skills)     WITH_SKILLS=1 ;;
     "") ;;
-    *) echo "unknown option: $arg (usage: install.sh [--skills-only | --no-skills | --with-skills] [--with-agent-hook] | --uninstall)"; exit 2 ;;
+    *) echo "unknown option: $arg (usage: install.sh [--skills-only | --no-skills | --with-skills] [--with-agent-hook] [--with-edit-hook] | --uninstall)"; exit 2 ;;
   esac
 done
 
@@ -56,6 +61,43 @@ KIT_HOOKS="$KIT_REL/hooks"
 SKILLS="sec-triage sec-sast-deep sec-ai-review sec-threat-model sec-audit"
 state_get(){ [ -f "$STATE" ] || return 0; sed -n "s/^$1=//p" "$STATE" | tail -1; }   # no record = empty, never a failure (set -e)
 state_set(){ local tmp; tmp="$(mktemp)"; { [ -f "$STATE" ] && grep -v "^$1=" "$STATE"; printf '%s=%s\n' "$1" "$2"; } > "$tmp"; mv -f "$tmp" "$STATE"; }
+# Add or remove one command hook in the project's .claude/settings.json: <add|remove> <event>
+# <matcher> <command> <timeout>. Idempotent; an invalid settings.json is refused, never rewritten.
+# (The PreToolUse package check keeps its own block below; this one serves the edit check.)
+settings_hook(){
+  SETTINGS="$ROOT/.claude/settings.json" ACTION="$1" EVENT="$2" MATCHER="$3" HOOKCMD="$4" TIMEOUT="$5" python3 -I - <<'PYEOF3'
+import json, os, pathlib
+path = pathlib.Path(os.environ["SETTINGS"]); cmd = os.environ["HOOKCMD"]
+event, matcher, action = os.environ["EVENT"], os.environ["MATCHER"], os.environ["ACTION"]
+doc = {}
+if path.exists():
+    try:
+        doc = json.loads(path.read_text() or "{}")
+    except ValueError:
+        raise SystemExit("settings.json is not valid JSON — refusing to rewrite it")
+groups = doc.setdefault("hooks", {}).setdefault(event, [])
+if action == "add":
+    entry = {"type": "command", "command": cmd, "timeout": int(os.environ["TIMEOUT"])}
+    for g in groups:
+        if g.get("matcher") == matcher:
+            if any(h.get("command") == cmd for h in g.setdefault("hooks", [])):
+                raise SystemExit(0)            # already wired
+            g["hooks"].append(entry)
+            break
+    else:
+        groups.append({"matcher": matcher, "hooks": [entry]})
+else:
+    for g in groups:
+        g["hooks"] = [h for h in g.get("hooks", []) if h.get("command") != cmd]
+    groups[:] = [g for g in groups if g.get("hooks")]
+    if not groups:
+        doc["hooks"].pop(event, None)
+    if not doc["hooks"]:
+        doc.pop("hooks")
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(doc, indent=2) + "\n")
+PYEOF3
+}
 state_del(){ [ -f "$STATE" ] || return 0; local tmp; tmp="$(mktemp)"; grep -v "^$1=" "$STATE" > "$tmp" || true; mv -f "$tmp" "$STATE"; }
 fsum(){ cksum < "$1" | awk '{print $1"-"$2}'; }
 kit_sha256(){
@@ -87,6 +129,7 @@ kit_copy(){
   grep -qx "$s $sum" "$KIT/lib/released-skills.sums" 2>/dev/null
 }
 HOOK_CMD="bash \"\$CLAUDE_PROJECT_DIR/$KIT_REL/hooks/pre-tool-install.sh\""
+EDIT_HOOK_CMD="bash \"\$CLAUDE_PROJECT_DIR/$KIT_REL/hooks/post-edit-check.sh\""
 
 # Remove only what install added, as recorded; keep the team's config and anything edited since.
 uninstall(){
@@ -136,6 +179,10 @@ if not pre: doc.get("hooks", {}).pop("PreToolUse", None)
 if "hooks" in doc and not doc["hooks"]: doc.pop("hooks")
 path.write_text(json.dumps(doc, indent=2) + "\n")
 PYEOF2
+  fi
+  if [ "$(state_get edit_hook)" = 1 ] && [ -f "$ROOT/.claude/settings.json" ] && have python3; then
+    settings_hook remove PostToolUse "Edit|Write" "$EDIT_HOOK_CMD" 60 \
+      && ok "removed the edit check from .claude/settings.json" || miss ".claude/settings.json left as is (not valid JSON?)"
   fi
   rm -f "$STATE"
   ok "kept: .security-audit.conf, .security-exclusions.md, docs/security/scan-findings/, $KIT_REL/ (remove the kit dir yourself)"
@@ -362,6 +409,24 @@ else
   echo "      what it does: checks a package with guarddog BEFORE 'npm i'/'pip install' runs it"
 fi
 
+echo "== agent edit check (one advisory semgrep pass after each agent edit) =="
+if [ "$EDIT_HOOK" = "1" ]; then
+  chmod +x "$KIT/hooks/post-edit-check.sh"
+  if have python3; then
+    if settings_hook add PostToolUse "Edit|Write" "$EDIT_HOOK_CMD" 60; then
+      state_set edit_hook 1
+      ok ".claude/settings.json -> PostToolUse(Edit|Write) runs hooks/post-edit-check.sh"
+    else
+      miss ".claude/settings.json NOT modified — add this hook by hand (see the kit's docs/usage.md, the edit check)"
+    fi
+  else
+    miss "python3 MISSING -> cannot edit .claude/settings.json; add the PostToolUse entry by hand"
+  fi
+else
+  miss "not wired (opt-in). Enable with: bash $KIT_REL/install.sh --with-edit-hook"
+  echo "      what it does: after the agent edits a file, one semgrep pass on it; advisory, never blocks"
+fi
+
 echo "== integrity =="
 # Advisory (not fatal): confirm the vendored kit matches its CHECKSUMS manifest. A modified
 # fork without a regenerated manifest will warn here — that is expected; review and proceed.
@@ -393,6 +458,7 @@ cat <<EOF
   pre-commit fw : already use pre-commit? add this repo via .pre-commit-hooks.yaml instead of
                   the kit's hooks; run 'install.sh --skills-only' for the skills (no hooksPath)
   agent hook    : install.sh --with-agent-hook -> checks a package BEFORE the agent installs it
+  edit check    : install.sh --with-edit-hook  -> one advisory semgrep pass after each agent edit
                   (ad-hoc: bash $KIT_REL/scan.sh pkgcheck npm <pkg>)
   emergency bypass: SKIP_SECURITY=1 git commit   |   git push --no-verify
   undo          : bash $KIT_REL/install.sh --uninstall  (restores hooksPath; keeps config + edited skills)

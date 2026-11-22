@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Upgrade notes
+- **The plugin no longer carries the edit-check hook.** 1.22.0 shipped it in the plugin; the Claude
+  plugin directory accepts hooks and scripts only from Verified organizations and refused that
+  version. The plugin is now the five skills only. To keep the check (one advisory semgrep pass
+  after each agent edit, never blocking), wire it per project:
+  `bash tools/security-audit-kit/install.sh --with-edit-hook` (it writes `.claude/settings.json`;
+  `--uninstall` removes it). Nothing else changes: the skills, the git hooks and the gate are as
+  they were.
+
+### Changed
+- **The edit check is the kit's, opt-in (`install.sh --with-edit-hook`).** `hooks/post-edit-check.sh`
+  moved from `plugin/hooks/` into the kit's `hooks/`, next to the pre-install check, and
+  `install.sh --with-edit-hook` adds one PostToolUse(`Edit|Write`) entry to `.claude/settings.json`
+  without touching the rest of the file (idempotent; `--uninstall` removes it). `plugin/` holds the
+  manifests, the icon, the skills and the licence; e2e fails on anything else.
+- **No skill names a download-and-run command.** The directory flagged "download-and-execute" in
+  a skill body: `bootstrap.sh <tag>`, which fetches the kit and runs its installer, as a
+  recommendation. The skills now point the repo owner at the kit README's install and update
+  steps; `bootstrap.sh --check` (read-only) stays. e2e fails on `bootstrap.sh <tag>` in a skill.
+
+### Fixed
+- **The Codex manifest names its category.** The OpenAI directory refused the v1.22.0 upload:
+  "`interface.category` must not be empty when provided; omit it to use `Other`", although the
+  manifest had no such field. `plugin/.codex-plugin/plugin.json` now has
+  `"category": "Developer Tools"` and the four listing URLs the upload then asked for
+  (`websiteURL`, `supportURL`, `privacyPolicyURL`, `termsOfServiceURL`: the repository, its
+  issues, `PRIVACY.md` and `LICENSE`), although the docs call the URLs optional for a skills-only
+  ZIP. `scripts/build_codex_zip.py` refuses a manifest without them. The ZIP for 1.22.0 was rebuilt
+  from the v1.22.0 tag with only these lines added.
+
 ## [1.22.0] - 2026-11-22
 
 ### Upgrade notes

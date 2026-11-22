@@ -62,7 +62,7 @@ dimensions, and a missing one is skipped out loud ([Requirements](docs/install.m
 ```mermaid
 flowchart LR
     BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
-    PLG["plugin: Claude Code · Codex<br/>the five skills + an advisory edit hook"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills"]
     subgraph REPO["your repo"]
       HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
       CONF[".security-audit.conf<br/>read as data"]
@@ -93,9 +93,9 @@ flowchart LR
 - **The scanner is vendored and pinned.** `bootstrap.sh` puts the kit in `tools/security-audit-kit/`
   with its `CHECKSUMS`; every hook wrapper checks the kit against the manifest recorded at install
   before it runs anything, so a branch cannot change what judges it.
-- **The plugin carries the skills and one advisory hook, never the scanner.** In Claude Code or Codex
-  the skills drive the repo's own vendored `scan.sh`, and the edit check runs `scan.sh edit` on a file
-  the agent just changed; without the plugin, `install.sh` copies the skills into `.claude/skills/`.
+- **The plugin carries the skills, never the scanner or a hook.** In Claude Code or Codex the skills
+  drive the repo's own vendored `scan.sh`. The optional edit check (`scan.sh edit` on a file the agent
+  just changed) is the kit's, wired with `install.sh --with-edit-hook`; without the plugin, `install.sh` copies the skills into `.claude/skills/`.
 - **One record per run.** `summary.json` says what each dimension did; with `SARIF=1` the tools' SARIF
   and native JSON become `evidence.json`, the HTML report and `kit.sarif`, which carries the
   skills' judgment findings. What each dimension leaves behind: [evidence matrix](docs/evidence-matrix.md).
@@ -210,13 +210,15 @@ conversation. In the VS Code extension, run **Developer: Reload Window** from th
   upgrade notes, and recommends `bootstrap.sh <tag>`. The pin is the team's decision, and their
   hooks and CI run the same version.
 
-**The edit check (the plugin's one hook).** After each agent Edit or Write, the plugin runs the
+**The edit check (opt-in, `install.sh --with-edit-hook`).** After each agent Edit or Write, it runs the
 repo's vendored scanner on that one file (`scan.sh edit`, semgrep) and adds new findings to the
 agent's context. It never blocks, and it writes no scan record. A clean file adds nothing. A file
 it could not check (no uvx, over its time budget, a scanner error, no vendored kit) is said to be
-**not checked**, never clean. Each finding and each reason is said once per session. A plugin hook
+**not checked**, never clean. Each finding and each reason is said once per session. The hook
 runs with your permissions, like the git hooks: it is a readable script,
-[`plugin/hooks/post-edit-check.sh`](plugin/hooks/post-edit-check.sh). Turn it off with `EDIT_CHECK=0` in
+[`hooks/post-edit-check.sh`](hooks/post-edit-check.sh), wired into the project's `.claude/settings.json`
+(1.22.0 shipped it in the plugin; the plugin directory takes hooks only from Verified organizations, so
+the plugin is skills only since 1.22.1). Turn it off with `EDIT_CHECK=0` in
 `.security-audit.conf`. Details: [docs/usage.md](docs/usage.md#the-edit-check--after-each-agent-edit).
 The kit's git hooks still come from `install.sh`, and its pre-install agent hook is opt-in
 (`--with-agent-hook`).

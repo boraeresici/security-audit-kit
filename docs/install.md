@@ -80,8 +80,9 @@ Claude Code. Undo: `codex plugin remove security-audit-kit@security-audit-kit`, 
 The scanner contract is the same as with the Claude Code plugin: the skills use the repo's vendored
 scanner and never download one, so vendor it too (`bash bootstrap.sh <tag> --no-skills`).
 
-Codex reads `plugin/.codex-plugin/plugin.json`, and also finds the plugin's edit-check hook
-(`plugin/hooks/hooks.json`); Codex runs a plugin hook only after you review and trust it (`/hooks`).
+Codex reads `plugin/.codex-plugin/plugin.json`. The plugin has no hook since 1.22.1; the edit check
+is wired per project with `install.sh --with-edit-hook`, which writes Claude Code's
+`.claude/settings.json` only.
 
 What is not there yet: `install.sh --with-agent-hook` wires the package pre-install check for
 Claude Code only, and the kit is not listed in the OpenAI plugin directory yet. The package for it is

@@ -3,8 +3,8 @@
 
 The directory takes a ZIP, not a repository path. It is built from the plugin folder (plugin/, R17)
 and holds the Codex manifest, the listing icon, the five skills and the licence. Not the scanner, not the
-docs, not the test fixtures (some pin known-vulnerable packages on purpose), and not hooks/: the
-directory does not accept lifecycle hooks, and the edit check stays for manual installs.
+docs, not the test fixtures (some pin known-vulnerable packages on purpose). The plugin folder has
+no hooks (the directory does not accept lifecycle hooks); the edit check is the kit's.
 
 The rules checked here are the ones the OpenAI pages state (developers.openai.com/plugins/deploy/
 submission, /codex/plugins/build, read 2026-11-20). The build is reproducible: fixed order, fixed
@@ -74,6 +74,14 @@ def check(m):
     for k, n in LIMITS.items():
         if not i.get(k) or len(i[k]) > n:
             fail(f"interface.{k}: required, at most {n} characters")
+    # The upload refuses a manifest without it ("must not be empty when provided"), although its
+    # message suggests omitting it. A dashboard category title, e.g. "Developer Tools".
+    if not isinstance(i.get("category"), str) or not i["category"].strip() or len(i["category"]) > 80:
+        fail("interface.category: required, a category title such as \"Developer Tools\"")
+    # Listed as optional for skills-only ZIPs in the docs, but the upload asks for all four (2026-11-22).
+    for k in ("websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL"):
+        if not isinstance(i.get(k), str) or not re.fullmatch(r"https://[^\s\"<>]+", i[k]):
+            fail(f"interface.{k}: required, an https:// URL")
     caps = i.get("capabilities")
     if not isinstance(caps, list) or len(caps) > 20 or any(len(c) > 120 for c in caps):
         fail("interface.capabilities: a list of at most 20 items of at most 120 characters")
