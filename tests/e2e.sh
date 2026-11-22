@@ -1753,6 +1753,8 @@ assert names == sorted([".codex-plugin/plugin.json", ".claude-plugin/icon.png", 
 assert not any(n.startswith("hooks/") for n in names)
 m = json.loads(z.read(".codex-plugin/plugin.json"))
 assert m["version"] == json.load(open(os.path.join(kit, "plugin/.claude-plugin/plugin.json")))["version"]
+assert m["interface"]["category"] == "Developer Tools", m["interface"].get("category")
+assert all(m["interface"][k].startswith("https://") for k in ("websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL"))
 PY
   mkdir -p "$F43Z/k/scripts"; cp -R "$KIT_SRC/plugin" "$F43Z/k/plugin"
   cp "$KIT_SRC/scripts/build_codex_zip.py" "$F43Z/k/scripts/"

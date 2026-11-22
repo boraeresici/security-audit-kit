@@ -241,7 +241,7 @@ python3 scripts/build_codex_zip.py          # -> dist/security-audit-kit-codex-<
 ```
 
 The script checks what the OpenAI pages state (name, version equal to `plugin/.claude-plugin/plugin.json`,
-listing field lengths, icons, no hooks, no apps, no MCP) and packages only the manifest, the icon,
+listing field lengths, a category, icons, no hooks, no apps, no MCP) and packages only the manifest, the icon,
 the five skills and the licence. The same commit gives the same bytes. e2e builds it and checks its
 contents.
 
@@ -254,6 +254,17 @@ What only the account owner can do, at platform.openai.com/plugins:
    then **Submit for review** with the policy attestations. One review per plugin at a time.
 4. After approval, **publish** it (it does not publish itself). Every later version is a new ZIP with
    its own checks and review outcome.
+
+**Category (found at the first upload, 2026-11-22):** the upload refused a manifest with no
+`interface.category`, with a message that suggests omitting it. The pages name it a required
+"category title from the dashboard, such as Productivity or Developer Tools" and publish no list;
+the kit uses `Developer Tools`. The upload then asked for `websiteURL`, `supportURL`,
+`privacyPolicyURL` and `termsOfServiceURL` under `interface`, which the docs list as optional for a
+skills-only ZIP; the kit points them at the repository, its issues, `PRIVACY.md` and `LICENSE`.
+The same check reported **"We are not accepting more skills-only submissions at this time."** No
+OpenAI page states that rule; the guidelines say only that skills-only plugins "may be subject to
+additional Directory eligibility requirements". A plugin made only of skills cannot be listed
+while that holds.
 
 Not in the ZIP, on purpose: the scanner (the skills drive the repo's own vendored copy), the docs,
 the test fixtures, and the plugin's `hooks/`: the directory refuses lifecycle hooks, so the edit check stays with

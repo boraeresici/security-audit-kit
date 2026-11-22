@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **The Codex manifest names its category.** The OpenAI directory refused the v1.22.0 upload:
+  "`interface.category` must not be empty when provided; omit it to use `Other`", although the
+  manifest had no such field. `plugin/.codex-plugin/plugin.json` now has
+  `"category": "Developer Tools"` and the four listing URLs the upload then asked for
+  (`websiteURL`, `supportURL`, `privacyPolicyURL`, `termsOfServiceURL`: the repository, its
+  issues, `PRIVACY.md` and `LICENSE`), although the docs call the URLs optional for a skills-only
+  ZIP. `scripts/build_codex_zip.py` refuses a manifest without them. The ZIP for 1.22.0 was rebuilt
+  from the v1.22.0 tag with only these lines added.
+
 ## [1.22.0] - 2026-11-22
 
 ### Upgrade notes
