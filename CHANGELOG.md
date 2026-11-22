@@ -81,6 +81,14 @@ All notable changes to this project are documented here. The format is based on
   findings never hash the line. `id` stays beside it for this version, and nothing keys on the
   fingerprint yet: the decision record is the next slice. The HTML report shows it under *details*.
   Spec: `docs/schema/evidence.md`.
+- **One advisory under several names is one fingerprint, and osv-scanner and trivy rows name their
+  package (F19a, second slice).** The fingerprint of a dependency row uses one name for the
+  advisory, chosen from the row's own id and aliases (the CVE, else the GHSA), so pip-audit's
+  `PYSEC-2021-108` and trivy's `CVE-2021-33503` are the same advisory. osv-scanner and trivy
+  dependency rows now carry `package`, read from their SARIF message in the shapes recorded from
+  the pinned tools, plus `aliases` (osv-scanner) and `fixed_in` (trivy); their fingerprint no
+  longer contains the version. Two tools reporting one advisory for one manifest get one
+  fingerprint; the rows stay separate. A row never borrows a name from another tool's output.
 - The HTML report can be filtered (F26): text search, severity, tool and decision, a "shown of
   total" count per section, reset, and a note that an empty filter result is not a clean scan. A
   *details* toggle shows the fields the adapters add (package, fixed version, aliases, resource,

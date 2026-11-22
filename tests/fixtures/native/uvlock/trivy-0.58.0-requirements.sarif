@@ -1,0 +1,353 @@
+{
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "Trivy",
+     "version": "0.58.0",
+     "rules": [
+      {
+       "id": "CVE-2021-33503",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "7.5",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2023-43804",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "5.9",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2025-66418",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "0.0",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2025-66471",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "0.0",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2026-21441",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "7.5",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2026-44431",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "5.3",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2026-97687",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "0.0",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      },
+      {
+       "id": "CVE-2026-97689",
+       "name": "LanguageSpecificPackageVulnerability",
+       "properties": {
+        "precision": "very-high",
+        "security-severity": "0.0",
+        "tags": [
+         "vulnerability",
+         "security",
+         "HIGH"
+        ]
+       },
+       "defaultConfiguration": {
+        "level": "error"
+       }
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "CVE-2021-33503",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2021-33503\nSeverity: HIGH\nFixed Version: 1.26.5\nLink: [CVE-2021-33503](https://avd.aquasec.com/nvd/cve-2021-33503)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-43804",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2023-43804\nSeverity: HIGH\nFixed Version: 2.0.6, 1.26.17\nLink: [CVE-2023-43804](https://avd.aquasec.com/nvd/cve-2023-43804)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66418",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2025-66418\nSeverity: HIGH\nFixed Version: 2.6.0\nLink: [CVE-2025-66418](https://avd.aquasec.com/nvd/cve-2025-66418)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66471",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2025-66471\nSeverity: HIGH\nFixed Version: 2.6.0\nLink: [CVE-2025-66471](https://avd.aquasec.com/nvd/cve-2025-66471)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-21441",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2026-21441\nSeverity: HIGH\nFixed Version: 2.6.3\nLink: [CVE-2026-21441](https://avd.aquasec.com/nvd/cve-2026-21441)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-44431",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2026-44431\nSeverity: HIGH\nFixed Version: 2.7.0\nLink: [CVE-2026-44431](https://avd.aquasec.com/nvd/cve-2026-44431)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97687",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2026-97687\nSeverity: HIGH\nFixed Version: 2.8.0\nLink: [CVE-2026-97687](https://avd.aquasec.com/nvd/cve-2026-97687)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97689",
+     "level": "error",
+     "message": {
+      "text": "Package: urllib3\nInstalled Version: 1.26.4\nVulnerability CVE-2026-97689\nSeverity: HIGH\nFixed Version: 2.8.0\nLink: [CVE-2026-97689](https://avd.aquasec.com/nvd/cve-2026-97689)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "requirements.txt",
+         "uriBaseId": "ROOTPATH"
+        },
+        "region": {
+         "startLine": 1,
+         "startColumn": 1,
+         "endLine": 1,
+         "endColumn": 1
+        }
+       },
+       "message": {
+        "text": "requirements.txt: urllib3@1.26.4"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

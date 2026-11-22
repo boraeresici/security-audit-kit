@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import unicodedata
 
@@ -535,6 +536,44 @@ def tool_suppression(result: dict):
     return None
 
 
+# Dependency rows that arrive as SARIF (F19a): the package is in the tool's message text, not in a
+# field. Both shapes are recorded from the pinned tools (tests/fixtures/native/uvlock/*.sarif); a
+# message that does not match adds nothing, and the row keeps its line-content fingerprint.
+_OSV_PACKAGE = re.compile(r"^Package '(.+)@([^@']*)' is vulnerable to '")
+_TRIVY_FIELD = re.compile(r"^(Package|Installed Version|Fixed Version): (.*)$", re.M)
+TRIVY_PACKAGE_RULES = {"LanguageSpecificPackageVulnerability", "OsPackageVulnerability"}
+MAX_PACKAGE_CHARS = 200
+
+
+def sarif_package(tool: str, result: dict, rule: dict, path):
+    """-> extra fields for a dependency row ({package, aliases?, fixed_in?}), or {} if it is not one."""
+    text = (result.get("message") or {}).get("text") or ""
+    if not isinstance(text, str):
+        return {}
+    name = version = None
+    extra = {}
+    if tool == "osv-scanner":
+        m = _OSV_PACKAGE.match(text)
+        if m:
+            name, version = m.group(1), m.group(2)
+        rule_id = result.get("ruleId")
+        known = rule.get("deprecatedIds")
+        aliases = sorted({a for a in (known if isinstance(known, list) else []) if isinstance(a, str) and a and a != rule_id})
+        if aliases:
+            extra["aliases"] = [clean_cell(a)[:MAX_PACKAGE_CHARS] for a in aliases]
+    elif tool == "trivy" and rule.get("name") in TRIVY_PACKAGE_RULES:
+        fields = dict(_TRIVY_FIELD.findall(text))
+        name, version = fields.get("Package"), fields.get("Installed Version")
+        fixed = [v.strip() for v in (fields.get("Fixed Version") or "").split(",") if v.strip()]
+        if fixed:
+            extra["fixed_in"] = [clean_cell(v)[:MAX_PACKAGE_CHARS] for v in fixed]
+    name = clean_cell(name or "")[:MAX_PACKAGE_CHARS]
+    if not name:
+        return {}
+    return {"package": {"ecosystem": fingerprint.manifest_ecosystem(path), "name": name,
+                        "version": clean_cell(version or "")[:MAX_PACKAGE_CHARS]}, **extra}
+
+
 def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
     doc = read_json(sarif_path, warnings, os.path.basename(sarif_path))
     if not doc:
@@ -562,6 +601,7 @@ def collect(sarif_path: str, tool: str, dimension: str, warnings: list) -> list:
                 "decision": "suppressed" if suppressed else None,
                 "confidence": None,
                 "evidence": {"sink": f"{path}:{line}" if line else path, "source": None, "note": suppressed} if suppressed else None,
+                **sarif_package(tool, result, rules.get(rule_id, {}), path),
             })
     return findings
 

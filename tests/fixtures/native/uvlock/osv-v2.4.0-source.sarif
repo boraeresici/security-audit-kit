@@ -1,0 +1,853 @@
+{
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "osv-scanner",
+     "version": "2.4.0",
+     "rules": [
+      {
+       "id": "CVE-2025-66471",
+       "name": "CVE-2025-66471",
+       "deprecatedIds": [
+        "CVE-2025-66471",
+        "PYSEC-2026-1994",
+        "GHSA-2xpw-w6gg-jr37"
+       ],
+       "properties": {
+        "security-severity": "8.9"
+       }
+      },
+      {
+       "id": "CVE-2024-37891",
+       "name": "CVE-2024-37891",
+       "deprecatedIds": [
+        "CVE-2024-37891",
+        "PYSEC-2026-1995",
+        "GHSA-34jh-p97f-mpxf"
+       ],
+       "properties": {
+        "security-severity": "4.4"
+       }
+      },
+      {
+       "id": "CVE-2026-21441",
+       "name": "CVE-2026-21441",
+       "deprecatedIds": [
+        "CVE-2026-21441",
+        "PYSEC-2026-1996",
+        "GHSA-38jv-5279-wg99"
+       ],
+       "properties": {
+        "security-severity": "8.9"
+       }
+      },
+      {
+       "id": "CVE-2026-97687",
+       "name": "CVE-2026-97687",
+       "deprecatedIds": [
+        "CVE-2026-97687",
+        "PYSEC-2026-4175",
+        "GHSA-8988-9cw3-xx77"
+       ],
+       "properties": {
+        "security-severity": "7.6"
+       }
+      },
+      {
+       "id": "CVE-2023-45803",
+       "name": "CVE-2023-45803",
+       "deprecatedIds": [
+        "CVE-2023-45803",
+        "PYSEC-2023-212",
+        "GHSA-g4mx-q9vg-27p4"
+       ],
+       "properties": {
+        "security-severity": "5.7"
+       }
+      },
+      {
+       "id": "CVE-2025-66418",
+       "name": "CVE-2025-66418",
+       "deprecatedIds": [
+        "CVE-2025-66418",
+        "PYSEC-2026-1998",
+        "GHSA-gm62-xv2j-4w53"
+       ],
+       "properties": {
+        "security-severity": "8.9"
+       }
+      },
+      {
+       "id": "CVE-2025-50181",
+       "name": "CVE-2025-50181",
+       "deprecatedIds": [
+        "CVE-2025-50181",
+        "PYSEC-2026-1999",
+        "GHSA-pq67-6m6q-mj2v"
+       ],
+       "properties": {
+        "security-severity": "5.3"
+       }
+      },
+      {
+       "id": "CVE-2021-33503",
+       "name": "CVE-2021-33503",
+       "deprecatedIds": [
+        "CVE-2021-33503",
+        "PYSEC-2021-108",
+        "GHSA-q2q7-5pp4-w6pg"
+       ],
+       "properties": {
+        "security-severity": "8.7"
+       }
+      },
+      {
+       "id": "CVE-2026-44431",
+       "name": "CVE-2026-44431",
+       "deprecatedIds": [
+        "CVE-2026-44431",
+        "PYSEC-2026-141",
+        "GHSA-qccp-gfcp-xxvc"
+       ],
+       "properties": {
+        "security-severity": "8.2"
+       }
+      },
+      {
+       "id": "CVE-2023-43804",
+       "name": "CVE-2023-43804",
+       "deprecatedIds": [
+        "CVE-2023-43804",
+        "PYSEC-2023-192",
+        "GHSA-v845-jxx5-vc9f"
+       ],
+       "properties": {
+        "security-severity": "8.1"
+       }
+      },
+      {
+       "id": "CVE-2026-97689",
+       "name": "CVE-2026-97689",
+       "deprecatedIds": [
+        "CVE-2026-97689",
+        "PYSEC-2026-4177",
+        "GHSA-vxq7-64xx-v4gw"
+       ],
+       "properties": {
+        "security-severity": "8.9"
+       }
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "CVE-2025-66471",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66471' (also known as 'PYSEC-2026-1994', 'GHSA-2xpw-w6gg-jr37')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66471",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66471' (also known as 'PYSEC-2026-1994', 'GHSA-2xpw-w6gg-jr37')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2024-37891",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2024-37891' (also known as 'PYSEC-2026-1995', 'GHSA-34jh-p97f-mpxf')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2024-37891",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2024-37891' (also known as 'PYSEC-2026-1995', 'GHSA-34jh-p97f-mpxf')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-21441",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-21441' (also known as 'PYSEC-2026-1996', 'GHSA-38jv-5279-wg99')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-21441",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-21441' (also known as 'PYSEC-2026-1996', 'GHSA-38jv-5279-wg99')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97687",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97687' (also known as 'PYSEC-2026-4175', 'GHSA-8988-9cw3-xx77')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97687",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97687' (also known as 'PYSEC-2026-4175', 'GHSA-8988-9cw3-xx77')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-45803",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-45803' (also known as 'PYSEC-2023-212', 'GHSA-g4mx-q9vg-27p4')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-45803",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-45803' (also known as 'PYSEC-2023-212', 'GHSA-g4mx-q9vg-27p4')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66418",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66418' (also known as 'PYSEC-2026-1998', 'GHSA-gm62-xv2j-4w53')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66418",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66418' (also known as 'PYSEC-2026-1998', 'GHSA-gm62-xv2j-4w53')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-50181",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-50181' (also known as 'PYSEC-2026-1999', 'GHSA-pq67-6m6q-mj2v')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-50181",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-50181' (also known as 'PYSEC-2026-1999', 'GHSA-pq67-6m6q-mj2v')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2021-33503",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2021-33503' (also known as 'PYSEC-2021-108', 'GHSA-q2q7-5pp4-w6pg')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2021-33503",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2021-33503' (also known as 'PYSEC-2021-108', 'GHSA-q2q7-5pp4-w6pg')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-44431",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-44431' (also known as 'PYSEC-2026-141', 'GHSA-qccp-gfcp-xxvc')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-44431",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-44431' (also known as 'PYSEC-2026-141', 'GHSA-qccp-gfcp-xxvc')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-43804",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-43804' (also known as 'PYSEC-2023-192', 'GHSA-v845-jxx5-vc9f')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-43804",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-43804' (also known as 'PYSEC-2023-192', 'GHSA-v845-jxx5-vc9f')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97689",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97689' (also known as 'PYSEC-2026-4177', 'GHSA-vxq7-64xx-v4gw')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97689",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97689' (also known as 'PYSEC-2026-4177', 'GHSA-vxq7-64xx-v4gw')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2021-33503",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2021-33503' (also known as 'PYSEC-2021-108', 'GHSA-q2q7-5pp4-w6pg')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2021-33503",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2021-33503' (also known as 'PYSEC-2021-108', 'GHSA-q2q7-5pp4-w6pg')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-43804",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-43804' (also known as 'PYSEC-2023-192', 'GHSA-v845-jxx5-vc9f')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-43804",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-43804' (also known as 'PYSEC-2023-192', 'GHSA-v845-jxx5-vc9f')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-45803",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-45803' (also known as 'PYSEC-2023-212', 'GHSA-g4mx-q9vg-27p4')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2023-45803",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2023-45803' (also known as 'PYSEC-2023-212', 'GHSA-g4mx-q9vg-27p4')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-44431",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-44431' (also known as 'PYSEC-2026-141', 'GHSA-qccp-gfcp-xxvc')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-44431",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-44431' (also known as 'PYSEC-2026-141', 'GHSA-qccp-gfcp-xxvc')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66471",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66471' (also known as 'PYSEC-2026-1994', 'GHSA-2xpw-w6gg-jr37')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66471",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66471' (also known as 'PYSEC-2026-1994', 'GHSA-2xpw-w6gg-jr37')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2024-37891",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2024-37891' (also known as 'PYSEC-2026-1995', 'GHSA-34jh-p97f-mpxf')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2024-37891",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2024-37891' (also known as 'PYSEC-2026-1995', 'GHSA-34jh-p97f-mpxf')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-21441",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-21441' (also known as 'PYSEC-2026-1996', 'GHSA-38jv-5279-wg99')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-21441",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-21441' (also known as 'PYSEC-2026-1996', 'GHSA-38jv-5279-wg99')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66418",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66418' (also known as 'PYSEC-2026-1998', 'GHSA-gm62-xv2j-4w53')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-66418",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-66418' (also known as 'PYSEC-2026-1998', 'GHSA-gm62-xv2j-4w53')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-50181",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-50181' (also known as 'PYSEC-2026-1999', 'GHSA-pq67-6m6q-mj2v')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2025-50181",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2025-50181' (also known as 'PYSEC-2026-1999', 'GHSA-pq67-6m6q-mj2v')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97687",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97687' (also known as 'PYSEC-2026-4175', 'GHSA-8988-9cw3-xx77')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97687",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97687' (also known as 'PYSEC-2026-4175', 'GHSA-8988-9cw3-xx77')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97689",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97689' (also known as 'PYSEC-2026-4177', 'GHSA-vxq7-64xx-v4gw')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/requirements.txt"
+        }
+       }
+      }
+     ]
+    },
+    {
+     "ruleId": "CVE-2026-97689",
+     "level": "warning",
+     "message": {
+      "text": "Package 'urllib3@1.26.4' is vulnerable to 'CVE-2026-97689' (also known as 'PYSEC-2026-4177', 'GHSA-vxq7-64xx-v4gw')."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "file:///repo/uv.lock"
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

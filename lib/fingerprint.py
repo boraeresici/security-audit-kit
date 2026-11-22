@@ -11,7 +11,9 @@ Three bases, named in `fingerprint_basis` so a reader can tell how much a match 
                   editing it or renaming the file does not. This is the method GitHub code scanning
                   uses for `primaryLocationLineHash`.
 - `package`       dependency findings (a row with `package`). Advisory, ecosystem, package name and
-                  manifest. The version is NOT part of it: a version bump that does not fix the
+                  manifest. The advisory is one name chosen from the row's own id and aliases
+                  (`canonical_advisory`), so two tools that name it differently agree when one of
+                  them knows the other's name. The version is NOT part of it: a version bump that does not fix the
                   advisory is the same finding, and one that fixes it makes the row disappear. Two
                   packages with the same advisory in one manifest are two findings.
 - `location`      everything else, and every case where the line cannot be read safely: the same
@@ -42,6 +44,43 @@ def package_name(ecosystem: str, name: str) -> str:
     if (ecosystem or "").lower() == "pypi":
         return re.sub(r"[-_.]+", "-", name).lower()
     return name
+
+
+def canonical_advisory(rule_id: str, aliases) -> str:
+    """One name for an advisory that has several (PYSEC-2021-108 = CVE-2021-33503 = GHSA-q2q7-...).
+
+    Chosen from THIS row's id and aliases only: the CVE if there is one, else the GHSA, else the
+    first id in sort order. Never from what another tool said in the same run — a fingerprint that
+    changed with the set of dimensions that ran would move decisions around. So a tool that gives
+    no aliases matches another only when its id is already the canonical one (trivy reports the
+    CVE; pip-audit and osv-scanner list it as an alias). Two rows that do not meet stay two
+    findings: a missed merge costs a second decision, a wrong merge would suppress a finding."""
+    ids = sorted({str(i).strip() for i in [rule_id, *(aliases or [])] if isinstance(i, str) and i.strip()})
+    for prefix in ("CVE-", "GHSA-"):
+        hit = [i for i in ids if i.upper().startswith(prefix)]
+        if hit:
+            return hit[0]
+    return ids[0] if ids else ""
+
+
+# A SARIF row names the manifest but not the ecosystem (trivy, osv-scanner). The file name says it.
+_MANIFEST_ECOSYSTEM = (
+    (re.compile(r"(^|/)(requirements[^/]*\.txt|uv\.lock|poetry\.lock|Pipfile\.lock|pdm\.lock)$"), "pypi"),
+    (re.compile(r"(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml)$"), "npm"),
+    (re.compile(r"(^|/)(go\.mod|go\.sum)$"), "go"),
+    (re.compile(r"(^|/)Cargo\.lock$"), "crates.io"),
+    (re.compile(r"(^|/)Gemfile\.lock$"), "rubygems"),
+    (re.compile(r"(^|/)composer\.lock$"), "packagist"),
+    (re.compile(r"(^|/)(pom\.xml|gradle\.lockfile|buildscript-gradle\.lockfile)$"), "maven"),
+)
+
+
+def manifest_ecosystem(path) -> str:
+    """The ecosystem a lock file or manifest belongs to, or "" when the name does not say."""
+    for pattern, eco in _MANIFEST_ECOSYSTEM:
+        if pattern.search(path or ""):
+            return eco
+    return ""
 
 
 class Lines:
@@ -93,7 +132,8 @@ def assign(findings: list, root: str = ".") -> None:
         pkg = f.get("package")
         if isinstance(pkg, dict) and pkg.get("name"):
             eco = str(pkg.get("ecosystem") or "").lower()
-            f["fingerprint"] = _h("package", rule, eco, package_name(eco, str(pkg["name"])), path or PYTHON_ENV)
+            advisory = canonical_advisory(rule, f.get("aliases"))
+            f["fingerprint"] = _h("package", advisory, eco, package_name(eco, str(pkg["name"])), path or PYTHON_ENV)
             f["fingerprint_basis"] = "package"
             continue
         text = None if dim in NO_LINE_HASH else lines.text(path, line) if path else None
