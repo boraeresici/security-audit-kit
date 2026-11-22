@@ -100,8 +100,11 @@ printed but does not change the scan's exit code.
 person's decision about one finding into `docs/security/decisions.json`, a committed file only
 this command writes. The fingerprint is in `evidence.json` and under *details* in the report; the
 decision is `confirmed`, `rejected`, `accepted` (with `--until`) or `needs-validation` (with
-`--verify`). It is a record, not a suppression: it never unblocks a push. `scan.sh decide` alone
-prints the full help; the format is in [schema/decisions.md](schema/decisions.md).
+`--verify`). It is a record, not a suppression: it never unblocks a push. The next `scan.sh
+evidence` (or scan with `SARIF=1`) shows it on the finding, and the HTML report shows it in the
+Decision column with who, when and why, marked *EXPIRED* after its `until` date and *changed
+since* when the package version moved. `scan.sh decide` alone prints the full help; the format is
+in [schema/decisions.md](schema/decisions.md).
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus

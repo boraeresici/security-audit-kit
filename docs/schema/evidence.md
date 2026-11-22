@@ -91,6 +91,7 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 | `decision` | enum\|null | `real` · `fp` · `uncertain` · `suppressed` · `null` (not yet judged). Written by the judgment layer, not the scan. |
 | `confidence` | float\|null | 0–1, from the triage confidence gate. |
 | `evidence` | object\|null | The claim → location chain: `{"sink": "path:line", "source": "…", "note": "…"}`. |
+| `review` | object (optional) | A person's decision from `docs/security/decisions.json`, present only when there is one. Display only; never changes the gate. See [decisions.md](decisions.md#shown-on-the-finding). |
 
 The scan fills everything down to `cvss`; `decision` / `confidence` / `evidence` stay `null` until a
 judgment pass (`/sec-triage`) fills them. A renderer must treat `null` as *undecided*, never as *FP*.
@@ -138,8 +139,8 @@ decision about it is lost. `fingerprint` is the identity that follows the findin
   trivy over one `requirements.txt`). The rows are not merged: each keeps its tool's severity and
   message, and one decision will cover both. The same advisory in two manifests is two findings.
 - **Decisions key on it.** A person's decision is recorded by fingerprint in
-  `docs/security/decisions.json` with `scan.sh decide` ([decisions.md](decisions.md)). Showing it next
-  to the finding here and in the report is the next F19a slice.
+  `docs/security/decisions.json` with `scan.sh decide` ([decisions.md](decisions.md)), and shown on
+  the finding as `review`, with `counts.by_review`.
 
 ## Severity normalization
 

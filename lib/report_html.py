@@ -30,6 +30,51 @@ DECISION_LABEL = {
     "real": "REAL", "fp": "false positive", "uncertain": "uncertain",
     "suppressed": "suppressed", None: "not triaged",
 }
+# A person's decision (decisions.json, F19a), shown apart from the triage's: the filter values carry
+# a "p-" prefix so "rejected by a person" and "FP by the AI pass" never fold into one option.
+REVIEW_LABEL = {
+    "confirmed": "confirmed by a person", "rejected": "rejected by a person",
+    "accepted": "risk accepted by a person", "needs-validation": "needs validation (person)",
+}
+DEC_ORDER = ["p-confirmed", "p-accepted", "p-needs-validation", "p-rejected", "real", "uncertain", "fp", "suppressed", "none"]
+
+
+def dec_key(f: dict) -> str:
+    """The value the decision filter matches: a person's decision wins over the triage's."""
+    r = f.get("review") or {}
+    if r.get("decision") in REVIEW_LABEL:
+        return "p-" + r["decision"]
+    return f.get("decision") or "none"
+
+
+def dec_label(key: str) -> str:
+    if key.startswith("p-"):
+        return REVIEW_LABEL.get(key[2:], key[2:])
+    return DECISION_LABEL.get(None if key == "none" else key, key)
+
+
+def expired(review: dict, today) -> bool:
+    return bool(review.get("until") and today and str(review["until"]) < str(today))
+
+
+def review_cell(f: dict, today) -> str:
+    """A person's decision, then what the triage said. Expired and changed are said in words: a
+    decision past its date, or made about another version of the package, is not a current one."""
+    r = f.get("review") or {}
+    if r.get("decision") not in REVIEW_LABEL:
+        return ""
+    meta = [r.get("owner"), r.get("decided")]
+    if r.get("until"):
+        meta.append(f"until {r['until']}")
+    flags = []
+    if expired(r, today):
+        flags.append('<b class="stale">EXPIRED — review again</b>')
+    for c in r.get("changed") or []:
+        flags.append(f'<b class="stale">changed since: {esc(c)}</b>')
+    return (f'<b>{esc(REVIEW_LABEL[r["decision"]])}</b>'
+            f'<div class="ev">{esc(" · ".join(str(m) for m in meta if m))} · {esc(r.get("evidence_kind") or "unverified")}</div>'
+            f'<div class="ev why">{esc(r.get("reason"))}</div>'
+            + "".join(f'<div class="ev">{x}</div>' for x in flags))
 
 CSS = """
 :root{
@@ -79,6 +124,8 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .sev.critical{color:var(--critical)} .sev.high{color:var(--high)} .sev.medium{color:var(--medium)}
 .sev.low{color:var(--low)} .sev.info{color:var(--info)}
 .dec{font-size:.8rem;white-space:nowrap}
+.dec .why{white-space:normal;max-width:22ch}
+.stale{color:var(--bad)}
 .ev{color:var(--muted);font-size:.82rem;margin-top:.25rem}
 .scroll{overflow-x:auto}
 .empty{color:var(--muted);font-style:italic;padding:.6rem 0}
@@ -160,7 +207,7 @@ def more(f: dict) -> str:
     return f'<details class="more"><summary>details</summary><dl>{dl}</dl></details>'
 
 
-def finding_rows(findings: list) -> str:
+def finding_rows(findings: list, today=None) -> str:
     if not findings:
         return '<tr><td colspan="5" class="empty">Nothing in this section.</td></tr>'
     rows = []
@@ -177,25 +224,28 @@ def finding_rows(findings: list) -> str:
         conf = f"{f['confidence']:g}" if f.get("confidence") is not None else "—"
         rows.append(
             f'<tr data-sev="{esc(f.get("severity"))}" data-tool="{esc(f.get("tool"))}" '
-            f'data-dec="{esc(f.get("decision") or "none")}">'
+            f'data-dec="{esc(dec_key(f))}">'
             f'<td class="sev {esc(f.get("severity"))}">{esc(f.get("severity"))}'
             f'<div class="ev">{esc(f.get("severity_source"))}{cvss}</div></td>'
             f'<td>{esc(f.get("tool"))}<div class="ev">{esc(f.get("rule_id"))}</div></td>'
             f'<td class="loc">{esc(location(f))}</td>'
             f'<td>{esc(f.get("message"))}{detail_html}{more(f)}</td>'
-            f'<td class="dec">{esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))}'
-            f'<div class="ev num">conf {conf}</div></td>'
+            f'<td class="dec">{review_cell(f, today)}'
+            + (f'<div class="ev">triage: {esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))} · conf {conf}</div>'
+               if f.get("review") else
+               f'{esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))}<div class="ev num">conf {conf}</div>')
+            + '</td>'
             "</tr>"
         )
     rows.append(f'<tr class="nomatch" hidden><td colspan="5" class="empty">{esc(NO_MATCH)}</td></tr>')
     return "".join(rows)
 
 
-def table(findings: list, section: str = "reported") -> str:
+def table(findings: list, section: str = "reported", today=None) -> str:
     return (
         '<div class="panel scroll"><table><thead><tr>'
         "<th>Severity</th><th>Tool / rule</th><th>Location</th><th>Finding</th><th>Decision</th>"
-        f'</tr></thead><tbody data-section="{section}">{finding_rows(findings)}</tbody></table></div>'
+        f'</tr></thead><tbody data-section="{section}">{finding_rows(findings, today)}</tbody></table></div>'
     )
 
 
@@ -244,16 +294,31 @@ def filters(findings: list) -> str:
         return f'<label>{name}<select name="{name}"><option value="">all</option>{o}</select></label>'
     sevs = [s for s in SEVERITY_ORDER if any(f.get("severity") == s for f in findings)]
     tools = sorted({str(f.get("tool")) for f in findings if f.get("tool")})
-    decs = [d for d in ("real", "uncertain", "fp", "suppressed", "none")
-            if any((f.get("decision") or "none") == d for f in findings)]
+    decs = [d for d in DEC_ORDER if any(dec_key(f) == d for f in findings)]
     return (
         '<form id="filters" class="filters" role="search" aria-label="Filter the findings" hidden>'
         '<label>search<input type="search" name="q" placeholder="file, rule, package, text" autocomplete="off"></label>'
         + opts("sev", sevs) + opts("tool", tools)
-        + opts("dec", decs, lambda d: DECISION_LABEL.get(None if d == "none" else d, d))
+        + opts("dec", decs, dec_label)
         + '<button type="reset">reset filters</button>'
         '<output id="fstate" class="fstate" aria-live="polite"></output></form>'
     )
+
+
+def review_chips(findings: list, today) -> str:
+    """How many findings a person decided about, and how many of those decisions are not current."""
+    reviewed = [f for f in findings if (f.get("review") or {}).get("decision") in REVIEW_LABEL]
+    if not reviewed:
+        return ('<p class="sub">No finding has a person\'s decision on record '
+                '(<code>scan.sh decide</code>, kept in <code>docs/security/decisions.json</code>).</p>')
+    stale = sum(1 for f in reviewed if expired(f["review"], today) or f["review"].get("changed"))
+    by = {}
+    for f in reviewed:
+        by[f["review"]["decision"]] = by.get(f["review"]["decision"], 0) + 1
+    chips = "".join(f'<span class="chip">{esc(REVIEW_LABEL[d])} {by[d]}</span>' for d in REVIEW_LABEL if d in by)
+    stale_chip = f'<span class="chip fail">expired or changed {stale}</span>' if stale else ""
+    return (f'<div class="chips">{chips}{stale_chip}</div>'
+            '<p class="sub">A person\'s decision is on record only: it does not change what blocks a push.</p>')
 
 
 # Statuses under which a dimension looked at nothing (summary.json schema 2).
@@ -417,14 +482,14 @@ def main() -> int:
   <span class="chip">false positive {by_dec.get("fp", 0)}</span>
   <span class="chip">suppressed {by_dec.get("suppressed", 0)}</span>
   <span class="chip">not triaged {by_dec.get("undecided", 0)}</span>
-</div></div>
+</div>{review_chips(findings, generated)}</div>
 
 <h2>Findings (<span id="count-reported" aria-live="polite">{len(reported)}</span>)</h2>
 {filters(findings) if findings else ""}
-{table(reported, "reported")}
+{table(reported, "reported", generated)}
 
 <h2>Suppressed (<span id="count-suppressed" aria-live="polite">{len(suppressed)}</span>) — on record, not reported</h2>
-{table(suppressed, "suppressed")}
+{table(suppressed, "suppressed", generated)}
 {warn_html}
 
 <footer>
@@ -432,7 +497,9 @@ Rendered from <code>evidence.json</code> ({esc(doc.get("schema"))}); schema and 
 mapping: <code>docs/schema/evidence.md</code>. Severity is normalized from each tool's own value,
 never invented; a CVSS is shown only where a tool supplied one. This is <b>internal evidence</b> —
 it does not replace an external ASV scan or a penetration test. Findings marked
-<i>not triaged</i> have not been judged yet; run <code>/sec-triage</code>.
+<i>not triaged</i> have not been judged yet; run <code>/sec-triage</code>. A person's decision comes
+from <code>docs/security/decisions.json</code> (<code>scan.sh decide</code>) and is shown as recorded;
+it never changes what blocks a push.
 </footer>
 </div>
 <script>{FILTER_JS}</script>
