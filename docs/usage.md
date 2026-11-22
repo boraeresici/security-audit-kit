@@ -18,6 +18,7 @@ bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detec
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
+bash tools/security-audit-kit/scan.sh decide     # record a person's decision about one finding (see below)
 bash tools/security-audit-kit/scan.sh help       # commands, gate tags, prerequisites, what `all` leaves out
 ```
 
@@ -94,6 +95,13 @@ dimension that applies inspected something and nothing is reported. Otherwise it
 finding") or *unknown*. Scan time and report date are shown apart. `scan.sh report` /
 `scan.sh evidence` exit 1 when they cannot produce their file; a report failure after a scan is
 printed but does not change the scan's exit code.
+
+**Recording a decision.** `scan.sh decide <fingerprint> <decision> --reason "<why>"` writes a
+person's decision about one finding into `docs/security/decisions.json`, a committed file only
+this command writes. The fingerprint is in `evidence.json` and under *details* in the report; the
+decision is `confirmed`, `rejected`, `accepted` (with `--until`) or `needs-validation` (with
+`--verify`). It is a record, not a suppression: it never unblocks a push. `scan.sh decide` alone
+prints the full help; the format is in [schema/decisions.md](schema/decisions.md).
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus

@@ -89,6 +89,17 @@ All notable changes to this project are documented here. The format is based on
   the pinned tools, plus `aliases` (osv-scanner) and `fixed_in` (trivy); their fingerprint no
   longer contains the version. Two tools reporting one advisory for one manifest get one
   fingerprint; the rows stay separate. A row never borrows a name from another tool's output.
+- **`scan.sh decide`: a person's decision about one finding, on record (F19a, third slice).**
+  `scan.sh decide <fingerprint> <confirmed|rejected|accepted|needs-validation> --reason "…"` writes
+  `docs/security/decisions.json`, a committed file only this command writes: sorted, one entry per
+  fingerprint, with the owner (default `git config user.name`), the date, an `until` date
+  (required for `accepted`, within a year), what would settle it (`--verify`, required for
+  `needs-validation`), the kind of evidence (`observed` / `inferred` / `unverified`) and the
+  finding as it was decided, aliases included. A unique 8-character prefix of the fingerprint is
+  enough; a fingerprint the current scan did not report is refused. `decide list` marks expired
+  and no-longer-reported decisions; `decide check` exits 1 on an expired one. A decision never
+  changes the gate: nothing outside `scan.sh decide` reads the file, which e2e checks.
+  `scan.sh decide` alone prints the help; the format is in `docs/schema/decisions.md`.
 - The HTML report can be filtered (F26): text search, severity, tool and decision, a "shown of
   total" count per section, reset, and a note that an empty filter result is not a clean scan. A
   *details* toggle shows the fields the adapters add (package, fixed version, aliases, resource,

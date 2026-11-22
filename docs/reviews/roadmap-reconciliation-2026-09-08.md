@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-22 — F19a slice 3: the decision record (`feat/f19a-decisions`, unreleased)
+
+`scan.sh decide` writes `docs/security/decisions.json`, keyed on the fingerprint, with owner, reason, until, verify, evidence kind and a snapshot of the finding. Decided while building, all on the side of not hiding findings: a decision never changes the gate, only a fingerprint the current scan reported can be decided, and a malformed record is refused rather than replaced. Next: S4 shows decisions next to findings.
+
 ## 2026-11-22 — F19a slice 2: aliases and SARIF dependency rows (`feat/f19a-aliases`, unreleased)
 
 osv-scanner and trivy SARIF were recorded with the pinned images instead of assumed. Findings: the package is only in the message text, neither tool names the ecosystem, osv-scanner's SARIF leads with the CVE and lists aliases in `deprecatedIds`. The fingerprint's advisory is one name from the row's own ids (CVE, else GHSA); no run-wide alias graph, so the identity does not depend on which dimensions ran. On the recordings trivy's 8 advisories meet osv-scanner's rows for the same file. Rows with one fingerprint are not merged.

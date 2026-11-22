@@ -27,6 +27,8 @@
 #   allowlist Audit suppressions: expired + cross-path gaps    (no scan; exit 1 on either)
 #   evidence  Rebuild evidence.json from the SARIF on disk    (normalized findings; no scan)
 #   report    Render evidence.json as one HTML file           (offline, print-to-PDF; no scan)
+#   decide    Record a person's decision about one finding    (docs/security/decisions.json; no scan)
+#             scan.sh decide  -> how to use it
 #
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
 #   SARIF=1 (also emit SARIF into docs/security/scan-findings/sarif/),
@@ -2069,6 +2071,65 @@ scan_warm(){
   docker run --rm "${TCM[@]}" "$(img aquasec/trivy "$TRIVY_VER" "$TRIVY_DIGEST")" image --download-db-only --no-progress || rc=1
   return "$rc"
 }
+# decide (F19a): a person's decision about one finding, kept in a committed record that only this
+# command writes. Keyed on the finding's fingerprint (evidence.json, or the report's *details*). It
+# is a record, not a suppression: it never changes what blocks a push.
+DECISIONS_FILE="$ROOT/docs/security/decisions.json"
+DECIDE_EVIDENCE="$LOG_DIR/evidence.json"   # the shared record (PUB_EVIDENCE, defined later)
+decide_help(){
+  cat <<'HELP'
+scan.sh decide — record a person's decision about one finding
+
+  scan.sh decide <fingerprint> <decision> --reason "<why>" [options]
+  scan.sh decide list        every decision, with EXPIRED / not-seen against the last scan
+  scan.sh decide check       exit 1 if a decision's --until date has passed
+  scan.sh decide remove <fingerprint>
+
+  <fingerprint>  the finding's fingerprint: evidence.json, or *details* in the HTML report.
+                 A unique prefix of 8+ characters is enough. It must be in the current
+                 evidence.json (run a scan with SARIF=1, or scan.sh evidence, first).
+  <decision>     confirmed         a real finding; fix it
+                 rejected          a false positive: the claim does not hold here
+                 accepted          real, the risk is accepted until a date (needs --until)
+                 needs-validation  cannot be settled from the code (needs --verify)
+
+  --reason "<why>"     required; what the decision rests on
+  --owner "<name>"     who answers for it (default: git config user.name)
+  --until YYYY-MM-DD   when it must be looked at again; required for accepted, within a year
+  --evidence-kind K    observed (tool output or source line) · inferred (reasoning over a path)
+                       · unverified (default)
+  --verify "<what>"    what would settle or re-open it; required for needs-validation
+
+  Writes docs/security/decisions.json (sorted, one entry per fingerprint; a second decision
+  replaces the first). Commit it with the change it explains. The entry keeps the finding as it
+  was when decided (rule, file, line, package, aliases).
+
+  It does NOT change the gate: a decision never unblocks a push. To stop a finding from blocking,
+  use the scanner's own allowlist (scan.sh allowlist audits them).
+
+  Example:
+    scan.sh decide 3f9c2a1b7d rejected --reason "user id comes from the session, not the request" \
+      --evidence-kind observed
+HELP
+}
+scan_decide(){
+  have python3 || { warn decide "no python3 -> cannot write the decision record"; return 2; }
+  local sub="${1:-}"
+  case "$sub" in
+    ""|help|-h|--help) decide_help; return 0 ;;
+    list)   python3 "$KIT_DIR/lib/decisions.py" list "$DECISIONS_FILE" "$DECIDE_EVIDENCE"; return $? ;;
+    check)  python3 "$KIT_DIR/lib/decisions.py" check "$DECISIONS_FILE"; return $? ;;
+    remove) shift; [ -n "${1:-}" ] || { decide_help >&2; return 2; }
+            python3 "$KIT_DIR/lib/decisions.py" remove "$DECISIONS_FILE" "$1"; return $? ;;
+  esac
+  local fp="$1" decision="${2:-}"; shift; [ $# -gt 0 ] && shift
+  [ -n "$decision" ] || { printf 'decide: give a fingerprint AND a decision\n\n' >&2; decide_help >&2; return 2; }
+  # --owner defaults to git's user.name; one given on the command line comes later and wins.
+  local owner=() who; who="$(git -C "$ROOT" config user.name 2>/dev/null || true)"
+  [ -n "$who" ] && owner=(--owner "$who")
+  python3 "$KIT_DIR/lib/decisions.py" set "$DECISIONS_FILE" "$DECIDE_EVIDENCE" "$fp" "$decision" ${owner[@]+"${owner[@]}"} "$@"
+}
+
 case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "warm" ]      && { scan_warm; exit $?; }
 [ "${1:-}" = "doctor" ]    && { scan_doctor; config_report; exit 0; }
@@ -2076,6 +2137,7 @@ case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "checksums" ] && { scan_checksums; exit $?; }
 [ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
 [ "${1:-}" = "allowlist" ] && { scan_allowlist; exit $?; }
+[ "${1:-}" = "decide" ]    && { shift; scan_decide "$@"; exit $?; }
 # edit: the agent hook's advisory one-file pass; under SKIP_SECURITY it stays silent (no record either way)
 [ "${1:-}" = "edit" ] && { shift; [ "${SKIP_SECURITY:-0}" = "1" ] || scan_edit "$@"; exit 0; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
@@ -2122,7 +2184,7 @@ _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
 run_scans(){
   local rc=0 units u row rec entry
   if ! units="$(scan_command_field "${1:-all}" 2)"; then
-    echo "unknown command: $1 ($(scan_commands | paste -sd'|' -)|doctor|verify|checksums|rules-test|allowlist|evidence|report|warm|help)"
+    echo "unknown command: $1 ($(scan_commands | paste -sd'|' -)|doctor|verify|checksums|rules-test|allowlist|evidence|report|decide|warm|help)"
     return 2
   fi
   for u in $units; do
