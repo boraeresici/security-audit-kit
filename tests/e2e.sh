@@ -394,6 +394,34 @@ PY
   mv -f "$ESAR/osv.sarif.e2e" "$ESAR/osv.sarif"; rm -f "$EVD.fp1"
   if [ "$F19K" = 1 ]; then mv -f "$F19L.e2e" "$F19L"; else rm -f "$F19L"; fi
   $SCAN evidence >/dev/null 2>&1
+  # F19a S3: `scan.sh decide` writes the committed decision record, keyed on a fingerprint from
+  # the current evidence, and says it does not change the gate. Help explains the command.
+  F19D="$TARGET/docs/security/decisions.json"; rm -f "$F19D"
+  F19FP="$(python3 -c 'import json,sys; print(next(f["fingerprint"] for f in json.load(open(sys.argv[1]))["findings"] if f["rule_id"]=="CVE-1"))' "$EVD" 2>/dev/null)"
+  F19O="$($SCAN decide "${F19FP:0:10}" rejected --reason "pinned in a test-only image" --evidence-kind observed 2>&1)"; F19RC=$?
+  [ "$F19RC" = 0 ] && grep -q 'does not change what blocks a push' <<<"$F19O" \
+    && python3 - "$F19D" "$F19FP" <<'PY' && ok "F19a: scan.sh decide records a decision by fingerprint prefix, with the finding as decided" || no "F19a: decide ($F19RC): $F19O"
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["schema"] == "security-audit-kit/decisions@1"
+[e] = d["decisions"]
+assert e["fingerprint"] == sys.argv[2] and e["decision"] == "rejected" and e["evidence_kind"] == "observed"
+assert e["owner"] and e["subject"]["rule_id"] == "CVE-1" and e["subject"]["file"] == "requirements.txt"
+PY
+  F19O="$($SCAN decide 0000000000 rejected --reason x 2>&1)"; F19RC=$?
+  [ "$F19RC" = 2 ] && grep -q 'REFUSED' <<<"$F19O" && [ "$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["decisions"]))' "$F19D")" = 1 ] \
+    && ok "F19a: decide refuses a fingerprint the scan did not report, and leaves the record as it was" || no "F19a: decide on an unknown fingerprint ($F19RC): $F19O"
+  grep -q 'rejected' <<<"$($SCAN decide list 2>&1)" && $SCAN decide check >/dev/null 2>&1 \
+    && ok "F19a: decide list shows it; decide check passes with nothing expired" || no "F19a: decide list/check"
+  grep -q '^  decide ' <<<"$($SCAN help 2>&1)" && grep -q 'does NOT change the gate' <<<"$($SCAN decide 2>&1)" \
+    && ok "F19a: scan.sh help names decide; scan.sh decide explains it" || no "F19a: decide missing from help"
+  # The record is not a suppression: outside `scan_decide`, nothing in the kit reads it. (A branch
+  # author writes the committed file; if the gate read it, a branch could unblock itself.)
+  F19R="$(cd "$KIT_SRC" && { grep -rlE 'decisions(\.json|\.py)|DECISIONS_FILE' lib hooks plugin install.sh bootstrap.sh 2>/dev/null | grep -vx 'lib/decisions.py'
+    awk '/^scan_decide\(\)\{/{d=1} d&&/^}/{d=0;next} !d' scan.sh | grep -nE 'decisions\.py|DECISIONS_FILE' | grep -v '^[0-9]*:DECISIONS_FILE='; } )"
+  [ -z "$F19R" ] && ok "F19a: only scan.sh decide reads or writes decisions.json — the gate does not" \
+    || no "F19a: decisions.json is read outside scan.sh decide: $F19R"
+  rm -f "$F19D"
   # Scope: a dimension that did NOT run must not contribute leftover SARIF findings.
   printf '{"command":"secret","exit_code":0,"raw_log":"r.log","dimensions":[{"name":"secret","exit_code":0,"status":"pass"}]}\n' \
     > "$TARGET/docs/security/scan-findings/summary.json"

@@ -137,7 +137,9 @@ decision about it is lost. `fingerprint` is the identity that follows the findin
 - **The same fingerprint on two rows** is the same finding reported by two tools (osv-scanner and
   trivy over one `requirements.txt`). The rows are not merged: each keeps its tool's severity and
   message, and one decision will cover both. The same advisory in two manifests is two findings.
-- **Not yet (later F19a slices):** no decision is keyed on the fingerprint.
+- **Decisions key on it.** A person's decision is recorded by fingerprint in
+  `docs/security/decisions.json` with `scan.sh decide` ([decisions.md](decisions.md)). Showing it next
+  to the finding here and in the report is the next F19a slice.
 
 ## Severity normalization
 
