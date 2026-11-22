@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Upgrade notes
+- **The plugin moved into `plugin/` (R17).** Plugin users need to do nothing: the marketplace now
+  points at that folder, and `/plugin update` moves an existing install over (checked from 1.21.0 in a
+  throwaway config; the cached plugin goes from the whole repository, 148 files, to the plugin's 11).
+  If you read the skill templates at `skills/<name>/SKILL.md` in the vendored kit, they are at
+  `plugin/skills/<name>/SKILL.md` now; `install.sh` copies them from there, and the copies it puts in
+  `.claude/skills/` do not move. The plugin's edit-check hook is at `plugin/hooks/`; the git hooks
+  stay in `hooks/`.
 - The plugin now carries one hook: after each agent Edit/Write it runs the repo's vendored
   `scan.sh edit` on that file (advisory, never blocks). Plugin users get it on update; turn it off
   with `EDIT_CHECK=0` in `.security-audit.conf`. It needs the vendored kit at this release or later;
@@ -109,6 +116,13 @@ All notable changes to this project are documented here. The format is based on
   soft ones included. Environment or config. The default stays permissive and loud.
 
 ### Changed
+- **The plugin is its own folder, `plugin/` (R17).** It holds the Claude Code and Codex manifests,
+  the listing icon, the five skills, the edit-check hook and a copy of the licence, and nothing
+  else; `.claude-plugin/marketplace.json` at the root points at it. A plugin directory, and a host
+  that installs from the marketplace, now reads the plugin and not the scanner, the docs, the tests
+  or the landing page. Codex's cache of the plugin went from the whole repository to 11 files. The
+  Codex ZIP is built from the same folder and holds the same eight files as before. e2e checks the
+  folder's exact contents, that it has no links, and that its `LICENSE` is the kit's.
 - **`scan.sh guarddog` blocks on the same measured rule list as `pkgcheck`.** It used guarddog's exit
   code, which counts `capability-*` rules: a project with `requests` alone was reported with findings
   and blocked (measured, guarddog 3.0.2, label `no_risks_detected`). Now a rule on `pkgcheck`'s block

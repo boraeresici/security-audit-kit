@@ -471,7 +471,7 @@ finding       <span class="f">────────────────�
       <div><h3><i>▚</i>No curl | bash</h3><p>The documented install is download → read → run. Piping a remote script into a shell is the exact anti-pattern the kit warns against.</p></div>
       <div><h3><i>▚</i>Pinned everything</h3><p>Python tools by version, docker tools by immutable digest, the kit itself by tag + resolved SHA in a committed .kit-version — no drift vs CI.</p></div>
       <div><h3><i>▚</i>Tag-repoint guard</h3><p>If a pinned ref suddenly resolves to a different commit, bootstrap refuses. Enforce further with --expect=&lt;sha&gt;.</p></div>
-      <div><h3><i>▚</i>CHECKSUMS manifest</h3><p>scan.sh verify checks every kit file against a committed sha256 manifest and flags rogue extra files under skills/.</p></div>
+      <div><h3><i>▚</i>CHECKSUMS manifest</h3><p>scan.sh verify checks every kit file against a committed sha256 manifest and flags any file the manifest does not list.</p></div>
       <div><h3><i>▚</i>Hard boundary</h3><p>Internal evidence only — the kit does not replace PCI DSS 11.3.2 ASV scans or 11.4 pentests. It catches what leaked into code, early.</p></div>
       <div><h3><i>▚</i>MIT &amp; forkable</h3><p>Public, MIT-licensed, skills are readable AI instructions. The only official repo is boraeresici/security-audit-kit; review before running.</p></div>
     </div>

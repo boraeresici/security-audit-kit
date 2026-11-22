@@ -776,7 +776,7 @@ scan_sast_changed(){
 }
 
 # ---- edit: one file the agent just edited, advisory (F33b) ----
-# The plugin's PostToolUse hook (hooks/post-edit-check.sh) calls this after each Edit/Write. It never
+# The plugin's PostToolUse hook (plugin/hooks/post-edit-check.sh) calls this after each Edit/Write. It never
 # blocks and writes no record: no lock, no summary.json, no run dir, because a one-file pass must not
 # replace the last full scan's record. It prints only what the agent should hear: new findings (each
 # file + rule once per session), or that the file was NOT checked and why (each reason once per

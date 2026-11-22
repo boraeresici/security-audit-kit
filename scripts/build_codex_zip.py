@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the ZIP submitted to the OpenAI plugin directory (ChatGPT and Codex) — F43b.
 
-The directory takes a ZIP, not a repository path, so the package holds only what the plugin is:
-the Codex manifest, the listing icon, the five skills and the licence. Not the scanner, not the
+The directory takes a ZIP, not a repository path. It is built from the plugin folder (plugin/, R17)
+and holds the Codex manifest, the listing icon, the five skills and the licence. Not the scanner, not the
 docs, not the test fixtures (some pin known-vulnerable packages on purpose), and not hooks/: the
 directory does not accept lifecycle hooks, and the edit check stays for manual installs.
 
@@ -20,6 +20,7 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PLUGIN = os.path.join(ROOT, "plugin")      # the plugin folder (R17): every packaged path is relative to it
 MANIFEST = ".codex-plugin/plugin.json"
 EPOCH = (2026, 1, 1, 0, 0, 0)      # fixed: zip entries carry no build time
 LIMITS = {"displayName": 30, "shortDescription": 30, "longDescription": 4000, "developerName": 80}
@@ -49,14 +50,14 @@ def files(m):
     for key in ("logo", "composerIcon"):
         out.append(m["interface"][key][2:])     # check() has made sure it starts with ./
     skills = m["skills"].strip("./").rstrip("/")
-    for name in sorted(os.listdir(os.path.join(ROOT, skills))):
-        if os.path.isfile(os.path.join(ROOT, skills, name, "SKILL.md")):
+    for name in sorted(os.listdir(os.path.join(PLUGIN, skills))):
+        if os.path.isfile(os.path.join(PLUGIN, skills, name, "SKILL.md")):
             out.append(f"{skills}/{name}/SKILL.md")
     return sorted(set(out))
 
 
 def check(m):
-    claude = json.load(open(os.path.join(ROOT, ".claude-plugin/plugin.json")))
+    claude = json.load(open(os.path.join(PLUGIN, ".claude-plugin/plugin.json")))
     if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", m.get("name", "")) or len(m["name"]) > 64:
         fail(f"name {m.get('name')!r}: lowercase letters, digits and single hyphens, at most 64")
     if m.get("version") != claude.get("version"):
@@ -83,13 +84,13 @@ def check(m):
         v = i.get(k) or ""
         if not v.startswith("./") or ".." in v.split("/"):
             fail(f"interface.{k}: a ./ path inside the plugin")
-        why = icon_ok(os.path.join(ROOT, v[2:]))
+        why = icon_ok(os.path.join(PLUGIN, v[2:]))
         if why:
             fail(f"interface.{k} {v}: {why}")
 
 
 def main():
-    m = json.load(open(os.path.join(ROOT, MANIFEST)))
+    m = json.load(open(os.path.join(PLUGIN, MANIFEST)))
     check(m)
     names = files(m)
     bad = [n for n in names if n.startswith(FORBIDDEN) or n.endswith(FORBIDDEN)]
@@ -102,7 +103,7 @@ def main():
             info = zipfile.ZipInfo(n, EPOCH)
             info.external_attr = 0o644 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
-            z.writestr(info, open(os.path.join(ROOT, n), "rb").read())
+            z.writestr(info, open(os.path.join(PLUGIN, n), "rb").read())
     print(f"build_codex_zip: wrote {out} ({len(names)} files)")
     for n in names:
         print(f"  {n}")

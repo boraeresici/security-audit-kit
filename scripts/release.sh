@@ -71,8 +71,10 @@ require_changelog_version(){
 # plugin.json would ship new skills under an old version (or never reach users at all).
 require_plugin_version(){
   local f v
-  # Both hosts read their own manifest: Claude Code .claude-plugin/, Codex .codex-plugin/ (F43).
-  for f in .claude-plugin/plugin.json .codex-plugin/plugin.json; do
+  # Both hosts read their own manifest in the plugin folder (R17): Claude Code .claude-plugin/,
+  # Codex .codex-plugin/ (F43). The Claude manifest must exist: a moved file is not a passed check.
+  [ -f plugin/.claude-plugin/plugin.json ] || die "plugin/.claude-plugin/plugin.json is missing"
+  for f in plugin/.claude-plugin/plugin.json plugin/.codex-plugin/plugin.json; do
     [ -f "$f" ] || continue
     v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
     [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
@@ -83,9 +85,9 @@ require_plugin_version(){
 # the proofs: the templates being released must be on record, or upgrading users keep stale copies.
 require_skill_sums(){
   local f n s
-  for f in skills/*/SKILL.md; do
+  for f in plugin/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
-    n="${f#skills/}"; n="${n%/SKILL.md}"; s="$(cksum < "$f" | awk '{print $1"-"$2}')"
+    n="${f#plugin/skills/}"; n="${n%/SKILL.md}"; s="$(cksum < "$f" | awk '{print $1"-"$2}')"
     grep -qx "$n $s" lib/released-skills.sums 2>/dev/null \
       || die "lib/released-skills.sums lacks the current $n template — run scripts/skill-sums.sh and commit"
   done

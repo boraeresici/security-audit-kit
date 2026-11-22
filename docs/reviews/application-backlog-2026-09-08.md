@@ -95,7 +95,7 @@ This table does not repeat the F items above. “Conditional” items are not ta
 | R14 | Signal-selected expert review playbooks | Conditional P2 | Security + AI | S selection; M / domain | F12 eval coverage, F27; coverage gap at a real consumer |
 | R15 | New vulnerability tracking, event output and agent access | Note / conditional | Security + integration | a: S; b: S–M; c: M–L; d: M | a: none; b: F01; c: F03, F19; d: c, F11, F13; real consumer demand |
 | R16 | Optional external dynamic adapter (nuclei reference) | Conditional | Security + integration | M | F17 registry (done), F16b normalizer; real consumer request for a live-target check |
-| R17 | The plugin in its own folder, so the directory scan sees only the plugin | P2 (2026-11-04) | Release + DX | M | R02 (released); the first directory review's outcome |
+| R17 | The plugin in its own folder, so the directory scan sees only the plugin | Implemented 2026-11-22 (unreleased); new directory submission is the user's step | Release + DX | M | R02 (released); the first directory review's outcome |
 | R18 | `npx skills add` as a second install channel for the skills | Trial (2026-11-17) | DX + release | S | R02 (released); F38 first, so a skill installed without the scanner stays quiet on a question |
 
 ## Work cards / acceptance criteria
@@ -353,6 +353,8 @@ Automated Linux and macOS smoke tests; for WSL2 there must be an actually execut
 
 
 A line shift must not needlessly reopen the same finding; two different packages with the same CVE in the same manifest must not be lost. Fixtures must be prepared for package identity and tool fingerprint. The decision record must carry owner/rationale/due date/verification conditions. The alias mapping source and applicable scanners must be specified; an ambiguous match must not produce automatic suppression. A backward compatibility/migration design must be done. The JSONL event history left over from T3.1 and the Phase A SQLite/checkpoint idea are a conditional continuation of this model: two separate persistent storage systems must not be added without measuring the re-run cost of interrupted long AI runs; if needed, start with a single format and test crash/resume and idempotent replay.
+
+**Finding — 2026-11-21 (F26):** `merge_judgment` attaches a triage decision by file and line. Dependency findings (pip-audit, npm audit, trivy, guarddog packages) have neither, so they stay "not triaged" in `evidence.json` and the HTML report whatever the triage says; and no skill re-renders the report after writing the findings file. F19a's fingerprint must carry decisions for them, and its last slice re-renders after triage.
 
 **UI track — 2026-11-03:** F19a is taken directly after F26, as a prerequisite of the R13 local UI. Only the identity and decision-record contract moves. F19b (schema validation, output migration) stays in slot 9. R13a reads the F19a record, and R13c's allowlist approval writes it through the CLI.
 
@@ -678,6 +680,8 @@ For the selected domain, the entry signal, boundaries to review, non-applicabili
 - `claude plugin validate --strict` passes; the portal's plugin path is the new folder, and its validation shows no hold from kit files outside it.
 - Existing installs (`marketplace add boraeresici/security-audit-kit`) keep working after an update; checked in a throwaway config.
 - CHANGELOG upgrade note for anyone who read the skills at `skills/` directly.
+
+**Implemented — 2026-11-22 (`feat/r17-plugin-folder`, unreleased):** taken before F19a on the user's decision, because the directory's 2026-11-05 checks hold the root-path listing on kit files and a new version restarts the review either way. `plugin/` holds `.claude-plugin/plugin.json`, the icon, `.codex-plugin/plugin.json`, the five skills, the F33b edit-check hook (`hooks/hooks.json`, `post-edit-check.sh`; added after this card was written, so the folder is not "skills only") and a copy of `LICENSE`. `marketplace.json` stays at the root with `source: "./plugin"`. `install.sh`, `release.sh`, `skill-sums.sh` (reads `skills/` in older tags and `plugin/skills/` in newer ones) and `build_codex_zip.py` follow. Criteria: e2e lists the folder's exact contents, no links, licence identical; `claude plugin validate --strict` passes for the folder and the marketplace; an install made from the old layout at 1.21.0 updates to the new one in a throwaway config (cache: 148 files → 11); Codex installs it and loads the five skills (cache: 11 files). Open, the user's steps: a new directory submission with path `plugin` tracking `release` (the path of the first submission is fixed), and what the portal's validation then shows; holds for text inside the skills themselves can remain.
 
 ### F37 — Release branch for the plugin directory
 

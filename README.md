@@ -211,7 +211,7 @@ agent's context. It never blocks, and it writes no scan record. A clean file add
 it could not check (no uvx, over its time budget, a scanner error, no vendored kit) is said to be
 **not checked**, never clean. Each finding and each reason is said once per session. A plugin hook
 runs with your permissions, like the git hooks: it is a readable script,
-[`hooks/post-edit-check.sh`](hooks/post-edit-check.sh). Turn it off with `EDIT_CHECK=0` in
+[`plugin/hooks/post-edit-check.sh`](plugin/hooks/post-edit-check.sh). Turn it off with `EDIT_CHECK=0` in
 `.security-audit.conf`. Details: [docs/usage.md](docs/usage.md#the-edit-check--after-each-agent-edit).
 The kit's git hooks still come from `install.sh`, and its pre-install agent hook is opt-in
 (`--with-agent-hook`).

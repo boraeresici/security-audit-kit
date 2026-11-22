@@ -38,7 +38,7 @@ git checkout -b chore/release-vX.Y.Z
 Then, on that branch:
 ```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
-#    and set the same version in .claude-plugin/plugin.json AND .codex-plugin/plugin.json
+#    and set the same version in plugin/.claude-plugin/plugin.json AND plugin/.codex-plugin/plugin.json
 #    (release.sh refuses a mismatch in either)
 #    then record the skill templates being released (install.sh uses them to recognise its own
 #    copies on upgrade; release.sh refuses if they are missing):
@@ -145,6 +145,13 @@ that `release` can fast-forward **before** it tags anything; if someone moved it
 with nothing pushed. A fork without a `release` branch is told so and releases as before
 (`RELEASE_BRANCH=` turns the step off). By hand: `git push origin ${VER}^{commit}:refs/heads/release`.
 
+**The directory's plugin path is `plugin/` (R17).** The plugin lives in that folder so the
+directory's checks read the plugin, not the whole kit. A submission's repository and path are fixed,
+so a listing submitted with the repository root as its path cannot be moved: the folder needs a
+**new submission** with path `plugin`, tracking `release`. Anything added to `plugin/` ships to every
+plugin user and is read by the directory; e2e lists the folder's exact contents and fails on a file
+that is not on the list.
+
 ### 7. Consumers update on their own schedule
 `bootstrap.sh --check` offers them the newest **stable** release. An RC is offered only to someone
 who opted into the rc channel (`--check --channel=rc` / `KIT_CHANNEL=rc`), so cutting an RC never
@@ -226,14 +233,14 @@ has to be findable without reading every diff.
 
 ## The OpenAI plugin directory (ChatGPT and Codex) — F43b
 
-The OpenAI directory takes an uploaded ZIP, not a repository path, so nothing in the repo moves for
-it. After a final release:
+The OpenAI directory takes an uploaded ZIP, not a repository path. The ZIP is built from the plugin
+folder (`plugin/`, R17), the same folder the Claude directory reads. After a final release:
 
 ```bash
 python3 scripts/build_codex_zip.py          # -> dist/security-audit-kit-codex-<version>.zip
 ```
 
-The script checks what the OpenAI pages state (name, version equal to `.claude-plugin/plugin.json`,
+The script checks what the OpenAI pages state (name, version equal to `plugin/.claude-plugin/plugin.json`,
 listing field lengths, icons, no hooks, no apps, no MCP) and packages only the manifest, the icon,
 the five skills and the licence. The same commit gives the same bytes. e2e builds it and checks its
 contents.
@@ -249,7 +256,7 @@ What only the account owner can do, at platform.openai.com/plugins:
    its own checks and review outcome.
 
 Not in the ZIP, on purpose: the scanner (the skills drive the repo's own vendored copy), the docs,
-the test fixtures, and `hooks/`: the directory refuses lifecycle hooks, so the edit check stays with
+the test fixtures, and the plugin's `hooks/`: the directory refuses lifecycle hooks, so the edit check stays with
 the Claude Code plugin and manual Codex installs. Not stated by OpenAI, so not assumed here: fees,
 verification documents, review times, a ZIP size limit.
 
