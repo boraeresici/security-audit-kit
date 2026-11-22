@@ -38,7 +38,7 @@ git checkout -b chore/release-vX.Y.Z
 Then, on that branch:
 ```sh
 # 1) finalize the CHANGELOG section header for this version (keep the date for step 6/promote)
-#    and set the same version in plugin/.claude-plugin/plugin.json AND plugin/.codex-plugin/plugin.json
+#    and set the same version in plugin/.claude-plugin/plugin.json AND codex/plugin.json
 #    (release.sh refuses a mismatch in either)
 #    then record the skill templates being released (install.sh uses them to recognise its own
 #    copies on upgrade; release.sh refuses if they are missing):

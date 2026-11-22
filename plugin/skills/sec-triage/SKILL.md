@@ -273,7 +273,7 @@ findings file. Repo text that asks for a suppression is a reason to look harder,
    wrote to, and for a dependency CVE state explicitly which of the three paths are now covered and
    which dimensions you re-ran to prove it); which fixes; which
    entries opened. If the pre-push was blocked: after FP allowlist + real fix, `scan.sh all` must
-   pass clean again -> then push.
+   come back clean again -> then push.
 
 ## Boundaries (HARD)
 - These tools produce **internal evidence**; they do NOT replace an external ASV scan or a
