@@ -398,7 +398,10 @@ PY
   # the current evidence, and says it does not change the gate. Help explains the command.
   F19D="$TARGET/docs/security/decisions.json"; rm -f "$F19D"
   F19FP="$(python3 -c 'import json,sys; print(next(f["fingerprint"] for f in json.load(open(sys.argv[1]))["findings"] if f["rule_id"]=="CVE-1"))' "$EVD" 2>/dev/null)"
-  F19O="$($SCAN decide "${F19FP:0:10}" rejected --reason "pinned in a test-only image" --evidence-kind observed 2>&1)"; F19RC=$?
+  # --owner defaults to git's user.name, which a CI runner does not set: give it through git's own
+  # environment config, so the default path is the one tested.
+  F19O="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=e2e-owner \
+    $SCAN decide "${F19FP:0:10}" rejected --reason "pinned in a test-only image" --evidence-kind observed 2>&1)"; F19RC=$?
   [ "$F19RC" = 0 ] && grep -q 'does not change what blocks a push' <<<"$F19O" \
     && python3 - "$F19D" "$F19FP" <<'PY' && ok "F19a: scan.sh decide records a decision by fingerprint prefix, with the finding as decided" || no "F19a: decide ($F19RC): $F19O"
 import json, sys
@@ -406,9 +409,9 @@ d = json.load(open(sys.argv[1]))
 assert d["schema"] == "security-audit-kit/decisions@1"
 [e] = d["decisions"]
 assert e["fingerprint"] == sys.argv[2] and e["decision"] == "rejected" and e["evidence_kind"] == "observed"
-assert e["owner"] and e["subject"]["rule_id"] == "CVE-1" and e["subject"]["file"] == "requirements.txt"
+assert e["owner"] == "e2e-owner" and e["subject"]["rule_id"] == "CVE-1" and e["subject"]["file"] == "requirements.txt"
 PY
-  F19O="$($SCAN decide 0000000000 rejected --reason x 2>&1)"; F19RC=$?
+  F19O="$($SCAN decide 0000000000 rejected --reason x --owner e2e 2>&1)"; F19RC=$?
   [ "$F19RC" = 2 ] && grep -q 'REFUSED' <<<"$F19O" && [ "$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["decisions"]))' "$F19D")" = 1 ] \
     && ok "F19a: decide refuses a fingerprint the scan did not report, and leaves the record as it was" || no "F19a: decide on an unknown fingerprint ($F19RC): $F19O"
   grep -q 'rejected' <<<"$($SCAN decide list 2>&1)" && $SCAN decide check >/dev/null 2>&1 \
