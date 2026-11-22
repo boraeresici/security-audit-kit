@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.22.1] - 2026-11-22
+
 ### Upgrade notes
 - **The plugin no longer carries the edit-check hook.** 1.22.0 shipped it in the plugin; the Claude
   plugin directory accepts hooks and scripts only from Verified organizations and refused that
