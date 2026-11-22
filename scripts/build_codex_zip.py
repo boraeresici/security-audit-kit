@@ -21,7 +21,10 @@ import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLUGIN = os.path.join(ROOT, "plugin")      # the plugin folder (R17): every packaged path is relative to it
-MANIFEST = ".codex-plugin/plugin.json"
+MANIFEST = ".codex-plugin/plugin.json"          # where it goes in the ZIP
+# Where it lives in the repo: outside plugin/, because the Claude directory refuses a folder in
+# plugin/ it does not know (and Codex installs from the marketplace read .claude-plugin/ anyway).
+SOURCE = os.path.join(ROOT, "codex", "plugin.json")
 EPOCH = (2026, 1, 1, 0, 0, 0)      # fixed: zip entries carry no build time
 LIMITS = {"displayName": 30, "shortDescription": 30, "longDescription": 4000, "developerName": 80}
 FORBIDDEN = ("hooks/", ".app.json", ".mcp.json", "apps/")
@@ -98,7 +101,7 @@ def check(m):
 
 
 def main():
-    m = json.load(open(os.path.join(PLUGIN, MANIFEST)))
+    m = json.load(open(SOURCE))
     check(m)
     names = files(m)
     bad = [n for n in names if n.startswith(FORBIDDEN) or n.endswith(FORBIDDEN)]
@@ -111,7 +114,8 @@ def main():
             info = zipfile.ZipInfo(n, EPOCH)
             info.external_attr = 0o644 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
-            z.writestr(info, open(os.path.join(PLUGIN, n), "rb").read())
+            src = SOURCE if n == MANIFEST else os.path.join(PLUGIN, n)
+            z.writestr(info, open(src, "rb").read())
     print(f"build_codex_zip: wrote {out} ({len(names)} files)")
     for n in names:
         print(f"  {n}")

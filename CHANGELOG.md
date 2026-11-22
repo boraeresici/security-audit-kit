@@ -23,6 +23,15 @@ All notable changes to this project are documented here. The format is based on
   `install.sh --with-edit-hook` adds one PostToolUse(`Edit|Write`) entry to `.claude/settings.json`
   without touching the rest of the file (idempotent; `--uninstall` removes it). `plugin/` holds the
   manifests, the icon, the skills and the licence; e2e fails on anything else.
+- **The Codex listing manifest moved out of the plugin folder, to `codex/plugin.json`.** The
+  directory refused the folder for a file it does not allow there; `.codex-plugin/` was the only
+  one left. Codex installs from the marketplace read `.claude-plugin/plugin.json` (checked with the
+  Codex CLI: the five skills load), so the manifest is needed only in the OpenAI directory's ZIP,
+  where `scripts/build_codex_zip.py` puts it as `.codex-plugin/plugin.json`. `release.sh` checks
+  its version at the new path.
+- **"pass clean" is gone from `sec-triage`.** The directory read it as a credential ("pass") and
+  `sec-ai-review`'s "HTTP" sink as a way out, together a credential leaving the machine. The step
+  now says the scan must "come back clean".
 - **No skill names a download-and-run command.** The directory flagged "download-and-execute" in
   a skill body: `bootstrap.sh <tag>`, which fetches the kit and runs its installer, as a
   recommendation. The skills now point the repo owner at the kit README's install and update

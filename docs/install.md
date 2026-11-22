@@ -80,7 +80,9 @@ Claude Code. Undo: `codex plugin remove security-audit-kit@security-audit-kit`, 
 The scanner contract is the same as with the Claude Code plugin: the skills use the repo's vendored
 scanner and never download one, so vendor it too (`bash bootstrap.sh <tag> --no-skills`).
 
-Codex reads `plugin/.codex-plugin/plugin.json`. The plugin has no hook since 1.22.1; the edit check
+Codex installs the same plugin folder and reads its `.claude-plugin/plugin.json` (checked with the
+Codex CLI). The Codex listing manifest, `codex/plugin.json`, goes only into the OpenAI directory's
+ZIP. The plugin has no hook since 1.22.1; the edit check
 is wired per project with `install.sh --with-edit-hook`, which writes Claude Code's
 `.claude/settings.json` only.
 

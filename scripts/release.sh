@@ -72,9 +72,10 @@ require_changelog_version(){
 require_plugin_version(){
   local f v
   # Both hosts read their own manifest in the plugin folder (R17): Claude Code .claude-plugin/,
-  # Codex .codex-plugin/ (F43). The Claude manifest must exist: a moved file is not a passed check.
+  # Codex codex/plugin.json, which the OpenAI ZIP carries as .codex-plugin/plugin.json (F43). The
+  # Claude manifest must exist: a moved file is not a passed check.
   [ -f plugin/.claude-plugin/plugin.json ] || die "plugin/.claude-plugin/plugin.json is missing"
-  for f in plugin/.claude-plugin/plugin.json plugin/.codex-plugin/plugin.json; do
+  for f in plugin/.claude-plugin/plugin.json codex/plugin.json; do
     [ -f "$f" ] || continue
     v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
     [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"

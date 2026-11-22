@@ -802,8 +802,8 @@ if have rsync; then rsync -a --exclude '.git' "$KIT_SRC"/ "$F37/kit"/; else cp -
 awk '!done && /^## \[/ { print "## [99.0.0] - 2026-01-01"; print ""; print "### Upgrade notes"; print "- None."; print "";
                           done=1; if ($0 ~ /^## \[Unreleased\]/) next } { print }' \
   "$F37/kit/CHANGELOG.md" > "$F37/kit/CHANGELOG.md.e2e" && mv "$F37/kit/CHANGELOG.md.e2e" "$F37/kit/CHANGELOG.md"
-for F37M in plugin/.claude-plugin plugin/.codex-plugin; do   # release.sh holds both manifests to the version
-  sed -i.bak 's/"version": *"[^"]*"/"version": "99.0.0"/' "$F37/kit/$F37M/plugin.json" && rm -f "$F37/kit/$F37M/plugin.json.bak"
+for F37M in plugin/.claude-plugin/plugin.json codex/plugin.json; do   # release.sh holds both manifests to the version
+  sed -i.bak 's/"version": *"[^"]*"/"version": "99.0.0"/' "$F37/kit/$F37M" && rm -f "$F37/kit/$F37M.bak"
 done
 ( cd "$F37/kit" && { git init -q -b main 2>/dev/null || { git init -q && git checkout -q -b main; }; } \
   && git config user.email e2e@test && git config user.name e2e \
@@ -1706,15 +1706,17 @@ R02K="$(awk -v h="$R02S" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/plugin/sk
 grep -q 'bootstrap.sh --check' <<<"$R02K" && grep -q 'Do not update it yourself' <<<"$R02K" \
   && ok "R02: the contract checks the vendored version (--check) and never updates it itself" || no "R02: version-skew rule missing from the contract"
 # R17: the plugin is its own folder, so the directory scans the plugin and not the kit. The folder
-# holds the manifests, the icon, the skills and a copy of the licence, and nothing else: no hook
+# holds the Claude manifest, the icon, the skills and a copy of the licence, and nothing else (the
+# Codex listing manifest is codex/plugin.json, outside it: the directory refused an unknown dot
+# folder there, and Codex installs read .claude-plugin/plugin.json): no hook
 # and no script (the directory takes those only from Verified organizations; the edit check is the
 # kit's, wired by install.sh --with-edit-hook), no links (the directory refuses them); the root
 # keeps only the marketplace.
-R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json .codex-plugin/plugin.json LICENSE; \
+R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json LICENSE; \
   for d in $R02D; do printf 'skills/%s/SKILL.md\n' "$d"; done)"
 R17G="$(cd "$KIT_SRC/plugin" && find . \( -type f -o -type l \) ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$R17G" = "$(LC_ALL=C sort <<<"$R17W")" ] && [ -z "$(find "$KIT_SRC/plugin" -type l)" ] \
-  && ok "R17: the plugin folder holds the manifests, icon, skills and LICENSE — no hook, no script, no links" \
+  && ok "R17: the plugin folder holds the Claude manifest, icon, skills and LICENSE — no hook, no script, no links" \
   || no "R17: plugin folder contents: $(tr '\n' ' ' <<<"$R17G")"
 cmp -s "$KIT_SRC/LICENSE" "$KIT_SRC/plugin/LICENSE" \
   && ok "R17: plugin/LICENSE is the kit's LICENSE" || no "R17: plugin/LICENSE differs from LICENSE"
@@ -1758,10 +1760,10 @@ assert m["version"] == json.load(open(os.path.join(kit, "plugin/.claude-plugin/p
 assert m["interface"]["category"] == "Developer Tools", m["interface"].get("category")
 assert all(m["interface"][k].startswith("https://") for k in ("websiteURL", "supportURL", "privacyPolicyURL", "termsOfServiceURL"))
 PY
-  mkdir -p "$F43Z/k/scripts"; cp -R "$KIT_SRC/plugin" "$F43Z/k/plugin"
+  mkdir -p "$F43Z/k/scripts" "$F43Z/k/codex"; cp -R "$KIT_SRC/plugin" "$F43Z/k/plugin"
   cp "$KIT_SRC/scripts/build_codex_zip.py" "$F43Z/k/scripts/"
   python3 -c "import json,sys; m=json.load(open(sys.argv[1])); m['interface']['displayName']='x'*31; json.dump(m, open(sys.argv[2],'w'))" \
-    "$KIT_SRC/plugin/.codex-plugin/plugin.json" "$F43Z/k/plugin/.codex-plugin/plugin.json"
+    "$KIT_SRC/codex/plugin.json" "$F43Z/k/codex/plugin.json"
   F43O="$(python3 "$F43Z/k/scripts/build_codex_zip.py" "$F43Z/bad.zip" 2>&1)"
   grep -q 'interface.displayName' <<<"$F43O" && [ ! -e "$F43Z/bad.zip" ] \
     && ok "F43b: a listing field over the directory's limit is refused, and no ZIP is written" || no "F43b: an over-long displayName was packaged: $F43O"
