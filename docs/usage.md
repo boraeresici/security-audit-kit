@@ -186,8 +186,8 @@ project with `requests` alone was blocked.
 
 ## The edit check — after each agent edit
 
-The plugin's one hook (`hooks/hooks.json`: PostToolUse on `Edit|Write`) runs
-`hooks/post-edit-check.sh`, which calls the repo's **vendored** `scan.sh edit <file>`. That is one
+The plugin's one hook (`plugin/hooks/hooks.json`: PostToolUse on `Edit|Write`) runs
+`plugin/hooks/post-edit-check.sh`, which calls the repo's **vendored** `scan.sh edit <file>`. That is one
 semgrep pass on the edited file, with the same pinned version and stack-aware packs as `sast`, at
 ERROR and WARNING severity. The plugin never runs a scanner of its own.
 

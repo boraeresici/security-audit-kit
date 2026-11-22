@@ -177,7 +177,7 @@ ajanin baglamina ekler. Asla engellemez, tarama kaydi yazmaz. Temiz bir dosya hi
 Kontrol edemedigi bir dosya (uvx yok, sure butcesi asildi, tarayici hatasi, vendor edilmis kit yok)
 **kontrol edilmedi** diye soylenir, asla temiz denmez. Her bulgu ve her sebep oturumda bir kez
 soylenir. Plugin hook'u da git hook'lari gibi senin yetkilerinle calisir; okunabilir bir script'tir:
-[`hooks/post-edit-check.sh`](hooks/post-edit-check.sh). Kapatmak icin `.security-audit.conf`'a
+[`plugin/hooks/post-edit-check.sh`](plugin/hooks/post-edit-check.sh). Kapatmak icin `.security-audit.conf`'a
 `EDIT_CHECK=0`. Kitin git hook'lari yine `install.sh`'ten gelir; kurulum oncesi agent hook'u istege
 baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
 surum itibariyla herkese acik listelenmeden once kendi projelerin icin.

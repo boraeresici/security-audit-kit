@@ -9,7 +9,7 @@ analytics. The maintainers receive no data from your use of them.
 **The plugin** is five skills (instructions for your coding agent) and one hook. It ships no MCP
 servers. It reads no credentials and sends no data anywhere itself. The skills tell the agent to
 run the scanner that your repo has vendored, and to read its output. The hook
-(`hooks/post-edit-check.sh`, a readable shell script) runs after the agent edits a file: it asks
+(`plugin/hooks/post-edit-check.sh`, a readable shell script) runs after the agent edits a file: it asks
 that same vendored scanner to check that one file, and adds what it finds to the agent's context.
 Turn it off with `EDIT_CHECK=0`.
 

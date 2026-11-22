@@ -46,7 +46,7 @@ bash tests/e2e.sh
 - Add a `CHANGELOG.md` entry under `## [Unreleased]`. If consumers must know or do something, add
   it under `### Upgrade notes`; `bootstrap.sh --check` shows that section to them.
 - A new setting in `scan.sh` goes into `security-audit.conf.example` too (e2e checks it).
-- Skills live in `skills/<name>/SKILL.md`: the plugin loads them from there and `install.sh` copies
+- Skills live in `plugin/skills/<name>/SKILL.md`: the plugin loads them from there and `install.sh` copies
   them from there. A new skill also goes into `install.sh`'s `SKILLS` list (e2e checks both).
 - Make sure `shellcheck`, `python3 -m pytest`, `bash tests/e2e.sh` and `bash scan.sh verify` pass
   (run `bash scan.sh checksums` after changing kit files).
@@ -55,7 +55,7 @@ bash tests/e2e.sh
 Follow [RELEASING.md](RELEASING.md). Do not tag by hand. In short:
 1. A release-prep PR turns `[Unreleased]` into `[X.Y.Z]` with an `### Upgrade notes` section
    (`- None.` if nothing changes for consumers), sets the same version in
-   `.claude-plugin/plugin.json`, runs `scripts/skill-sums.sh`, and sweeps the README pins,
+   `plugin/.claude-plugin/plugin.json`, runs `scripts/skill-sums.sh`, and sweeps the README pins,
    docs/compare and the landing page.
 2. `scripts/release.sh rc X.Y.Z` cuts a release candidate. It checks the CHANGELOG, the
    CHECKSUMS, e2e and CI.

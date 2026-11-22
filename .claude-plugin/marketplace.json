@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "security-audit-kit",
-      "source": "./",
+      "source": "./plugin",
       "description": "Triage, semantic SAST, AI/LLM review, threat modeling and a one-command audit over the repo's own vendored, pinned scanner."
     }
   ]

@@ -2,7 +2,7 @@
 # security-audit-kit — agent PostToolUse hook (F33b): one advisory semgrep pass on the file the
 # agent just edited, so a risky pattern is seen while the agent is still in that file, not at push.
 #
-# Shipped by the Claude Code plugin (hooks/hooks.json, matcher Edit|Write). It runs the REPO's
+# Shipped by the Claude Code plugin (plugin/hooks/hooks.json, matcher Edit|Write). It runs the REPO's
 # vendored, pinned scanner (tools/security-audit-kit/scan.sh edit), never a copy of its own: the
 # plugin downloads nothing, and the pin stays the team's decision.
 #

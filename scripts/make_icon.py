@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the plugin's listing icon (.claude-plugin/icon.png).
+"""Regenerate the plugin's listing icon (plugin/.claude-plugin/icon.png).
 
 The banner's mark (scripts/make_banner.py: a shield with a check) on the forest-green accent, as a
 1024 px square PNG: the plugin directory wants a PNG or JPEG of 512-2048 px and takes the icon
@@ -15,7 +15,7 @@ import sys
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / ".claude-plugin" / "icon.png"
+OUT = ROOT / "plugin" / ".claude-plugin" / "icon.png"
 
 SIZE, SUB = 1024, 4                  # pixels per side, sub-rows per pixel row
 BG, SHIELD, CHECK = (0x0c, 0x7c, 0x4e), (0xf7, 0xfa, 0xf7), (0x0c, 0x7c, 0x4e)

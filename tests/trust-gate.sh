@@ -125,14 +125,14 @@ grep -q 'settings only, all known' <<<"$(CMD=doctor scan)" && ok "A: the shipped
 rm -f "$C"
 
 echo "-- C: verify sees an extra file in ANY directory of the kit --"
-for f in lib/json.py hooks/post-merge extra-at-root.sh scan.s skills/sec-triage/extra.md; do
+for f in lib/json.py hooks/post-merge extra-at-root.sh scan.s plugin/skills/sec-triage/extra.md; do
   mkdir -p "$(dirname "$R/$K/$f")"; echo 'print(1)' > "$R/$K/$f"
   out="$(CMD=verify scan)"; rc=$?
   [ "$rc" -ne 0 ] && grep -qx "EXTRA     $f" <<<"$out" && ok "C: EXTRA $f" || no "C: $f not reported (rc=$rc)"
   rm -f "$R/$K/$f"
 done
-ln -s ../scan.sh "$R/$K/skills/link"; out="$(CMD=verify scan)"
-grep -qx 'EXTRA     skills/link' <<<"$out" && ok "C: EXTRA for a symlink" || no "C: symlink not reported"; rm -f "$R/$K/skills/link"
+ln -s ../../scan.sh "$R/$K/plugin/skills/link"; out="$(CMD=verify scan)"
+grep -qx 'EXTRA     plugin/skills/link' <<<"$out" && ok "C: EXTRA for a symlink" || no "C: symlink not reported"; rm -f "$R/$K/plugin/skills/link"
 mkdir -p "$R/$K/lib/__pycache__" && echo x > "$R/$K/lib/__pycache__/native.cpython-312.pyc"
 out="$(CMD=verify scan)"
 grep -qx 'EXTRA     lib/__pycache__/native.cpython-312.pyc' <<<"$out" \

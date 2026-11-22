@@ -83,7 +83,7 @@ kit_copy(){
   linked "$s" && return 1
   sum="$(fsum "$f")"
   [ "$sum" = "$(state_get "skill_$s")" ] && return 0
-  [ -f "$KIT/skills/$s/SKILL.md" ] && [ "$sum" = "$(fsum "$KIT/skills/$s/SKILL.md")" ] && return 0
+  [ -f "$KIT/plugin/skills/$s/SKILL.md" ] && [ "$sum" = "$(fsum "$KIT/plugin/skills/$s/SKILL.md")" ] && return 0
   grep -qx "$s $sum" "$KIT/lib/released-skills.sums" 2>/dev/null
 }
 HOOK_CMD="bash \"\$CLAUDE_PROJECT_DIR/$KIT_REL/hooks/pre-tool-install.sh\""
@@ -297,14 +297,14 @@ if [ "$NO_SKILLS" = "1" ]; then
   mkdir -p "$ROOT/docs/security/scan-findings" 2>/dev/null || true
 else
   state_set skills_mode copy
-  # Source templates live in the kit under skills/; they are installed into the TARGET
+  # Source templates live in the kit under plugin/skills/ (the plugin folder, R17); they are installed into the TARGET
   # repo as .claude/skills/<name>/SKILL.md (the path Claude Code discovers skills from).
   for s in $SKILLS; do
     if linked "$s"; then
       miss ".claude/skills/$s is a link (another tool installed it) -> not overwritten"; continue
     fi
     mkdir -p "$ROOT/.claude/skills/$s"
-    cp "$KIT/skills/$s/SKILL.md" "$ROOT/.claude/skills/$s/SKILL.md"
+    cp "$KIT/plugin/skills/$s/SKILL.md" "$ROOT/.claude/skills/$s/SKILL.md"
     case "$s" in
       sec-triage)       what="finding triage" ;;
       sec-sast-deep)    what="semantic SAST: authz/IDOR/logic" ;;
