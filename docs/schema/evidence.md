@@ -104,7 +104,7 @@ decision about it is lost. `fingerprint` is the identity that follows the findin
 | Basis | For | Computed from | Survives | Does not survive |
 |---|---|---|---|---|
 | `line-content` | a finding with a file and a line the kit can read | dimension, rule, file, the reported line with whitespace collapsed, and which occurrence of that text this is among the rule's findings in the file | lines moving, re-indentation | an edit to the line, a file rename |
-| `package` | a row with `package` (pip-audit, npm audit, guarddog) | advisory, ecosystem, package name, manifest | a version bump, a move within the lock file | another package, another manifest |
+| `package` | a row with `package` (pip-audit, npm audit, guarddog; osv-scanner and trivy dependency rows) | advisory under its canonical name, ecosystem, package name, manifest | a version bump, a move within the lock file | another package, another manifest |
 | `location` | everything else | dimension, rule, file, line (the inputs of `id`) | a re-scan of unchanged code | a line shift |
 
 - **The version is not part of a package fingerprint.** A bump that does not fix the advisory is the
@@ -120,10 +120,24 @@ decision about it is lost. `fingerprint` is the identity that follows the findin
 - **The line is read from the working tree**, only for a repo-relative path with no `..` that
   resolves inside the repo to a regular file of at most 5 MiB. Anything else (a link out of the
   repo, a file that is gone, a line past the end, a blank line) falls back to `location`.
-- **Not yet (later F19a slices):** dependency rows that come from SARIF (trivy, osv-scanner) carry no
-  `package`, so they use `line-content` over the manifest line, which contains the version; and the
-  same advisory under two names (`PYSEC-…`, `CVE-…`, `GHSA-…`) is still two fingerprints. No
-  decision is keyed on the fingerprint yet.
+- **One advisory, several names.** `PYSEC-2021-108`, `CVE-2021-33503` and `GHSA-q2q7-5pp4-w6pg` are
+  one advisory. The fingerprint uses one name, chosen from the row's own `rule_id` and `aliases`:
+  the CVE if there is one, else the GHSA, else the first id in sort order. Only the row's own
+  names count, never what another tool said in the same run, so a fingerprint does not change
+  with the set of dimensions that ran. A tool that gives no aliases (trivy) meets another only
+  when its id is already that name; rows that do not meet stay two findings, which costs a
+  second decision and never hides one. An advisory that gets its CVE later changes fingerprint.
+- **osv-scanner and trivy dependency rows carry `package` too.** Their SARIF has it only in the
+  message text (`Package 'urllib3@1.26.4' is vulnerable to …`; `Package: urllib3` / `Installed
+  Version: 1.26.4`), read in the shapes recorded from the pinned tools
+  (`tests/fixtures/native/uvlock/*.sarif`). osv-scanner's rule lists the aliases (`deprecatedIds`),
+  trivy's message the fixed versions. Neither names the ecosystem: it is taken from the manifest's
+  file name (`requirements*.txt`, `uv.lock`, `package-lock.json`, `go.sum`, …) and left empty when
+  the name does not say. A message in another shape adds nothing and the row keeps `line-content`.
+- **The same fingerprint on two rows** is the same finding reported by two tools (osv-scanner and
+  trivy over one `requirements.txt`). The rows are not merged: each keeps its tool's severity and
+  message, and one decision will cover both. The same advisory in two manifests is two findings.
+- **Not yet (later F19a slices):** no decision is keyed on the fingerprint.
 
 ## Severity normalization
 

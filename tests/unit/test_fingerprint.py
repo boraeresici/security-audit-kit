@@ -143,3 +143,90 @@ def test_every_finding_gets_one_and_the_result_is_deterministic(tmp_path):
     assert all(f.get("fingerprint") and f.get("fingerprint_basis") for f in one)
     assert sorted(f["fingerprint"] for f in one) == sorted(f["fingerprint"] for f in two)
     assert len({f["fingerprint"] for f in one}) == 3
+
+
+# --- slice 2: one advisory under several names; dependency rows that arrive as SARIF --------------
+
+import json  # noqa: E402
+
+import evidence  # noqa: E402
+import native  # noqa: E402
+
+UVLOCK = os.path.join(os.path.dirname(__file__), "..", "fixtures", "native", "uvlock")
+
+
+def recorded(name, tool, dimension):
+    rows = evidence.collect(os.path.join(UVLOCK, name), tool, dimension, [])
+    unique = {r["id"]: r for r in reversed(rows)}          # as evidence.main drops a tool's repeats
+    return list(unique.values())
+
+
+def test_canonical_advisory_prefers_cve_then_ghsa_and_uses_only_the_rows_own_names():
+    c = fingerprint.canonical_advisory
+    assert c("PYSEC-2021-108", ["GHSA-q2q7-5pp4-w6pg", "CVE-2021-33503"]) == "CVE-2021-33503"
+    assert c("CVE-2021-33503", []) == c("CVE-2021-33503", None) == "CVE-2021-33503"
+    assert c("PYSEC-2021-108", ["GHSA-q2q7-5pp4-w6pg"]) == "GHSA-q2q7-5pp4-w6pg"
+    assert c("PYSEC-2021-108", []) == "PYSEC-2021-108"
+    assert c("GHSA-b", ["CVE-2024-2", "CVE-2024-1"]) == "CVE-2024-1"      # two CVEs: the first, always
+    assert c("exec-base64", None) == "exec-base64"                         # a guarddog rule is its own name
+    assert c("X", ["", None, 7, " "]) == "X"
+
+
+def test_manifest_ecosystem_reads_the_file_name_and_says_nothing_when_it_cannot():
+    e = fingerprint.manifest_ecosystem
+    assert [e(p) for p in ("requirements.txt", "svc/requirements-dev.txt", "uv.lock", "a/poetry.lock")] == ["pypi"] * 4
+    assert [e(p) for p in ("package-lock.json", "web/yarn.lock", "pnpm-lock.yaml")] == ["npm"] * 3
+    assert e("go.sum") == "go" and e("Cargo.lock") == "crates.io" and e("Gemfile.lock") == "rubygems"
+    assert e("notrequirements.txt.bak") == "" and e("Dockerfile") == "" and e(None) == "" and e("my-uv.lock") == ""
+
+
+def test_recorded_osv_and_trivy_rows_carry_the_package_and_osv_its_aliases():
+    osv = recorded("osv-v2.4.0-source.sarif", "osv-scanner", "osv")
+    trivy = recorded("trivy-0.58.0-requirements.sarif", "trivy", "container")
+    assert len(osv) == 22 and len(trivy) == 8                 # 11 advisories x 2 manifests; 8 HIGH with a fix
+    for r in osv + trivy:
+        assert r["package"] == {"ecosystem": "pypi", "name": "urllib3", "version": "1.26.4"}, r
+    o = next(r for r in osv if r["rule_id"] == "CVE-2021-33503" and r["file"] == "requirements.txt")
+    assert o["aliases"] == ["GHSA-q2q7-5pp4-w6pg", "PYSEC-2021-108"]
+    t = next(r for r in trivy if r["rule_id"] == "CVE-2021-33503")
+    assert t["fixed_in"] == ["1.26.5"] and "aliases" not in t
+    assert next(r for r in trivy if r["rule_id"] == "CVE-2023-43804")["fixed_in"] == ["2.0.6", "1.26.17"]
+
+
+def test_two_tools_one_advisory_one_manifest_is_one_fingerprint():
+    osv = recorded("osv-v2.4.0-source.sarif", "osv-scanner", "osv")
+    trivy = recorded("trivy-0.58.0-requirements.sarif", "trivy", "container")
+    rows = fp(".", *osv, *trivy)
+    by = {(r["tool"], r["rule_id"], r["file"]): r for r in rows}
+    assert all(r["fingerprint_basis"] == "package" for r in rows)
+    same = by[("osv-scanner", "CVE-2021-33503", "requirements.txt")]["fingerprint"]
+    assert by[("trivy", "CVE-2021-33503", "requirements.txt")]["fingerprint"] == same
+    # the other manifest is another finding: fixing one lock file does not fix the other
+    assert by[("osv-scanner", "CVE-2021-33503", "uv.lock")]["fingerprint"] != same
+    # every advisory trivy reports is one osv-scanner reports for the same file, under the same name
+    shared = {r["fingerprint"] for r in rows if r["tool"] == "trivy"} & {r["fingerprint"] for r in rows if r["tool"] == "osv-scanner"}
+    assert len(shared) == 8
+
+
+def test_pip_audit_names_it_pysec_and_still_meets_the_cve():
+    doc = json.load(open(os.path.join(UVLOCK, "pip-audit-2.10.1-exported.json"), encoding="utf-8"))
+    pa = next(r for r in native.parse_pip_audit(doc, []) if r["rule_id"] == "PYSEC-2021-108")
+    a, b = fp(".", pa, dict(pa, rule_id="CVE-2021-33503", aliases=[]))
+    assert a["fingerprint"] == b["fingerprint"]
+    # ...but its manifest is the environment, so it is not the requirements.txt finding
+    t = next(r for r in recorded("trivy-0.58.0-requirements.sarif", "trivy", "container") if r["rule_id"] == "CVE-2021-33503")
+    assert fp(".", t)[0]["fingerprint"] != a["fingerprint"]
+
+
+def test_a_message_that_is_not_the_recorded_shape_adds_no_package():
+    rule = {"name": "LanguageSpecificPackageVulnerability", "deprecatedIds": "CVE-1"}
+    sp = evidence.sarif_package
+    assert sp("trivy", {"message": {"text": "something else"}}, rule, "requirements.txt") == {}
+    assert sp("trivy", {"message": {"text": "Package: x\nInstalled Version: 1"}}, {"name": "Secret"}, "a") == {}
+    assert sp("osv-scanner", {"message": {"text": "Package urllib3 is fine"}}, rule, "uv.lock") == {}
+    assert sp("osv-scanner", {"message": {"text": 7}}, rule, "uv.lock") == {}
+    assert sp("semgrep", {"message": {"text": "Package 'a@1' is vulnerable to 'X'"}}, rule, "uv.lock") == {}
+    scoped = sp("osv-scanner", {"ruleId": "GHSA-x", "message": {"text": "Package '@scope/pkg@2.0.0' is vulnerable to 'GHSA-x'."}}, {}, "web/package-lock.json")
+    assert scoped == {"package": {"ecosystem": "npm", "name": "@scope/pkg", "version": "2.0.0"}}
+    long = sp("trivy", {"message": {"text": "Package: " + "a" * 500 + "‮\nInstalled Version: 1"}}, rule, "x.lock")
+    assert len(long["package"]["name"]) == 200 and long["package"]["ecosystem"] == ""

@@ -4,6 +4,10 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-22 — F19a slice 2: aliases and SARIF dependency rows (`feat/f19a-aliases`, unreleased)
+
+osv-scanner and trivy SARIF were recorded with the pinned images instead of assumed. Findings: the package is only in the message text, neither tool names the ecosystem, osv-scanner's SARIF leads with the CVE and lists aliases in `deprecatedIds`. The fingerprint's advisory is one name from the row's own ids (CVE, else GHSA); no run-wide alias graph, so the identity does not depend on which dimensions ran. On the recordings trivy's 8 advisories meet osv-scanner's rows for the same file. Rows with one fingerprint are not merged.
+
 ## 2026-11-22 — F19a slice 1: fingerprint (`feat/f19a-fingerprint`, unreleased)
 
 `evidence.json` findings carry `fingerprint` and `fingerprint_basis` beside `id`. Code findings: rule, file, the reported line with whitespace collapsed, occurrence index (GitHub's method); dependency rows with `package`: advisory, ecosystem, name, manifest, version left out. Two decisions taken while building, both narrower than the plan: pip-audit rows use the fixed manifest `python-env` (a venv path is per machine), and secret findings keep the location basis (a hash of the line would be a hash of the secret in a report that is mailed). Slices left, agreed with the user on 2026-11-21: S2 alias map and SARIF dependency rows (trivy, osv-scanner), S3 `decisions.json` and `scan.sh decide` (described in `scan.sh help`), S4 the merged view in evidence and the report, re-render after triage.
