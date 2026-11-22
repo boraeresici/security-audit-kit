@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from urllib.parse import quote
 
 SARIF_SCHEMA = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 DRIVER_NAME = "SecurityAuditKit"
@@ -67,18 +68,21 @@ def result_for(finding: dict, rule_index: int) -> dict:
     if finding.get("decision"):
         bits.append(f"Decision: {finding['decision']}.")
 
+    # The text comes from a model-written table; SARIF renders [text](url) as a link, so break it.
+    text = " ".join(bits).replace("](", "] (")
     result = {
         "ruleId": finding["rule_id"],
         "ruleIndex": rule_index,
         "level": LEVEL.get(finding.get("severity"), "warning"),
-        "message": {"text": " ".join(bits)},
+        "message": {"text": text},
         "locations": [{
             "physicalLocation": {
-                "artifactLocation": {"uri": finding.get("file") or "", "uriBaseId": "%SRCROOT%"},
+                # A URI reference: "%", "?", "#" and spaces in a file name are encoded, not read as syntax.
+                "artifactLocation": {"uri": quote(finding.get("file") or "", safe="/"), "uriBaseId": "%SRCROOT%"},
                 **({"region": {"startLine": finding["line"]}} if finding.get("line") else {}),
             }
         }],
-        # Stable across runs, so an alert is not re-created every scan.
+        # The kit's id, for consumers other than GitHub (which matches on primaryLocationLineHash).
         "partialFingerprints": {"sakFindingId": finding["id"]},
     }
     if finding.get("decision") == "suppressed":

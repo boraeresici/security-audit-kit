@@ -1,0 +1,351 @@
+[
+ {
+  "dependency": "requests",
+  "version": "2.32.3",
+  "result": {
+   "issues": 3,
+   "errors": {},
+   "results": {
+    "potentially_compromised_email_domain": null,
+    "repository_integrity_mismatch": null,
+    "typosquatting": null,
+    "bundled_binary": null,
+    "metadata_mismatch": null,
+    "deceptive_author": null,
+    "unclaimed_maintainer_email_domain": null,
+    "threat-filesystem-destruction": {},
+    "threat-network-outbound-shady-links": {},
+    "capability-filesystem-read": [
+     {
+      "location": "requests/sessions.py:188",
+      "match": ".read(",
+      "message": "Detects filesystem read capabilities"
+     }
+    ],
+    "threat-runtime-obfuscation-unicode": {},
+    "capability-filesystem-write-executable": {},
+    "threat-network-dns-exfil": {},
+    "threat-runtime-dynamic-loader": {},
+    "threat-process-sysinfo": {},
+    "threat-npm-dependency-confusion": {},
+    "threat-setup-import-aliasing": {},
+    "threat-runtime-obfuscation-api": {},
+    "threat-npm-http-dependency": {},
+    "threat-process-cryptomining": {},
+    "threat-runtime-obfuscation": {},
+    "threat-process-injection-dll": {},
+    "capability-network-download": {},
+    "capability-network-outbound": {},
+    "threat-setup-network-in-install": {},
+    "capability-runtime-clipboard": {},
+    "threat-filesystem-read": {},
+    "threat-runtime-screencapture": {},
+    "threat-network-exfiltration": {},
+    "threat-runtime-obfuscation-dynamic-eval": {},
+    "threat-setup-suspicious-imports": {},
+    "threat-network-exfil-sysinfo": {},
+    "threat-process-memory": {},
+    "threat-runtime-obfuscation-pyarmor": {},
+    "capability-filesystem-browser": {},
+    "threat-process-hooks": {},
+    "capability-process-hooks": {},
+    "capability-filesystem-delete": [
+     {
+      "location": "requests/utils.py:314",
+      "match": "os.remove(",
+      "message": "Detects file/directory deletion capabilities"
+     }
+    ],
+    "threat-runtime-obfuscation-log-suppress": {},
+    "threat-process-download-exec": {},
+    "capability-network-lolbas": {},
+    "threat-runtime-obfuscation-general": {},
+    "threat-process-spawn-silent": {},
+    "threat-runtime-enumeration": {},
+    "threat-filesystem-autostart": {},
+    "threat-runtime-obfuscation-base64exec": {},
+    "threat-runtime-obfuscation-import-exec": {},
+    "threat-process-powershell-encoded": {},
+    "threat-runtime-environment-read": {},
+    "capability-process-spawn": [
+     {
+      "location": "requests/help.py:73",
+      "match": "system(",
+      "message": "Detects process execution and spawning"
+     }
+    ],
+    "capability-process-schedule": {},
+    "threat-runtime-keylogging": {},
+    "threat-runtime-self-propagation": {},
+    "threat-npm-preinstall-script": {},
+    "threat-runtime-obfuscation-chr": {},
+    "threat-runtime-obfuscation-steganography": {},
+    "threat-runtime-obfuscation-js-mangling": {},
+    "threat-runtime-obfuscation-hidden-code": {},
+    "threat-network-exfil-messenger": {},
+    "threat-network-reverse-shell": {},
+    "threat-runtime-system-info": {}
+   },
+   "risk_score": {
+    "score": 0.0,
+    "label": "no_risks_detected",
+    "findings_count": 3,
+    "score_breakdown": {
+     "severity_component": 0.0,
+     "chain_component": 0.0,
+     "specificity_component": 0.0,
+     "sophistication_component": 0.0
+    }
+   },
+   "risks": []
+  }
+ },
+ {
+  "dependency": "setuptools",
+  "version": "75.1.0",
+  "result": {
+   "issues": 17,
+   "errors": {},
+   "results": {
+    "potentially_compromised_email_domain": null,
+    "repository_integrity_mismatch": null,
+    "typosquatting": null,
+    "bundled_binary": "Binary file/s detected in package:\nb9a7d08da880dfac8bcf548eba4b06fb59b6f09b17d33148a0f6618328926c61: cli-arm64.exe (exe)\nbbb3de5707629e6a60a0c238cd477b28f07f0066982fda953fa6fcec39073a4a: cli-64.exe (exe)\n3471b6140eadc6412277dbbefe3fef8c345a0f1a59776086b80a3618c3a83e3b: gui-64.exe (exe)\n32acc1bc54311",
+    "metadata_mismatch": null,
+    "deceptive_author": null,
+    "unclaimed_maintainer_email_domain": null,
+    "threat-filesystem-destruction": {},
+    "threat-network-outbound-shady-links": {},
+    "capability-filesystem-read": [
+     {
+      "location": "setuptools/package_index.py:368",
+      "match": ".read(",
+      "message": "Detects filesystem read capabilities"
+     }
+    ],
+    "threat-runtime-obfuscation-unicode": [
+     {
+      "location": "setuptools/_distutils/tests/test_log.py:10",
+      "match": "D\u03b5",
+      "message": "Detects unicode homoglyphs and uncommon characters used for obfuscation"
+     }
+    ],
+    "capability-filesystem-write-executable": [
+     {
+      "location": "setuptools/archive_util.py:135",
+      "match": "os.chmod(",
+      "message": "Detects writing executable files or changing file permissions to executable"
+     }
+    ],
+    "threat-network-dns-exfil": {},
+    "threat-runtime-dynamic-loader": {},
+    "threat-process-sysinfo": {},
+    "threat-npm-dependency-confusion": {},
+    "threat-setup-import-aliasing": {},
+    "threat-runtime-obfuscation-api": {},
+    "threat-npm-http-dependency": {},
+    "threat-process-cryptomining": {},
+    "threat-runtime-obfuscation": {},
+    "threat-process-injection-dll": {},
+    "capability-network-download": [
+     {
+      "location": "setuptools/package_index.py:1128",
+      "match": "urllib.request.urlopen(",
+      "message": "Detects downloading files from network"
+     }
+    ],
+    "capability-network-outbound": [
+     {
+      "location": "setuptools/package_index.py:320",
+      "match": "urllib.request.urlopen",
+      "message": "Detects network request capabilities (HTTP, sockets, etc.)"
+     }
+    ],
+    "threat-setup-network-in-install": {},
+    "capability-runtime-clipboard": {},
+    "threat-filesystem-read": [
+     {
+      "location": "setuptools/package_index.py:1029",
+      "match": ".pypirc",
+      "message": "Detects access to sensitive files (credentials, configs, keys)"
+     },
+     {
+      "location": "setuptools/package_index.py:1082",
+      "match": ".pypirc",
+      "message": "Detects access to sensitive files (credentials, configs, keys)"
+     },
+     {
+      "location": "setuptools/tests/environment.py:11",
+      "match": "'.env'",
+      "message": "Detects access to sensitive files (credentials, configs, keys)"
+     },
+     {
+      "location": "setuptools/tests/test_packageindex.py:255",
+      "match": ".pypirc",
+      "message": "Detects access to sensitive files (credentials, configs, keys)"
+     }
+    ],
+    "threat-runtime-screencapture": {},
+    "threat-network-exfiltration": {},
+    "threat-runtime-obfuscation-dynamic-eval": {},
+    "threat-setup-suspicious-imports": {},
+    "threat-network-exfil-sysinfo": {},
+    "threat-process-memory": {},
+    "threat-runtime-obfuscation-pyarmor": {},
+    "capability-filesystem-browser": {},
+    "threat-process-hooks": {},
+    "capability-process-hooks": {},
+    "capability-filesystem-delete": [
+     {
+      "location": "setuptools/package_index.py:532",
+      "match": "os.unlink(",
+      "message": "Detects file/directory deletion capabilities"
+     }
+    ],
+    "threat-runtime-obfuscation-log-suppress": {},
+    "threat-process-download-exec": {},
+    "capability-network-lolbas": {},
+    "threat-runtime-obfuscation-general": {},
+    "threat-process-spawn-silent": {},
+    "threat-runtime-enumeration": {},
+    "threat-filesystem-autostart": {},
+    "threat-runtime-obfuscation-base64exec": {},
+    "threat-runtime-obfuscation-import-exec": {},
+    "threat-process-powershell-encoded": {},
+    "threat-runtime-environment-read": {},
+    "capability-process-spawn": [
+     {
+      "location": "setuptools/windows_support.py:5",
+      "match": "system(",
+      "message": "Detects process execution and spawning"
+     }
+    ],
+    "capability-process-schedule": {},
+    "threat-runtime-keylogging": {},
+    "threat-runtime-self-propagation": {},
+    "threat-npm-preinstall-script": {},
+    "threat-runtime-obfuscation-chr": {},
+    "threat-runtime-obfuscation-steganography": {},
+    "threat-runtime-obfuscation-js-mangling": {},
+    "threat-runtime-obfuscation-hidden-code": {},
+    "threat-network-exfil-messenger": {},
+    "threat-network-reverse-shell": {},
+    "threat-runtime-system-info": {}
+   },
+   "risk_score": {
+    "score": 5.3,
+    "label": "suspicious",
+    "findings_count": 12,
+    "score_breakdown": {
+     "severity_component": 0.3,
+     "chain_component": 0.08,
+     "specificity_component": 0.09,
+     "sophistication_component": 0.06,
+     "num_stages": 1,
+     "has_source_code_risks": true,
+     "max_severity": 3,
+     "dominant_specificity": "low",
+     "dominant_sophistication": "low"
+    }
+   },
+   "risks": [
+    {
+     "name": "risk.runtime.obfuscation",
+     "category": "runtime",
+     "severity": "medium",
+     "mitre_tactics": [
+      "defense-evasion"
+     ],
+     "threat_identifies": "threat.runtime.obfuscation.unicode",
+     "threat_rule": "threat-runtime-obfuscation-unicode",
+     "threat_location": "setuptools/_distutils/tests/test_log.py:10",
+     "threat_code": "        caplog.set_level(logging.DEBUG)\n        log.debug('D\u03b5bug\\tM\u0117ss\u00e3ge')\n        log.fatal('F\u03b1tal\\t\u00c8rr\u014dr')\n        assert caplog.messages == ['D\u03b5bug\\tM\u0117ss\u00e3ge', 'F\u03b1tal\\t\u00c8rr\u014dr']",
+     "threat_match": "D\u03b5",
+     "capability_identifies": null,
+     "capability_rule": null,
+     "file_path": "setuptools/_distutils/tests/test_log.py"
+    },
+    {
+     "name": "risk.filesystem.read",
+     "category": "filesystem",
+     "severity": "high",
+     "mitre_tactics": [
+      "credential-access"
+     ],
+     "threat_identifies": "threat.filesystem.read",
+     "threat_rule": "threat-filesystem-read",
+     "threat_location": "setuptools/package_index.py:1029",
+     "threat_code": "        rc = os.path.join(os.path.expanduser('~'), '.pypirc')\n        if os.path.exists(rc):\n            _cfg_read_utf8_with_fallback(self, rc)",
+     "threat_match": ".pypirc",
+     "capability_identifies": "capability.filesystem.read",
+     "capability_rule": "capability-filesystem-read",
+     "file_path": "setuptools/package_index.py"
+    },
+    {
+     "name": "risk.filesystem.read",
+     "category": "filesystem",
+     "severity": "high",
+     "mitre_tactics": [
+      "credential-access"
+     ],
+     "threat_identifies": "threat.filesystem.read",
+     "threat_rule": "threat-filesystem-read",
+     "threat_location": "setuptools/package_index.py:1082",
+     "threat_code": "            info = cred.username, url\n            log.info('Authenticating as %s for %s (from .pypirc)', *info)\n\n    if auth:",
+     "threat_match": ".pypirc",
+     "capability_identifies": "capability.filesystem.read",
+     "capability_rule": "capability-filesystem-read",
+     "file_path": "setuptools/package_index.py"
+    },
+    {
+     "name": "risk.filesystem.read",
+     "category": "filesystem",
+     "severity": "medium",
+     "mitre_tactics": [
+      "credential-access"
+     ],
+     "threat_identifies": "threat.filesystem.read",
+     "threat_rule": "threat-filesystem-read",
+     "threat_location": "setuptools/tests/environment.py:11",
+     "threat_code": "class VirtualEnv(jaraco.envs.VirtualEnv):\n    name = '.env'\n    # Some version of PyPy will import distutils on startup, implicitly\n    # importing setuptools, and thus leading to BackendInvalid errors",
+     "threat_match": "'.env'",
+     "capability_identifies": "capability.filesystem.read",
+     "capability_rule": "capability-filesystem-read",
+     "file_path": "setuptools/tests/environment.py"
+    },
+    {
+     "name": "risk.filesystem.read",
+     "category": "filesystem",
+     "severity": "medium",
+     "mitre_tactics": [
+      "credential-access"
+     ],
+     "threat_identifies": "threat.filesystem.read",
+     "threat_rule": "threat-filesystem-read",
+     "threat_location": "setuptools/tests/test_packageindex.py:255",
+     "threat_code": "    def test_percent_in_password(self, tmp_home_dir):\n        pypirc = tmp_home_dir / '.pypirc'\n        pypirc.write_text(\n            cleandoc(",
+     "threat_match": ".pypirc",
+     "capability_identifies": "capability.filesystem.read",
+     "capability_rule": "capability-filesystem-read",
+     "file_path": "setuptools/tests/test_packageindex.py"
+    },
+    {
+     "name": "risk.metadata.bundled-binary",
+     "category": "metadata",
+     "severity": "medium",
+     "mitre_tactics": [
+      "defense-evasion"
+     ],
+     "threat_identifies": "threat.metadata.bundled-binary",
+     "threat_rule": "bundled_binary",
+     "threat_location": "",
+     "threat_code": "",
+     "threat_match": "",
+     "capability_identifies": null,
+     "capability_rule": null,
+     "file_path": ""
+    }
+   ]
+  }
+ }
+]

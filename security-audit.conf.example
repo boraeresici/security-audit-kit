@@ -2,7 +2,9 @@
 #
 # Usage: copy this file to the repo ROOT as `.security-audit.conf`,
 # tune the values for your project, and COMMIT it (team-shared).
-# scan.sh sources it automatically.
+# scan.sh reads it automatically, as DATA: it is parsed, never run (no commands, no $ expansion;
+# a line that is not a plain setting is not applied, and `scan.sh doctor` names it).
+# SKIP_SECURITY is never read from here: it would switch the checks off for everyone on the branch.
 #
 # Precedence: env > this file > scan.sh default.  Thanks to the `:=` form you can
 # override for a single run via env:  SAST_PATHS="lib" bash scan.sh sast
@@ -15,6 +17,7 @@
 # --- SAST (semgrep) scan root ---
 # Left unset, semgrep scans the whole repo. Narrow it to your source directories (faster, less
 # noise). A directory listed here that does not exist is skipped, and the run says so.
+# Space-separated: a path listed here cannot itself contain a space.
 # : "${SAST_PATHS:=backend frontend}"
 
 # Semgrep rulesets. LEAVE UNSET to let scan.sh auto-select packs from your stack
@@ -32,7 +35,7 @@
 # Reachability signal for dependency CVEs (opt-in). Adds --all-vulns, so the gate is
 # unchanged — you gain a called/uncalled marking for triage, not fewer findings.
 # rust also works but RUNS the dependency tree's build scripts, so it is refused unless
-# OSV_ALLOW_BUILD_SCRIPTS=1 is set as well.
+# OSV_ALLOW_BUILD_SCRIPTS=1 is set as well, in the environment (never read from this file).
 # : "${OSV_CALL_ANALYSIS:=go}"
 
 # --- dependencies (js) ---
@@ -67,7 +70,10 @@
 # 1 = never download a scanner DB: use the cached one at any age; none cached -> "skipped".
 # : "${SCAN_OFFLINE:=0}"
 
-# --- Tool version pins (keep ALL of these aligned with CI to avoid drift) ---
+# --- Tool version pins: ENVIRONMENT ONLY (since 1.22) ---
+# Listed for reference. A *_VER or *_DIGEST line in this file is NOT applied: the file is committed,
+# so a branch could re-pin a scanner to an image or package of its choosing. Pins move with the kit
+# (bash bootstrap.sh <tag>); for a deliberate one-off, set the variable in the environment.
 # Python tools (uvx/pipx) — pinned by version:
 # : "${SEMGREP_VER:=1.166.0}"
 # : "${CHECKOV_VER:=3.3.1}"
@@ -100,6 +106,14 @@
 # PKGCHECK_CACHE=off        # or: refresh (re-scan now and replace the entry)
 # PKGCHECK_CACHE_TTL_MIN=1440
 
+# --- edit check: the plugin's PostToolUse hook (scan.sh edit) ---------------------------------
+# After each agent Edit/Write, one advisory semgrep pass on that file: never blocks, writes no record.
+# A clean file adds nothing to the agent's context; a file it could not check is said to be NOT
+# checked (once per session). The plugin has no per-hook switch, so this is it.
+# EDIT_CHECK=0
+# Time budget per file in seconds (max 55: the hook itself times out at 60). Slower -> "not checked".
+# EDIT_CHECK_TIMEOUT_SEC=30
+
 # --- run lock: one writer at a time for raw-<date>.log + the shared record ---------------------
 # A second run waits this many seconds for the lock, then scans anyway into its own
 # runs/<run-id>/ (the scan is never skipped for a lock; the shared record is left alone).
@@ -110,3 +124,10 @@
 # SCAN_LOCK_HEARTBEAT_SEC=30
 # A lock-less run's own record in runs/<run-id>/ is pruned after this many days.
 # SCAN_RUNS_KEEP_DAYS=7
+
+# --- gate profile ---
+# Strict: a dimension that did not inspect (skipped: no docker / no uvx; error: a crashed scanner;
+# indeterminate) BLOCKS the commit or push, soft dimensions included. Default 0: such a dimension is
+# named loudly ("NOT inspected. Not a pass.") but does not block. A hard dimension's crash blocks in
+# both profiles. For a team: set it here, so "not scanned" means "not pushed" for everyone.
+# : "${GATE_STRICT:=1}"

@@ -1,0 +1,618 @@
+# Labeled deep-review corpus — DEV SPLIT (dev-only harness; see README.md, "Deep-review eval").
+#
+# Each case is one recon CANDIDATE plus the code on its call path; `expected` is the verdict the
+# verify phase should reach. `max_severity`, when set, is the highest severity the evidence chain
+# supports (F39): a REAL rated above it fails. metadata.card names the backlog card the case
+# measures; metadata.twin pairs a REAL with the FP that differs from it by one decisive property.
+#
+# Written with F39-F41, so these are tuning cases: a prompt may be iterated against them, and
+# their score is optimistic. Code is embedded as strings, never as real source files; every
+# secret is an obvious placeholder.
+
+# ================= F39 — severity within the demonstrated impact =================
+
+- description: "F39 REAL — user-supplied regex is a denial of service, not code execution"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    max_severity: medium
+    candidate: "search/views.py:14 — Class 4 injection: the `pattern` query parameter is compiled as a regular expression; recon notes possible remote code execution through the regex engine."
+    code: |
+      # search/views.py
+      import re
+      from django.http import JsonResponse
+
+      def search_logs(request):                       # public, no auth
+          pattern = request.GET.get("pattern", "")
+          lines = LOG_CACHE.recent(5000)
+          hits = [l for l in lines if re.search(pattern, l)]   # line 14
+          return JsonResponse({"hits": hits[:100]})
+  metadata: { split: dev, card: F39, class: overstated-impact, twin: none }
+
+- description: "F39 REAL — exceeding one's own plan quota is a billing bypass, not privilege escalation"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    max_severity: medium
+    candidate: "projects/api.py:21 — Class 2 privilege escalation: a free-plan user can create projects beyond the plan limit, gaining capabilities of a higher role."
+    code: |
+      # projects/api.py
+      from rest_framework.decorators import api_view, permission_classes
+      from rest_framework.permissions import IsAuthenticated
+
+      PLAN_LIMITS = {"free": 3, "team": 50}
+
+      @api_view(["POST"])
+      @permission_classes([IsAuthenticated])
+      def create_project(request):
+          org = request.user.org
+          # the limit is shown in the UI (frontend/ProjectList.tsx disables the button at the limit)
+          project = Project.objects.create(org=org, name=request.data["name"])   # line 21
+          return Response({"id": project.id}, status=201)
+
+      # accounts/models.py
+      class User(AbstractUser):
+          org = models.ForeignKey(Org, on_delete=models.CASCADE)
+          role = models.CharField(choices=[("member", "member"), ("admin", "admin")], default="member")
+          # role is changed only in accounts/admin_views.py, behind @require_org_admin
+  metadata: { split: dev, card: F39, class: same-principal-called-privilege, twin: none }
+
+# ================= F40 — AI/LLM classes sec-ai-review does not name =================
+
+- description: "F40 REAL — model summary of a fetched page is written to org-wide memory that steers every session"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/memory.py:18 — persistent memory poisoning: summaries of web pages the agent reads are stored in org memory and injected into later system prompts."
+    code: |
+      # agent/tools.py
+      def browse(url, session):
+          page = http_get(url).text                      # any URL the user or the model picks
+          summary = llm.summarize(page)
+          memory.remember(session.org_id, summary)       # line 9
+          return summary
+
+      # agent/memory.py
+      def remember(org_id, text):
+          OrgMemory.objects.create(org_id=org_id, text=text)
+
+      def system_prompt(session):
+          notes = OrgMemory.objects.filter(org_id=session.org_id).order_by("-id")[:20]
+          return BASE_PROMPT + "\nKnown facts about this org:\n" + "\n".join(n.text for n in notes)   # line 18
+
+      # agent/run.py — every session of the org, admins included, gets system_prompt(session);
+      # admin sessions expose the tools `invite_user` and `rotate_api_key`.
+  metadata: { split: dev, card: F40, class: memory-poisoning, twin: memory-poisoning }
+
+- description: "F40 FP — memory holds only the user's own explicit notes, scoped to them, passed as quoted data"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/memory.py:16 — persistent memory poisoning: stored memories are injected into later prompts."
+    code: |
+      # agent/commands.py
+      def handle_remember(session, text):
+          # only the "/remember <note>" command writes memory; tool results and model output never do
+          UserMemory.objects.create(user_id=session.user_id, text=text[:500])
+
+      # agent/memory.py
+      def memory_block(session):
+          notes = UserMemory.objects.filter(user_id=session.user_id).order_by("-id")[:20]
+          quoted = "\n".join(json.dumps(n.text) for n in notes)
+          return {"role": "user", "content": "<user_notes>\n" + quoted + "\n</user_notes>"}   # line 16
+
+      # agent/run.py — sessions are per user; the note block is a user turn, never the system prompt;
+      # tools available to the model: search_docs (read-only).
+  metadata: { split: dev, card: F40, class: memory-poisoning, twin: memory-poisoning }
+
+- description: "F40 REAL — retrieval over a shared index with no tenant filter"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "rag/retrieve.py:9 — cross-tenant context bleed: the vector query has no tenant filter."
+    code: |
+      # rag/ingest.py
+      def ingest(doc, tenant_id):
+          index.upsert(id=doc.id, vector=embed(doc.text), metadata={"tenant_id": tenant_id, "text": doc.text})
+
+      # rag/retrieve.py
+      def context_for(question, user):
+          hits = index.query(vector=embed(question), top_k=5, include_metadata=True)   # line 9
+          return "\n\n".join(h.metadata["text"] for h in hits.matches)
+
+      # chat/views.py — every tenant's users call context_for(); one index holds all tenants' documents.
+  metadata: { split: dev, card: F40, class: context-bleed, twin: context-bleed }
+
+- description: "F40 FP — the same retrieval, filtered by the caller's tenant"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "rag/retrieve.py:9 — cross-tenant context bleed: one vector index holds every tenant's documents."
+    code: |
+      # rag/ingest.py
+      def ingest(doc, tenant_id):
+          index.upsert(id=doc.id, vector=embed(doc.text), metadata={"tenant_id": tenant_id, "text": doc.text})
+
+      # rag/retrieve.py
+      def context_for(question, user):
+          hits = index.query(vector=embed(question), top_k=5, include_metadata=True,
+                             filter={"tenant_id": {"$eq": user.tenant_id}})          # line 9
+          return "\n\n".join(h.metadata["text"] for h in hits.matches)
+
+      # user.tenant_id comes from the authenticated session, never from the request body.
+  metadata: { split: dev, card: F40, class: context-bleed, twin: context-bleed }
+
+- description: "F40 REAL — the caller sets the message role, so user text can pose as the system prompt"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "chat/api.py:12 — role and provenance confusion: message roles come from the request."
+    code: |
+      # chat/api.py
+      @app.post("/chat")
+      def chat(req: ChatRequest, user=Depends(current_user)):
+          messages = [{"role": "system", "content": SYSTEM_PROMPT}]   # SYSTEM_PROMPT: "Refunds above 50 EUR need a manager."
+          for m in req.history:                                         # client-held history
+              messages.append({"role": m.role, "content": m.content})   # line 12
+          reply = client.chat(messages, tools=[issue_refund])           # issue_refund(amount) executes directly
+          return run_tools(reply, user)
+
+      class Msg(BaseModel):
+          role: str            # no validation
+          content: str
+  metadata: { split: dev, card: F40, class: role-confusion, twin: role-confusion }
+
+- description: "F40 FP — client history is replayed with the role fixed to user, and the refund limit is enforced in code"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "chat/api.py:12 — role and provenance confusion: chat history comes from the client."
+    code: |
+      # chat/api.py
+      @app.post("/chat")
+      def chat(req: ChatRequest, user=Depends(current_user)):
+          messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+          for m in req.history:
+              messages.append({"role": "user", "content": m.content})   # line 12: role never taken from the client
+          reply = client.chat(messages, tools=[issue_refund])
+          return run_tools(reply, user)
+
+      # tools/refund.py — policy: a customer may self-serve a refund up to 50 EUR on their own order
+      def issue_refund(order_id, amount, user):
+          order = Order.objects.get(id=order_id, customer_id=user.id)
+          if amount > min(50, order.total) and not user.is_manager:
+              raise PermissionDenied("manager approval required")
+          ...
+  metadata: { split: dev, card: F40, class: role-confusion, twin: role-confusion }
+
+- description: "F40 REAL — the action runs with arguments re-read after the user approved a different one"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/approvals.py:15 — approval binding: the executed arguments are not the approved ones."
+    code: |
+      # agent/approvals.py
+      def propose(session, tool, args):
+          pid = new_id()
+          PENDING[pid] = {"tool": tool, "session": session.id}
+          show_to_user(f"Agent wants to run {tool} with {args}. Approve?")   # user sees these args
+          return pid
+
+      @app.post("/approve/{pid}")
+      def approve(pid: str, body: dict, user=Depends(current_user)):
+          p = PENDING.pop(pid)
+          if p["session"] != user.session_id:
+              raise HTTPException(403)
+          return TOOLS[p["tool"]](**body["args"])                             # line 15: args from this request
+
+      # TOOLS includes transfer_funds(to_account, amount).
+  metadata: { split: dev, card: F40, class: approval-binding, twin: approval-binding }
+
+- description: "F40 FP — the approved arguments are stored and executed as stored"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/approvals.py:15 — approval binding: a tool call runs after an HTTP approval."
+    code: |
+      # agent/approvals.py
+      def propose(session, tool, args):
+          pid = new_id()
+          PENDING[pid] = {"tool": tool, "args": dict(args), "session": session.id}
+          show_to_user(f"Agent wants to run {tool} with {args}. Approve?")
+          return pid
+
+      @app.post("/approve/{pid}")
+      def approve(pid: str, user=Depends(current_user)):
+          p = PENDING.pop(pid)
+          if p["session"] != user.session_id:
+              raise HTTPException(403)
+          return TOOLS[p["tool"]](**p["args"])                                # line 15: exactly what was shown
+  metadata: { split: dev, card: F40, class: approval-binding, twin: approval-binding }
+
+- description: "F40 REAL — schema validation is the only check before deleting a record by id"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "tools/records.py:11 — tool schema vs dispatcher: the delete_record handler relies on the tool schema."
+    code: |
+      # tools/schema.py
+      DELETE_RECORD = {"name": "delete_record",
+                       "parameters": {"type": "object", "properties": {"record_id": {"type": "integer"}},
+                                      "required": ["record_id"]}}
+
+      # tools/records.py
+      def delete_record(args, user):
+          jsonschema.validate(args, DELETE_RECORD["parameters"])     # type check only
+          Record.objects.filter(id=args["record_id"]).delete()       # line 11
+
+      # the model sees support-ticket text written by external customers; the user is a support agent
+      # of one tenant; Record ids are sequential across tenants.
+  metadata: { split: dev, card: F40, class: schema-vs-dispatcher, twin: schema-vs-dispatcher }
+
+- description: "F40 FP — the handler checks ownership itself, whatever the schema allowed"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "tools/records.py:11 — tool schema vs dispatcher: model-chosen record ids reach a delete."
+    code: |
+      # tools/records.py
+      def delete_record(args, user):
+          jsonschema.validate(args, DELETE_RECORD["parameters"])
+          rec = Record.objects.get(id=args["record_id"], tenant_id=user.tenant_id)   # scoped to the caller
+          if not user.has_perm("records.delete"):
+              raise PermissionDenied
+          rec.delete()                                                               # line 11
+  metadata: { split: dev, card: F40, class: schema-vs-dispatcher, twin: schema-vs-dispatcher }
+
+- description: "F40 REAL — tools from several MCP servers are merged by bare name, so a later server replaces one"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/mcp.py:8 — MCP tool identity: tool names from different servers can collide."
+    code: |
+      # agent/mcp.py
+      SERVERS = load_config("mcp.json")    # the company mail server plus servers each user adds in settings
+
+      def build_toolset():
+          tools = {}
+          for server in SERVERS:
+              for t in server.list_tools():
+                  tools[t.name] = (server, t)                  # line 8: last one wins
+          return tools
+
+      # agent/run.py — the model calls tools by name; `send_email` from the mail server carries the
+      # user's mailbox token; a user-added server can declare any tool name and receives the call arguments.
+  metadata: { split: dev, card: F40, class: mcp-identity, twin: mcp-identity }
+
+- description: "F40 FP — tools are namespaced by server and a duplicate name is refused"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/mcp.py:8 — MCP tool identity: several MCP servers share one tool table."
+    code: |
+      # agent/mcp.py
+      def build_toolset():
+          tools = {}
+          for server in SERVERS:
+              for t in server.list_tools():
+                  key = f"{server.id}.{t.name}"
+                  if key in tools:
+                      raise ValueError(f"duplicate tool {key}")
+                  tools[key] = (server, t)                     # line 8
+          return tools
+
+      # the model is shown namespaced names; credentials are bound per server id, not per tool name.
+  metadata: { split: dev, card: F40, class: mcp-identity, twin: mcp-identity }
+
+# ================= F41 — sibling paths and feature abuse (sec-sast-deep) =================
+
+- description: "F41 REAL — single update is tenant-scoped, the bulk route to the same change is not"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    candidate: "billing/views.py:19 — sibling path: bulk_update_invoices changes invoice status like update_invoice."
+    code: |
+      # billing/views.py
+      @api_view(["PATCH"])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])   # role check + allowed transition
+      def update_invoice(request, pk):
+          inv = get_object_or_404(Invoice, pk=pk, org=request.user.org)
+          inv.status = request.data["status"]
+          inv.save()
+          return Response(status=204)
+
+      @api_view(["POST"])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])
+      def bulk_update_invoices(request):
+          ids = request.data["ids"]
+          Invoice.objects.filter(pk__in=ids).update(status=request.data["status"])   # line 19
+          return Response(status=204)
+  metadata: { split: dev, card: F41, class: sibling-guard, twin: sibling-guard }
+
+- description: "F41 FP — both routes go through the same scoped queryset"
+  vars:
+    skill: sec-sast-deep
+    expected: FP
+    candidate: "billing/views.py:19 — sibling path: bulk_update_invoices changes invoice status like update_invoice."
+    code: |
+      # billing/views.py
+      def scoped_invoices(user):
+          return Invoice.objects.filter(org=user.org)
+
+      @api_view(["PATCH"])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])   # role check + allowed transition
+      def update_invoice(request, pk):
+          inv = get_object_or_404(scoped_invoices(request.user), pk=pk)
+          inv.status = request.data["status"]
+          inv.save()
+          return Response(status=204)
+
+      @api_view(["POST"])
+      @permission_classes([IsAuthenticated, CanChangeInvoiceStatus])
+      def bulk_update_invoices(request):
+          scoped_invoices(request.user).filter(pk__in=request.data["ids"]).update(status=request.data["status"])   # line 19
+          return Response(status=204)
+  metadata: { split: dev, card: F41, class: sibling-guard, twin: sibling-guard }
+
+- description: "F41 REAL — CSV export takes the org id from the query string"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    candidate: "reports/export.py:12 — feature abuse: the export may return more than the caller may read."
+    code: |
+      # reports/export.py
+      @login_required
+      def export_customers(request):
+          org_id = request.GET["org"]
+          rows = Customer.objects.filter(org_id=org_id).values("name", "email", "phone")
+          resp = HttpResponse(content_type="text/csv")
+          w = csv.writer(resp)
+          for r in rows:
+              w.writerow([r["name"], r["email"], r["phone"]])     # line 12
+          return resp
+
+      # the dashboard links to /export?org=<the user's own org id>; any logged-in user of any org can call it.
+  metadata: { split: dev, card: F41, class: export-leak, twin: export-leak }
+
+- description: "F41 FP — the export checks membership of the requested org"
+  vars:
+    skill: sec-sast-deep
+    expected: FP
+    candidate: "reports/export.py:12 — feature abuse: the export takes an org id from the query string."
+    code: |
+      # reports/export.py
+      @login_required
+      def export_customers(request):
+          org = get_object_or_404(request.user.orgs, pk=request.GET["org"])   # only orgs the user belongs to
+          rows = Customer.objects.filter(org=org).values("name", "email", "phone")
+          resp = HttpResponse(content_type="text/csv")
+          w = csv.writer(resp)
+          for r in rows:
+              w.writerow([r["name"], r["email"], r["phone"]])     # line 12
+          return resp
+  metadata: { split: dev, card: F41, class: export-leak, twin: export-leak }
+
+# ================= Harder twins (added after the 2026-11-17 baseline got 15/16 of the above) =================
+# Each targets what F40/F41 add: the baseline has the evidence bar but not these distinctions.
+
+- description: "F40 REAL — approval is for the tool name once per session, not for the recipient or body"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/approve.py:14 — approval binding: the user approves send_email once; later calls run unreviewed."
+    code: |
+      # agent/approve.py
+      GRANTED = {}   # (session_id, tool) -> True
+
+      def call_tool(session, tool, args):
+          if (session.id, tool) not in GRANTED:
+              if not ask_user(f"Allow the assistant to use {tool}?"):      # shows the tool name only
+                  return "denied"
+              GRANTED[(session.id, tool)] = True
+          return TOOLS[tool](**args)                                       # line 14
+
+      # the assistant triages the user's inbox (external senders' mail is in its context) and has
+      # send_email(to, subject, body) using the user's mailbox.
+  metadata: { split: dev, card: F40, class: approval-binding, twin: approval-scope }
+
+- description: "F40 FP — every send is approved with its exact recipient and body, and runs as approved"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/approve.py:14 — prompt injection: inbox mail from external senders can make the assistant send email."
+    code: |
+      # agent/approve.py
+      def call_tool(session, tool, args):
+          frozen = dict(args)
+          if tool in SIDE_EFFECT_TOOLS:                                    # send_email is one
+              if not ask_user(f"Send this?\nTo: {frozen['to']}\nSubject: {frozen['subject']}\n\n{frozen['body']}"):
+                  return "denied"
+          return TOOLS[tool](**frozen)                                     # line 14: exactly what was shown
+
+      # the assistant triages the user's inbox (external senders' mail is in its context).
+  metadata: { split: dev, card: F40, class: approval-binding, twin: approval-scope }
+
+- description: "F40 FP — injectable summarizer with no tool and escaped output: injection alone, no boundary failure"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "summarize/api.py:9 — LLM01 indirect prompt injection: untrusted web page text is concatenated into the prompt."
+    code: |
+      # summarize/api.py
+      @app.post("/summarize")
+      def summarize(req: Req, user=Depends(current_user)):
+          page = fetch(req.url).text[:20000]                               # any URL the user submits
+          out = client.chat([{"role": "system", "content": "Summarize the page."},
+                             {"role": "user", "content": page}])          # no tools
+          return {"summary": out.text}                                     # line 9
+
+      # frontend/Summary.tsx renders summary as a text node ({summary}); no markdown, no links, no images.
+      # The summary is shown only to the user who asked for it, and is not stored.
+  metadata: { split: dev, card: F40, class: injection-without-sink, twin: injection-framing }
+
+- description: "F40 REAL — the same summarizer, but its output is rendered as HTML with remote images"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "summarize/api.py:9 — LLM01 indirect prompt injection: untrusted web page text is concatenated into the prompt."
+    code: |
+      # summarize/api.py
+      @app.post("/summarize")
+      def summarize(req: Req, user=Depends(current_user)):
+          page = fetch(req.url).text[:20000]
+          history = Note.objects.filter(user=user).values_list("text", flat=True)[:50]   # the user's private notes
+          out = client.chat([{"role": "system", "content": "Summarize the page. Context: " + "\n".join(history)},
+                             {"role": "user", "content": page}])
+          return {"summary_html": markdown_to_html(out.text)}              # line 9: no sanitizer
+
+      # frontend/Summary.tsx: <div dangerouslySetInnerHTML={ {__html: summary_html} } />; images load automatically.
+  metadata: { split: dev, card: F40, class: injection-without-sink, twin: injection-framing }
+
+- description: "F40 REAL — the model can call save_note while reading external tickets; notes join later system prompts"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "agent/notes.py:6 — persistent memory poisoning: notes saved through a tool steer later sessions."
+    code: |
+      # agent/notes.py
+      def save_note(text, session):                                        # exposed to the model as a tool
+          Note.objects.create(user_id=session.user_id, text=text)
+
+      def system_prompt(session):
+          notes = Note.objects.filter(user_id=session.user_id)[:30]
+          return BASE + "\nStanding instructions from the user:\n" + "\n".join(n.text for n in notes)   # line 6
+
+      # agent/run.py — the support agent reads tickets from external customers; the same user's later
+      # sessions use system_prompt(); support agents can call refund_order(order_id, amount).
+  metadata: { split: dev, card: F40, class: memory-poisoning, twin: memory-via-tool }
+
+- description: "F40 FP — a note is stored only after the user confirms its exact text, and is replayed as quoted data"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "agent/notes.py:6 — persistent memory poisoning: notes saved through a tool reach later sessions."
+    code: |
+      # agent/notes.py
+      def save_note(text, session):                                        # exposed to the model as a tool
+          if not ask_user(f"Save this note for future chats?\n\n{text}"):
+              return "not saved"
+          Note.objects.create(user_id=session.user_id, text=text[:500])
+
+      def notes_turn(session):
+          notes = Note.objects.filter(user_id=session.user_id)[:30]
+          return {"role": "user", "content": "<my_notes>" + json.dumps([n.text for n in notes]) + "</my_notes>"}   # line 6
+  metadata: { split: dev, card: F40, class: memory-poisoning, twin: memory-via-tool }
+
+- description: "F40 REAL — answers are cached by question text alone, across tenants"
+  vars:
+    skill: sec-ai-review
+    expected: REAL
+    candidate: "assist/cache.py:8 — cross-tenant context bleed: cached answers are shared."
+    code: |
+      # assist/cache.py
+      def answer(question, user):
+          key = "ans:" + sha256(question.strip().lower().encode()).hexdigest()
+          if (hit := redis.get(key)):
+              return hit.decode()
+          ctx = retrieve(question, tenant_id=user.tenant_id)              # tenant-scoped retrieval
+          out = llm.complete(PROMPT.format(ctx=ctx, q=question)).text
+          redis.set(key, out, ex=86400)                                    # line 8
+          return out
+
+      # answers quote the retrieved documents (contract terms, prices, customer names).
+  metadata: { split: dev, card: F40, class: context-bleed, twin: answer-cache }
+
+- description: "F40 FP — the same cache, keyed by tenant"
+  vars:
+    skill: sec-ai-review
+    expected: FP
+    candidate: "assist/cache.py:8 — cross-tenant context bleed: LLM answers are cached in a shared Redis."
+    code: |
+      # assist/cache.py
+      def answer(question, user):
+          key = f"ans:{user.tenant_id}:" + sha256(question.strip().lower().encode()).hexdigest()
+          if (hit := redis.get(key)):
+              return hit.decode()
+          ctx = retrieve(question, tenant_id=user.tenant_id)
+          out = llm.complete(PROMPT.format(ctx=ctx, q=question)).text
+          redis.set(key, out, ex=86400)                                    # line 8
+          return out
+  metadata: { split: dev, card: F40, class: context-bleed, twin: answer-cache }
+
+- description: "F41 REAL — the legacy route keeps the org filter but drops the permission check"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    candidate: "billing/legacy.py:9 — sibling path: v1 status change compared with v2."
+    code: |
+      # billing/api_v2.py
+      @require_perm("invoices.approve")
+      def approve_invoice(request, pk):
+          inv = get_object_or_404(Invoice, pk=pk, org=request.user.org)
+          inv.mark_approved(by=request.user)
+
+      # billing/legacy.py — /api/v1/invoices/<pk>/approve, still routed for the mobile app
+      @login_required
+      def approve_invoice_v1(request, pk):
+          inv = get_object_or_404(Invoice, pk=pk, org=request.user.org)
+          inv.mark_approved(by=request.user)                               # line 9
+
+      # roles: "member" (creates invoices) and "approver"; only approvers hold invoices.approve.
+  metadata: { split: dev, card: F41, class: sibling-guard, twin: sibling-weaker }
+
+- description: "F41 FP — the legacy route calls the same service, which checks the permission"
+  vars:
+    skill: sec-sast-deep
+    expected: FP
+    candidate: "billing/legacy.py:9 — sibling path: the v1 route has no permission decorator."
+    code: |
+      # billing/services.py
+      def approve(user, pk):
+          if not user.has_perm("invoices.approve"):
+              raise PermissionDenied
+          inv = get_object_or_404(Invoice, pk=pk, org=user.org)
+          inv.mark_approved(by=user)
+
+      # billing/api_v2.py
+      @login_required
+      def approve_invoice(request, pk):
+          services.approve(request.user, pk)
+
+      # billing/legacy.py
+      @login_required
+      def approve_invoice_v1(request, pk):
+          services.approve(request.user, pk)                               # line 9
+  metadata: { split: dev, card: F41, class: sibling-guard, twin: sibling-weaker }
+
+- description: "F41 REAL — a count-only search is unscoped, so it answers whether another tenant has a record"
+  vars:
+    skill: sec-sast-deep
+    expected: REAL
+    candidate: "search/api.py:8 — feature abuse: the duplicate check may count other tenants' records."
+    code: |
+      # search/api.py
+      @api_view(["GET"])
+      @permission_classes([IsAuthenticated])
+      def duplicate_check(request):
+          tax_id = request.GET["tax_id"]
+          # "is this supplier already registered?" — returns a number, never the record
+          n = Supplier.objects.filter(tax_id=tax_id).count()
+          return Response({"matches": n})                                  # line 8
+
+      # Supplier rows belong to tenants; a supplier's presence tells a competitor who a tenant buys from.
+  metadata: { split: dev, card: F41, class: existence-oracle, twin: count-oracle }
+
+- description: "F41 FP — the same count, limited to the caller's tenant"
+  vars:
+    skill: sec-sast-deep
+    expected: FP
+    candidate: "search/api.py:8 — feature abuse: the duplicate check reveals whether a supplier exists."
+    code: |
+      # search/api.py
+      @api_view(["GET"])
+      @permission_classes([IsAuthenticated])
+      def duplicate_check(request):
+          tax_id = request.GET["tax_id"]
+          n = Supplier.objects.filter(tax_id=tax_id, tenant=request.user.tenant).count()
+          return Response({"matches": n})                                  # line 8
+  metadata: { split: dev, card: F41, class: existence-oracle, twin: count-oracle }

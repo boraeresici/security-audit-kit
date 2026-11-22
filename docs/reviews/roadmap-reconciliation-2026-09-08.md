@@ -4,6 +4,113 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-22 — F19a slice 4: decisions shown on findings; F19a complete (`feat/f19a-decisions`, unreleased)
+
+Decisions appear on their findings in `evidence.json` (`review`) and in the report, kept apart from the AI pass's verdict, marked when expired or made at another package version. Dependency findings can now carry a decision (they have no file:line for a triage row to attach to). Expiry stays out of `evidence.json` to keep it byte-identical over unchanged code. `/sec-triage` rebuilds the report after writing its file. Next on the UI track: R13a (read-only local UI over `evidence.json` and `decisions.json`).
+
+## 2026-11-22 — F19a slice 3: the decision record (`feat/f19a-decisions`, unreleased)
+
+`scan.sh decide` writes `docs/security/decisions.json`, keyed on the fingerprint, with owner, reason, until, verify, evidence kind and a snapshot of the finding. Decided while building, all on the side of not hiding findings: a decision never changes the gate, only a fingerprint the current scan reported can be decided, and a malformed record is refused rather than replaced. Next: S4 shows decisions next to findings.
+
+## 2026-11-22 — F19a slice 2: aliases and SARIF dependency rows (`feat/f19a-aliases`, unreleased)
+
+osv-scanner and trivy SARIF were recorded with the pinned images instead of assumed. Findings: the package is only in the message text, neither tool names the ecosystem, osv-scanner's SARIF leads with the CVE and lists aliases in `deprecatedIds`. The fingerprint's advisory is one name from the row's own ids (CVE, else GHSA); no run-wide alias graph, so the identity does not depend on which dimensions ran. On the recordings trivy's 8 advisories meet osv-scanner's rows for the same file. Rows with one fingerprint are not merged.
+
+## 2026-11-22 — F19a slice 1: fingerprint (`feat/f19a-fingerprint`, unreleased)
+
+`evidence.json` findings carry `fingerprint` and `fingerprint_basis` beside `id`. Code findings: rule, file, the reported line with whitespace collapsed, occurrence index (GitHub's method); dependency rows with `package`: advisory, ecosystem, name, manifest, version left out. Two decisions taken while building, both narrower than the plan: pip-audit rows use the fixed manifest `python-env` (a venv path is per machine), and secret findings keep the location basis (a hash of the line would be a hash of the secret in a report that is mailed). Slices left, agreed with the user on 2026-11-21: S2 alias map and SARIF dependency rows (trivy, osv-scanner), S3 `decisions.json` and `scan.sh decide` (described in `scan.sh help`), S4 the merged view in evidence and the report, re-render after triage.
+
+## 2026-11-22 — R17 implemented: the plugin in its own folder (`feat/r17-plugin-folder`, unreleased)
+
+The directory's automated checks of 2026-11-05 hold the listing on files that are not the plugin (landing fonts, maintainer scripts, install commands in the docs), because the submission's path is the repository root. The portal's wording says a font or a download-and-run command can be refused for an organization that is not Verified; the account is "Community", with both prerequisites for a Verified request met (user, 2026-11-22). Since any new version restarts the review anyway, R17 was taken before F19a (user decision): `plugin/` holds the two manifests, the icon, the five skills, the edit-check hook (F33b, added after the card was written) and a copy of the licence. Measured in throwaway configs: Claude Code updates an install from 1.21.0 and caches 11 files instead of 148; Codex caches the same 11. The Codex ZIP is unchanged (8 files). Left to the user: a new directory submission with path `plugin` tracking `release`, and the Verified request. Not known until that submission: which holds remain for text inside the skills.
+
+## 2026-11-21 — F26 implemented: filters in the HTML report (PR #56, merged into `dev/post-v1.21.0`)
+
+Search, severity, tool and decision filters as progressive enhancement; one inline script pinned by hash in the page's CSP; a details toggle for the adapter fields. Checked in headless Chrome in CI (`report-browser`, not required), with no npm test dependency. Found while answering a user question: a triage decision attaches by file and line, so dependency findings (no file, no line) stay "not triaged" whatever the triage says. F19a's fingerprint is the fix; noted on that card's plan.
+
+## 2026-11-20 — One draft PR (#54): trust-the-gate, README, F16b S4, F37, F33b, F43b
+
+On the user's request everything open goes under draft PR #54 while the plugin directory review (which tracks `main`) is pending; nothing merges to `main`. `dev/post-v1.21.0` was fast-forwarded to `fix/trust-the-gate` (PR #55 closed with a note, branch kept), then the README architecture and the checkov adapter, then #52 (F37) and #53 (F33b) re-applied on top; their only conflicts were CHANGELOG, CHECKSUMS and the plan logs, resolved as unions. Two integration checks: F33b's `EDIT_CHECK` is accepted by trust-the-gate's config parser (the known names come from the example config, which F33b extended); the README's "plugin carries the five skills only" became "the five skills + an advisory edit hook". CI on #55 had found a macOS-only test bug in `tests/trust-gate.sh` (N2, `/var` vs `/private/var`); fixed. F43b prepared: Codex manifest and the directory ZIP.
+
+## 2026-11-20 — README architecture; lifecycle moved to docs (`docs/readme-architecture`)
+
+On the user's request the README gets an architecture diagram (vendored kit, plugin for Claude Code and Codex, hook wrappers and their integrity check, scanners, run outputs, evidence, skills, Code Scanning), each box checked against the code first. The 42-line lifecycle diagram and the text finding loop moved to `docs/lifecycle.md` and were updated for this branch and `fix/trust-the-gate` (wrappers, config as data, `policy_changes`, `GATE_STRICT`, proposed suppressions, native JSON). README 267 → 250 lines, README-tr 915 → 894. Both diagrams rendered with mermaid-cli to check them.
+
+## 2026-11-17 — Research for F16, F18 and the UI track; four fixes that needed no decision (`fix/f16-silent-zero`)
+
+Three read-only research passes (an independent model, Fable) on prior art and the code. The recommendations and the decisions they leave to the user are in the session report; none is taken here. Fixed now because each is a false-clean or a wrong claim with only one right answer:
+
+- **Non-ASCII paths (F18):** git's default `core.quotepath` quoted `güvenlik/requirements.txt`, so the dimension was skipped as not applicable. `scan.sh` and the pre-commit hook now read paths unquoted; e2e covers it. Paths with spaces are still split in `py_manifests`, `js_dirs`, `changed_targets` and `scan.sh evidence` (which crashes under a root with spaces): F18 slice 1, with a CI OS matrix.
+- **"0 findings" for a dimension with no adapter (F16):** checkov, pip-audit, the JS audit and guarddog write no rows; the report header now names them instead of counting 0, and `evidence.json` warns.
+- **Expired allowlist entries:** `.trivyignore.yaml` expiry is `expired_at`, not `expiredAt`; osv-scanner also accepts `effectiveUntil`. Expired Trivy deferrals passed as undated.
+- **`sakFindingId` claim:** GitHub matches alerts on `primaryLocationLineHash`, not on the kit's id; the spec said otherwise.
+
+## 2026-11-17 — R18 trial: documented; an install.sh bug fixed
+
+The Skills CLI installs the five skills pinned to a tag, with a lockfile; telemetry is on by default. The trial found that `install.sh` deleted through the CLI's `.claude/skills` links. Fixed and covered by e2e; the CLI path is documented with pins and telemetry off.
+
+## 2026-11-17 — F40/F41 recon measured; not shipped
+
+Recon baseline hit@1 13/14, candidate 14/14, the difference coming from a distractor with a flaw of its own. With no measurable gain in verify or recon on `claude-opus-4-8`, F40/F41 text is held. Reopened by a non-ceiling backend (Codex hosts other models, F43) or flaw-free distractors.
+
+## 2026-11-17 — F40/F41: verify is not the gap
+
+12 harder dev twins were added; the baseline got all of them right in three uncached runs. F40/F41 target recon recall, which the deep-review eval does not measure. Next: a recon eval (code in, candidates out) before any F40/F41 text ships.
+
+## 2026-11-17 — F39 measured and implemented (`feat/eval-deep`, unreleased)
+
+The deep-review baseline ran on `claude-opus-4-8` (16/18). The F39 candidate fixed one of the two over-stated cases with no regression in three uncached runs and shipped in three skills; the other case is an open gap. F40/F41 cases are too easy for the baseline to show their value and need harder cases next.
+
+## 2026-11-17 — F42 reviewed; deep-review eval for F39–F41 (`feat/eval-deep`, unreleased)
+
+An independent review of F42 found a crash, URI syntax reaching `kit.sarif`, non-finite confidence written as invalid JSON and a pre-existing merge bug; all fixed with tests, fixture output unchanged. The existing eval measured only triage, so F39–F41 could not be measured; a deep-review sub-eval now exists, keyless parts tested. The baseline run needs a paid API call and waits for the user.
+
+## 2026-11-17 — F42 implemented (`fix/f42-judgment-parser`, unreleased)
+
+The judgment parser now drops a findings row whose location is not a safe repo-relative path, strips control and bidirectional characters from the other cells, and caps cell and file size. Testing found two more defects in the same parser (a U+2028 row split, a crash on a non-ASCII digit), fixed with it. Output for the existing fixtures is unchanged. Next in slot 8e: F39–F41, which need their F12 dev cases.
+
+## 2026-11-17 — F38 implemented (`feat/f38-answer-only`, unreleased)
+
+All five skills carry one identical section: a question is answered in the conversation with the evidence bar and nothing is written; the full flow runs only when a scan, triage, audit or review is asked for. The descriptions no longer say "with Claude" (F43). e2e 322/0, unit 262/0. Next in slot 8e: F42, then F39–F41 with their F12 dev cases.
+
+## 2026-11-17 — Other agent hosts; F43
+
+On the user's request, Codex, Hermes Agent, OpenClaw and the DeepSeek CLIs were assessed as hosts for the kit. All four read `SKILL.md` folders, so the skills need no fork; only packaging differs per host.
+
+- **Codex, first:** it installs the current plugin unchanged, from `.claude-plugin/marketplace.json`, and loads all five skills (tried with `codex-cli 0.145.0`, details in F43). Its hook payload and exit-code contract match Claude Code's. Card **F43**, slot 8f.
+- **DeepSeek CLIs:** Deep Code CLI reads skills from `~/.agents/skills/`, the path Codex uses; DeepSeek Harness has its own plugin API, in preview. No card. R18's trial records whether the Skills CLI covers these paths.
+- **OpenClaw, Hermes:** both are personal assistants, not repo tools, and the kit's core use (scan a repo, gate a push) fits them poorly. ClawHub publishes everything as MIT-0. Hermes plugins are Python. No card without a request from a user of either.
+
+Only Codex was tried; the others were read from their docs, and their formats were not re-verified beyond that.
+
+## 2026-11-17 — Cloudflare skill re-read from a clone; F38–F42 and R18
+
+The 2026-10-11 comparison (local note `docs/compare/cloudflare-security-audit-skill.local.md`) read upstream's documents on the web. On the user's request the repo was cloned and read in full at `c1c8a8c`, including `validate-findings.cjs`, `validate-coverage-ledger.cjs` and their tests, against `main @ af39eac` (v1.21.0, plugin released). Upstream has no commit after 2026-09-14. Nothing was installed or run, and upstream's tests were not executed.
+
+**What did not change:** the first round's conclusion. The two projects share the judgment principles (an evidence chain from entry to sink, disprove by default, a missing second layer is not a finding, a clean pass is not proof) and share no code: upstream has no scanner, hook, installer or CI, only skill text, a JSON schema and two validators. F27, F28 and R14 stand. Still not taken: executing target code in a sandbox, multi-wave agent orchestration as the default, JSON as the write source, the native/kernel domain.
+
+**What the first round did not cover, now cards (slot 8e):**
+
+- **F38** answer-only mode: a skill loaded for a question writes nothing. From upstream's last commit; matters more now that the plugin loads skills by description.
+- **F39** severity anchors for judgment findings, capped by the impact the evidence shows.
+- **F40** six classes `sec-ai-review` does not name: memory poisoning, context bleed, provenance confusion, approval binding, tool schema vs dispatcher, MCP tool identity.
+- **F41** `sec-sast-deep`: every route to a state change compared for an equal guard; a feature-abuse class (export, import, search oracle, enumeration). First slice of R14.
+- **F42** the judgment parser accepts any path from the findings table (`lib/evidence.py:196`) and passes it to SARIF (`lib/kit_sarif.py:77`). A code-read finding; first slice of the F19b validator.
+- **R18** trial: the kit's `skills/<name>/SKILL.md` layout is what `npx skills add` expects.
+
+**Where the kit is ahead, checked in the clone:** upstream's four workflow files (`SKILL.md`, `RECONNAISSANCE.md`, `HUNTING.md`, `VALIDATION-AND-REPORTING.md`) have no rule that text in the reviewed repo is not an instruction (F35); the companion files were not searched for one. Upstream's tests cover the validators only; it has no measurement of the skill's decisions (F12). Neither point goes into public comparison text without a re-check at the time.
+
+**Open PRs touching the same tables:** #52 (F37) and #53 (F33b) were open when this was written; the priority table and this log will need a manual merge with whichever lands second.
+## 2026-11-05 — directory review; `release` branch (F37); R17 deferred
+
+The directory took `af39eac` (main after the PRIVACY.md merge) as a new version and put it back in review: every merge to `main` was a new version, and the credential-word hold (R17) sends each one to a person. The portal fixes the repo and path per submission; only the tracked branch or tag can change, and not during a review. So:
+- **F37:** a `release` branch that only `release.sh final` moves, by fast-forward. Created at `af39eac` with ruleset `release-protection` (admin bypass, ff-only). Auto-publish is off. The user switches the tracked branch to `release` once the review ends; until then, PRs wait unmerged.
+- **R17** needs a new submission (the path is fixed), so it is deferred.
+- **F33b** follows F37 in v1.22.0.
+## 2026-11-05 — F33b edit check implemented (unreleased)
+
+After each agent Edit/Write, the plugin's PostToolUse hook runs the repo's vendored `scan.sh edit` on that file: one pinned-semgrep pass, advisory, no record. Status and tests are in the F33 card. With it, the plugin carries a hook for the first time. PRIVACY.md, README en/tr, data-flow, threat model, usage and the comparison row were updated. The comparison row changed from "planned" to "advisory, no fix loop". It goes out in v1.22.0 with F37. Branch `feat/f33b-edit-check` is held unmerged until the directory review ends.
+
 ## 2026-11-04 — directory submission: listing icon, plugin folder planned (R17)
 
 The developer portal validated `main @ 7770088`: 7 checks passed, 16 warnings and 16 policy holds, all from the plugin root being the repo root (classification in the R17 card). The user decided to submit as is and leave the holds to the reviewer (A), and to move the plugin into its own folder later (B → R17, P2). The listing icon was the only real gap; the portal takes it once, at the first save, so `.claude-plugin/icon.png` (drawn by `scripts/make_icon.py`, checked by e2e) went to `main` before the submission.

@@ -179,11 +179,15 @@ ok "fetched @ $KIT_REF ($SHA)"
 # --- SHA verification (Layer 0 hardening): ENFORCE the pin, don't just record it. ---
 # Runs BEFORE the vendor step (the rsync --delete below would remove the old .kit-version).
 # (a) --expect / KIT_EXPECT_SHA: refuse if the resolved SHA isn't the one you reviewed.
+# Exact match only (NEW-2): a prefix test let `--expect=a` accept one commit in sixteen.
 if [ -n "$EXPECT_SHA" ]; then
-  case "$SHA" in
-    "$EXPECT_SHA"*) ok "SHA matches --expect ($EXPECT_SHA)" ;;
-    *) die "SHA mismatch: '$KIT_REF' resolved to $SHA but --expect was $EXPECT_SHA. Refusing (possible tag repoint / wrong ref)." ;;
+  case "$EXPECT_SHA" in
+    *[!0-9a-fA-F]*|"") die "--expect=$EXPECT_SHA is not a commit id (hex)" ;;
   esac
+  [ "${#EXPECT_SHA}" -eq "${#SHA}" ] \
+    || die "--expect needs the full commit id (${#SHA} hex characters), not a prefix: '$KIT_REF' resolved to $SHA"
+  if [ "$(printf '%s' "$EXPECT_SHA" | tr 'A-F' 'a-f')" = "$SHA" ]; then ok "SHA matches --expect ($SHA)"
+  else die "SHA mismatch: '$KIT_REF' resolved to $SHA but --expect was $EXPECT_SHA. Refusing (possible tag repoint / wrong ref)."; fi
 fi
 # (b) Tag-repoint guard: re-vendoring the SAME ref already pinned, but it now resolves to a
 #     DIFFERENT commit -> the tag/branch MOVED. Refuse unless explicitly allowed.

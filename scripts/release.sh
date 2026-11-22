@@ -8,7 +8,8 @@
 # Usage:
 #   scripts/release.sh preflight            # run all safety checks, tag nothing
 #   scripts/release.sh rc [X.Y.Z]           # cut next vX.Y.Z-rc.N (X.Y.Z inferred from CHANGELOG if omitted)
-#   scripts/release.sh final X.Y.Z          # cut final vX.Y.Z on the last tested RC commit
+#   scripts/release.sh final X.Y.Z          # cut final vX.Y.Z on the last tested RC commit, then
+#                                           # fast-forward origin/release to it (RELEASE_BRANCH)
 # Options:
 #   --yes         don't prompt before pushing tags
 #   --skip-e2e    skip tests/e2e.sh in preflight (still runs scan.sh verify)
@@ -30,6 +31,10 @@ cd "$KIT_DIR"
 GH="${RELEASE_GH:-gh}"   # the gh binary; tests point it at a missing path to simulate "no gh"
 REQUIRED_CHECKS="${RELEASE_REQUIRED_CHECKS:-shellcheck pytest e2e plugin checksums self-audit}"
 MAIN_BRANCH="main"
+# The branch the plugin directory tracks (F37): only a final release moves it, by fast-forward to
+# the tagged commit, so merges to main between releases never reach the listing. A fork without
+# that branch on origin is told so and keeps releasing; RELEASE_BRANCH= turns it off.
+RELEASE_BRANCH="${RELEASE_BRANCH-release}"
 
 say(){  printf '\033[36m[release]\033[0m %s\n' "$*"; }
 ok(){   printf '\033[32m[release] OK\033[0m %s\n' "$*"; }
@@ -45,7 +50,7 @@ for a in "$@"; do
     --no-gh)    NO_GH=1 ;;
     --stable)   STABLE=1 ;;
     --ci-unverified=*) CI_UNVERIFIED="${a#--ci-unverified=}"; CI_UNVERIFIED_SET=1 ;;
-    -h|--help)  sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,19p' "$0"; exit 0 ;;
     -*)         die "unknown option: $a" ;;
     *)          ARGS+=("$a") ;;
   esac
@@ -65,19 +70,24 @@ require_changelog_version(){
 # The plugin's version pins plugin users to a release, so it must BE that release: a stale
 # plugin.json would ship new skills under an old version (or never reach users at all).
 require_plugin_version(){
-  local f=".claude-plugin/plugin.json" v
-  [ -f "$f" ] || return 0
-  v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
-  [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
+  local f v
+  # Both hosts read their own manifest in the plugin folder (R17): Claude Code .claude-plugin/,
+  # Codex .codex-plugin/ (F43). The Claude manifest must exist: a moved file is not a passed check.
+  [ -f plugin/.claude-plugin/plugin.json ] || die "plugin/.claude-plugin/plugin.json is missing"
+  for f in plugin/.claude-plugin/plugin.json plugin/.codex-plugin/plugin.json; do
+    [ -f "$f" ] || continue
+    v="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    [ "$v" = "$1" ] || die "$f has version '${v:-none}', expected '$1' — bump it with the CHANGELOG"
+  done
 }
 
 # install.sh removes a skill copy only if it is provably the kit's, and a RELEASED template is one of
 # the proofs: the templates being released must be on record, or upgrading users keep stale copies.
 require_skill_sums(){
   local f n s
-  for f in skills/*/SKILL.md; do
+  for f in plugin/skills/*/SKILL.md; do
     [ -f "$f" ] || continue
-    n="${f#skills/}"; n="${n%/SKILL.md}"; s="$(cksum < "$f" | awk '{print $1"-"$2}')"
+    n="${f#plugin/skills/}"; n="${n%/SKILL.md}"; s="$(cksum < "$f" | awk '{print $1"-"$2}')"
     grep -qx "$n $s" lib/released-skills.sums 2>/dev/null \
       || die "lib/released-skills.sums lacks the current $n template — run scripts/skill-sums.sh and commit"
   done
@@ -86,8 +96,10 @@ require_skill_sums(){
 # Every release says what a consumer must do on upgrade, even if that is nothing (F25):
 # bootstrap.sh --check shows these sections to someone about to update. "- None." is a valid body;
 # a missing section is not, because then nobody decided.
+# A here-string, not a pipe: under pipefail, `grep -q` exits at the first match and a long section's
+# writer dies of SIGPIPE, so the pipeline reports "not found" (it did, once [Unreleased] grew).
 require_upgrade_notes(){
-  release_notes "$1" | grep -q '^### Upgrade notes' \
+  grep -q '^### Upgrade notes' <<<"$(release_notes "$1")" \
     || die "no '### Upgrade notes' in [$1] — add one (write '- None.' if nothing changes for consumers) before cutting a tag"
 }
 
@@ -195,6 +207,18 @@ cmd_rc(){
   say "NEXT: dogfood $t in real project(s) per RELEASING.md, then:  scripts/release.sh final $ver"
 }
 
+# Checked BEFORE the tag, so a release branch that cannot fast-forward stops the release with
+# nothing pushed. Prints the branch's commit, or nothing when there is no such branch to move.
+release_branch_base(){
+  local head="$1" base
+  [ -n "$RELEASE_BRANCH" ] || return 0
+  git fetch -q origin "$RELEASE_BRANCH" 2>/dev/null || { warn "no origin/$RELEASE_BRANCH — not moving it (the plugin directory tracks it; create it to use it)"; return 0; }
+  base="$(git rev-parse "origin/$RELEASE_BRANCH")"
+  git merge-base --is-ancestor "$base" "$head" \
+    || die "origin/$RELEASE_BRANCH (${base:0:12}) is not an ancestor of ${head:0:12} — it cannot fast-forward; find out who moved it before releasing"
+  printf '%s' "$base"
+}
+
 cmd_final(){
   local ver="${ARGS[1]:-}"
   [ -n "$ver" ] || die "usage: scripts/release.sh final X.Y.Z"
@@ -209,7 +233,9 @@ cmd_final(){
   preflight
   local head rc_sha; head="$(git rev-parse HEAD)"; rc_sha="$(git rev-parse "${last_rc}^{commit}")"
   [ "$head" = "$rc_sha" ] || die "HEAD (${head:0:12}) != $last_rc (${rc_sha:0:12}) — promote the TESTED commit (git checkout $rc_sha) or cut a new RC"
+  local rel_base; rel_base="$(release_branch_base "$head")"
   say "will tag v$ver (final) at ${head:0:12} == $last_rc and push to origin"
+  [ -z "$rel_base" ] || say "and fast-forward $RELEASE_BRANCH ${rel_base:0:12} -> ${head:0:12}"
   [ "$NO_GH" = 1 ] || say "and create the GitHub 'latest' release from the CHANGELOG"
   confirm "Promote v$ver (from tested $last_rc)?"
   if [ -n "$CI_UNVERIFIED" ]; then
@@ -219,6 +245,11 @@ cmd_final(){
   fi
   git push origin "v$ver"
   ok "pushed tag v$ver"
+  if [ -n "$rel_base" ]; then
+    git push origin "$head:refs/heads/$RELEASE_BRANCH" \
+      && ok "moved $RELEASE_BRANCH to v$ver" \
+      || warn "could not move $RELEASE_BRANCH — the tag is pushed; run:  git push origin v$ver^{commit}:refs/heads/$RELEASE_BRANCH"
+  fi
   if [ "$NO_GH" = 0 ] && have "$GH"; then
     local notes; notes="$(release_notes "$ver")"
     [ -n "$notes" ] || notes="Release v$ver. See CHANGELOG.md."
@@ -232,6 +263,6 @@ case "$CMD" in
   preflight) preflight; ok "preflight passed" ;;
   rc)        cmd_rc ;;
   final)     cmd_final ;;
-  ""|help)   sed -n '2,18p' "$0" ;;
+  ""|help)   sed -n '2,19p' "$0" ;;
   *)         die "unknown command: '$CMD' (preflight|rc|final)" ;;
 esac

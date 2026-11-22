@@ -27,7 +27,7 @@ bir kanit cubuguyla ayirir.
 Reponun kokunden (calistirmadan once script'i oku):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh -o bootstrap.sh && less bootstrap.sh
-bash bootstrap.sh v1.21.0 --scan      # pinli kiti vendor et, hook'lari bagla, ilk taramayi kos
+bash bootstrap.sh v1.22.0 --scan      # pinli kiti vendor et, hook'lari bagla, ilk taramayi kos
 ```
 Sonra Claude Code'da: `/sec-triage`. git ve bash yeterli; Docker ve `uv` daha fazla boyut acar,
 eksik olan yuksek sesle atlanir ([Gereksinimler](#gereksinimler-hangisi-yoksa-o-boyut-atlanir)).
@@ -42,61 +42,67 @@ eksik olan yuksek sesle atlanir ([Gereksinimler](#gereksinimler-hangisi-yoksa-o-
 |---|---|
 | **Taramalar** (`scan.sh`) | secret (gitleaks), SAST (semgrep, stack'e gore), bagimlilik CVE (pip-audit, npm/pnpm/yarn), IaC (checkov), container/fs (trivy), SBOM (syft). Istege bagli: cok-ekosistem CVE (`osv`), kotu niyetli/typosquat paket (`guarddog`), GitHub Actions (`zizmor`) ve kurulum-oncesi paket kontrolu (`pkgcheck`, agent hook'u olarak da) |
 | **Kapi** | pre-commit ve pre-push hook'lari. Her kosu tek bir kapanis ozetiyle biter: boyut basina `pass`, `findings`, `error`, `skipped`, `indeterminate` ya da `not_applicable`, ayrica `summary.json` |
-| **Yargi** (Claude Code skill'leri) | `/sec-triage` (gercek mi FP mi, sonra fix ya da allowlist), `/sec-sast-deep` (authz/IDOR, is mantigi), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (hepsi, reponun sahip olduguna gore). [Claude Code plugin'i](#skillleri-claude-code-plugini-olarak-kur) olarak da |
+| **Yargi** (Claude Code ve Codex icin skill'ler) | `/sec-triage` (gercek mi FP mi, sonra bir fix ya da onerilen bir allowlist girdisi), `/sec-sast-deep` (authz/IDOR, is mantigi), `/sec-ai-review` (OWASP LLM Top 10), `/sec-threat-model` (STRIDE), `/sec-audit` (hepsi, reponun sahip olduguna gore). [Claude Code plugin'i](#skillleri-claude-code-plugini-olarak-kur) olarak da |
 | **Guven** | araclar surum ve imaj digest'iyle pinli, her push'tan once kontrol edilen bir `CHECKSUMS` manifest'i, tarayicilar repoyu salt-okunur okur, telemetri yok. Makineden ne cikar: [docs/data-flow.md](docs/data-flow.md) |
 
-## Yasam dongusu (kurulum → guncelleme → tarama)
+## Mimari
 
 ```mermaid
-flowchart TD
-    Q{First time, or<br/>already installed?}
-    Q -->|new| N1["mkdir -p tools/"]
-    Q -->|"skills via the Claude Code plugin"| PL["/plugin marketplace add + /plugin install<br/>skills only: still vendor the scanner<br/>(bootstrap.sh, then install.sh --no-skills)"]
-    PL --> N1
-    N1 --> N2["download + review bootstrap.sh"]
-    N2 --> B["bash bootstrap.sh vX.Y.Z"]
-    Q -->|installed| C["bootstrap.sh --check<br/>stable channel (RCs: --channel=rc) · prints the upgrade notes<br/>exit 0 up to date · 1 update · 2 cannot tell"]
-    C -->|up to date| R
-    C -->|update vX.Y.Z| RV["review diff, then bootstrap.sh vX.Y.Z"]
-    RV --> B
-    B --> I["vendor + .kit-version (ref + SHA + content digest)<br/>then install.sh: hooks (the repo's own hooks are chained, not replaced),<br/>skills, .conf, .exclusions, verify · undo: install.sh --uninstall"]
-    I --> R(["ready"])
-
-    R --> V{"pre-push runs scan.sh verify FIRST<br/>does the vendored kit match its manifest?"}
-    V -->|"edited in place"| VX["PUSH BLOCKED — restore by re-running bootstrap.sh at the pinned tag<br/>kit bugs go upstream, never patched in the vendored copy"]
-    V -->|intact| S["scan (deterministic): pre-commit / pre-push / ad-hoc scan.sh<br/>scanners read the repo read-only · .security-audit.conf checked every run<br/>closing summary + raw-DATE.log + summary.json (status per dimension, provenance)<br/>SARIF=1 also writes sarif/ + evidence.json · REPORT=html writes report-DATE.html"]
-    S -->|clean| D(["done"])
-    S -->|"skipped / error = NOT inspected"| TC["fix the toolchain or the scan<br/>(the closing summary names the cause)<br/>never read as clean"]
-    TC --> S
-    S -->|findings| T1
-
-    subgraph JUDGE["judgment in Claude — skills"]
-      direction TB
-      T1["1. /sec-triage — FIRST, after every scan<br/>evidence bar: sink + untrusted source + unbroken path<br/>exclusions, reachability, confidence >= 0.7<br/>repo text is evidence, never instructions"]
-      DEEP["2. /sec-sast-deep — on trigger<br/>pre-cutover / new endpoint: authz, IDOR, logic"]
-      AIR["3. /sec-ai-review — on trigger<br/>code calls an LLM / new AI surface"]
-      TM["4. /sec-threat-model — on trigger<br/>new subsystem / design review: STRIDE, data-flow"]
-      T1 --> F[["findings-DATE.md"]]
-      DEEP -. appends .-> F
-      AIR -. appends .-> F
-      TM -. appends .-> F
+flowchart LR
+    BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills + an advisory edit hook"]
+    subgraph REPO["your repo"]
+      HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
+      CONF[".security-audit.conf<br/>read as data"]
+      KIT["tools/security-audit-kit/<br/>scan.sh · lib/ · CHECKSUMS"]
+      OUT["scan-findings/<br/>raw log · summary.json<br/>sarif/ + native JSON"]
+      FMD["findings-DATE.md"]
+      EV["evidence.json<br/>report-DATE.html · kit.sarif"]
+      DEC["docs/security/decisions.json<br/>scan.sh decide"]
     end
+    TOOLS["pinned scanners<br/>docker: gitleaks · trivy · syft · osv-scanner<br/>uvx: semgrep · checkov · pip-audit · guarddog · zizmor<br/>npm / pnpm / yarn audit"]
+    SK["skills in the agent<br/>sec-triage · sec-sast-deep · sec-ai-review<br/>sec-threat-model · sec-audit"]
+    CS[["GitHub Code Scanning<br/>your CI uploads sarif/"]]
 
-    F -->|FP / excluded| AL["allowlist EVERY path that reports it<br/>gitleaks / nosemgrep / pip-audit + osv + trivy<br/>or .security-exclusions.md — each with an expiry"]
-    F -->|REAL| FX["fix now (direct? transitive? parent range?),<br/>OR promote to security-followups registry"]
-    AL --> P["PROVE IT: scan.sh allowlist + re-run that dimension"]
-    FX --> P
-    P --> S
-    F -. "SARIF=1: judgment findings become sarif/kit.sarif" .-> CS[["GitHub Code Scanning"]]
+    BS --> HK
+    HK -- "integrity check, then" --> KIT
+    CONF --> KIT
+    KIT --> TOOLS --> OUT
+    OUT -- "lib/evidence.py" --> EV
+    EV --> CS
+    PLG --> SK
+    BS -. "no plugin: install.sh<br/>copies the skills" .-> SK
+    OUT --> SK
+    SK --> FMD
+    FMD -- "parsed" --> EV
+    DEC -- "shown, never gates" --> EV
 ```
 
-Skill sirasi: **`/sec-triage` once kosar** (her bulgulu taramadan sonra; `findings-DATE.md`
-yazar, FP→allowlist/exclusions vs GERCEK→fix/takip ayirir). **`/sec-sast-deep`** ve
-**`/sec-ai-review`** daha derin, tetik-bazli pas; ciktilari ayni dosyaya eklenir.
+- **Tarayici vendor'lanir ve pinlenir.** `bootstrap.sh` kiti `CHECKSUMS` ile birlikte
+  `tools/security-audit-kit/` altina koyar; her hook wrapper'i bir sey calistirmadan once kiti
+  kurulumda kaydedilen manifest'le karsilastirir, yani bir dal kendisini yargilayan seyi degistiremez.
+- **Plugin skill'leri ve tavsiye niteliginde tek bir hook'u tasir, tarayiciyi asla.** Claude Code'da ya
+  da Codex'te skill'ler reponun kendi vendor'lanmis `scan.sh`'ini kullanir, duzenleme kontrolu de ajanin
+  az once degistirdigi dosyada `scan.sh edit` kosar; plugin yoksa `install.sh` skill'leri
+  `.claude/skills/`'e kopyalar.
+- **Kosu basina tek kayit.** `summary.json` her boyutun ne yaptigini soyler; `SARIF=1` ile araclarin
+  SARIF ve yerel JSON ciktilari `evidence.json`'a, HTML rapora ve skill'lerin yargi bulgularini tasiyan
+  `kit.sarif`'e donusur. Her boyutun geride ne biraktigi: [kanit matrisi](docs/evidence-matrix.md)
+  (Ingilizce).
+- **Yargi ajanda yapilir ve yazili kalir.** Skill'ler `findings-DATE.md` yazar; ayni kayda geri
+  ayristirilir. Onerdikleri bir bastirma ancak siz onayladiktan sonra yazilir.
+- **Kisinin karari ayri bir kayitta tutulur.** `scan.sh decide`, bulgunun parmak izine bagli olarak
+  `docs/security/decisions.json`'a yazar; parmak izi satir kaymasina ve advisory'nin baska adla
+  raporlanmasina dayanir. Rapor karari bulgunun yaninda, filtrelenebilir ve suresi gecince
+  isaretli gosterir. Bir push'un engelini asla kaldirmaz.
 
-Guncelleme **acik (manuel)**: `--check` yalniz raporlar (salt-okunur, kurmaz);
-`bootstrap.sh <tag>` re-vendor + install kosar. Hicbir sey upstream'i otomatik cekmez —
-tag'e pinle, diff'i incele, yukselt.
+## Yasam dongusu
+
+`bootstrap.sh` ile kur (pinli, once incele); her commit staged taramayi, her push `verify`'i ve tam
+taramayi kosar; bir bulgu `/sec-triage`'a gider ve gercek ile FP'yi ayirir; bir fix ya da onaylanmis,
+suresi olan bir bastirma, o boyut yeniden kosularak kanitlanir. Guncellemeler aciktir:
+`bootstrap.sh --check` raporlar, `bootstrap.sh <tag>` yeniden vendor'lar. Diyagram ve metin olarak
+tam akis: **[docs/lifecycle.md](docs/lifecycle.md)** (Ingilizce).
 
 ## Kurulum (onerilen): bu repo'dan pinli bootstrap
 
@@ -108,20 +114,20 @@ vendor'lar, sonra `install.sh`'i kosar. Hedef repo kokunden calistir:
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Bir tag'e pinleyerek kos:
-bash bootstrap.sh v1.21.0
-bash bootstrap.sh v1.21.0 --scan          # kurulumdan sonra tam tarama da kos
-bash bootstrap.sh v1.21.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
+bash bootstrap.sh v1.22.0
+bash bootstrap.sh v1.22.0 --scan          # kurulumdan sonra tam tarama da kos
+bash bootstrap.sh v1.22.0 --expect=<sha>  # pini dayat: ref baska commit'e cozulurse reddet
 # <sha>, tag'in isaret ettigi COMMIT'tir. Surum tag'leri annotated oldugu icin `git rev-parse <tag>`
 # sana tag NESNESINI verir ve --expect bunu reddeder. Commit'i acikca iste:
-#   git rev-parse v1.21.0^{commit}          # bu repo'nun bir klonunda
-#   gh api repos/<owner>/<repo>/git/refs/tags/v1.21.0 --jq .object.sha   # type=tag ise cozmen gerekir
+#   git rev-parse v1.22.0^{commit}          # bu repo'nun bir klonunda
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.22.0 --jq .object.sha   # type=tag ise cozmen gerekir
 ```
 
 > `bootstrap.sh` icindeki `KIT_REPO` varsayilan olarak bu repo'ya isaret eder. Fork'tan
-> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.21.0`.
+> vendor'lamak icin override et: `KIT_REPO=https://… bash bootstrap.sh v1.22.0`.
 
 `install.sh` (bootstrap'in cagirdigi): prerequisite'leri raporlar -> `core.hooksPath`'i
-kitin hooks klasorune isaretler -> `sec-triage` + `sec-sast-deep` skill'lerini
+`.git/security-audit-hooks/` icindeki sarmalayicilara isaretler (once butunluk, sonra kitin hook'u) -> `sec-triage` + `sec-sast-deep` skill'lerini
 `.claude/skills/`'e kopyalar. Idempotent, tekrar kosulabilir.
 
 ## Skill'leri Claude Code plugin'i olarak kur
@@ -149,7 +155,7 @@ Bir oturum plugin'leri basladiginda yukler. Terminalden kurduktan sonra **yeni**
 VS Code eklentisinde once Komut Paleti'nden (`Cmd/Ctrl+Shift+P`) **Developer: Reload Window**'u
 calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
 
-- **Bir surume pinle:** `/plugin marketplace add boraeresici/security-audit-kit#v1.21.0`. Plugin'in
+- **Bir surume pinle:** `/plugin marketplace add boraeresici/security-audit-kit#v1.22.0`. Plugin'in
   `version`'i kitin surumlerini izler. Guncellemeler, bu marketplace icin otomatik guncellemeyi
   acmadikca elle yapilir (`/plugin` → Installed → Update).
 - **Tarayiciyi skill'lerin ikinci bir kopyasi olmadan vendor'la:** `bash bootstrap.sh <tag> --no-skills`
@@ -161,6 +167,8 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
   skill'leri yeniden kopyalar.
 - **Skill adlari:** plugin skill'leri ad alaniyla gelir: `/security-audit-kit:sec-triage`,
   `/security-audit-kit:sec-audit` ve digerleri.
+- **Codex:** ayni plugin Codex'e `codex plugin marketplace add` ve `codex plugin add` ile kurulur;
+  bkz. [the skills in Codex](docs/install.md#the-skills-in-codex) (Ingilizce).
 - **Plugin'in asla yapmadiklari:** tarayiciyi indirmez, hook'lara ya da `.security-audit.conf`'a
   dokunmaz, `scan.sh`'in kendi kopyasini calistirmaz. Vendor'lanmis tarayici bulamayan bir skill
   bunu soyler ve nasil eklenecegini anlatir.
@@ -169,8 +177,15 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
   notes'u yazar, `bootstrap.sh <tag>`'i onerir. Pin ekibin kararidir; hook'lari ve CI'lari ayni
   surumu calistirir.
 
-Plugin hook tasimaz. Bir plugin'in hook'lari senin tum yetkilerinle calisirdi. Kitin git hook'lari
-`install.sh`'ten gelir; agent hook'u istege baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
+**Duzenleme kontrolu (plugin'in tek hook'u).** Ajan her Edit ya da Write yaptiginda plugin, repodaki
+vendor edilmis tarayiciyi yalnizca o dosyada calistirir (`scan.sh edit`, semgrep) ve yeni bulgulari
+ajanin baglamina ekler. Asla engellemez, tarama kaydi yazmaz. Temiz bir dosya hicbir sey eklemez.
+Kontrol edemedigi bir dosya (uvx yok, sure butcesi asildi, tarayici hatasi, vendor edilmis kit yok)
+**kontrol edilmedi** diye soylenir, asla temiz denmez. Her bulgu ve her sebep oturumda bir kez
+soylenir. Plugin hook'u da git hook'lari gibi senin yetkilerinle calisir; okunabilir bir script'tir:
+[`plugin/hooks/post-edit-check.sh`](plugin/hooks/post-edit-check.sh). Kapatmak icin `.security-audit.conf`'a
+`EDIT_CHECK=0`. Kitin git hook'lari yine `install.sh`'ten gelir; kurulum oncesi agent hook'u istege
+baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
 surum itibariyla herkese acik listelenmeden once kendi projelerin icin.
 
 ## Diger kurulum yollari
@@ -238,7 +253,7 @@ Zaten [pre-commit](https://pre-commit.com) kullaniyorsan, kitin git hook'lari ye
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.21.0          # bir tag'e pinle
+  rev: v1.22.0          # bir tag'e pinle
   hooks:
     - id: sec-staged   # her commit: staged-secret taramasi
     - id: sec-deps     # bagimlilik manifesti degisince: CVE audit
@@ -253,8 +268,11 @@ pre-commit install --hook-type pre-push    # sec-all
 `core.hooksPath`, pre-commit framework. Bulduklarini adlariyla yazar ve zincirler: `core.hooksPath`,
 `.git/security-audit-hooks/` icinde uretilen sarmalayicilari gosterir; bunlar once kitin hook'unu,
 sonra repo'nun kendi hook'unu ayni argumanlar ve stdin ile calistirir. Senin hook'un basarisiz
-olursa commit yine bloklanir. Hic hook'u olmayan repo, soru sormadan dogrudan kitin hooks dizinini
-alir.
+olursa commit yine bloklanir. Hic hook'u olmayan repo da soru sormadan ayni sarmalayicilari alir:
+hook'lar asla vendor edilmis agactan calismaz (checkout edilen bir branch oraya hook ekleyebilir ya da
+birini degistirebilir). Her sarmalayici once kiti kurulumda kaydedilen manifest'e karsi kontrol eder,
+farkliysa calistirmaz; incelenmis bir kit guncellemesinden sonra kabul etmek icin `install.sh`'i
+yeniden kostur (bootstrap bunu yapar).
 
 **Worktree'ler** tek bir git config'i paylasir, yani bir `core.hooksPath` hepsine gecerlidir. Var
 olmayan bir dizini gosteren hooksPath, git'in **hicbir hook'u sessizce calistirmamasina** yol acar:
@@ -310,9 +328,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
    # vendored version : v1.19.1
-   # latest tag       : v1.21.0
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.21.0
-   # upgrade notes v1.21.0 -> v1.21.0 (do these when you update):
+   # latest tag       : v1.22.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.22.0
+   # upgrade notes v1.21.0 -> v1.22.0 (do these when you update):
    #   [1.20.0]
    #     Read the first three before updating: they change what scripts that read the kit's output see.
    #     - **`summary.json` schema 2 (breaking for parsers of `status`).** The value "fail" is gone: ...
@@ -328,9 +346,9 @@ yani "upstream degisti" demez. Iki yolla ogrenirsin:
 **Guncellemeyi uygula** (idempotent — vendor kopyayi ust-yazar,
 `.security-audit.conf`'unu korur):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.21.0   # yeni pinli tag
+bash tools/security-audit-kit/bootstrap.sh v1.22.0   # yeni pinli tag
 git diff -- tools/security-audit-kit                 # ne degisti, gozden gecir
-git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.21.0'e yukselt"
+git add tools/security-audit-kit && git commit -m "chore(sec): security-audit-kit v1.22.0'e yukselt"
 ```
 Commit'lenen `.kit-version` (ref + SHA + icerik ozeti) takimin hangi pinli surumu kullandiginin
 ortak kaydidir ve `--check`'in bir sonraki sefer karsilastiracagi referanstir. Ucuncu alan pini
@@ -422,6 +440,7 @@ bash tools/security-audit-kit/scan.sh doctor     # toolchain, pinler, tespit edi
 bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a karsi dogrula (butunluk)
 bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
 bash tools/security-audit-kit/scan.sh report     # tek dosyalik HTML raporu uret
+bash tools/security-audit-kit/scan.sh decide     # bir bulgu hakkinda kisinin kararini kaydet
 bash tools/security-audit-kit/scan.sh help       # komutlar, gate etiketleri, onkosullar, `all`'un disinda kalanlar
 ```
 
@@ -566,25 +585,6 @@ bunlarin hicbiri o 18 pakette **atesle(me)di**. Geri kalan her sey not olarak ya
   degistirir, `PKGCHECK_CACHE=off` cache'i atlar. Yarim yazilmis bir kayit cache'te yok sayilir;
   INDETERMINATE sonuc hic saklanmaz. `scan.sh doctor`
   hook'un bagli olup olmadigini, cache'in yerini ve kac kuralin blokladigini yazar.
-
-## Bulgu dongusu (uctan uca)
-
-```
-her commit  --(pre-commit)-->  scan.sh staged  (+ manifest degistiyse deps)
-PR oncesi   --(pre-push)----->  scan.sh verify   (butunluk: elle duzenlenmis vendor kopyasi push'u bloklar)
-                           \-->  scan.sh all
-skipped/error --> DENETLENMEDI: toolchain'i ya da taramayi duzelt (kapanis ozeti nedeni soyler)
-bulgu       --> Claude'da /sec-triage --> docs/security/scan-findings/findings-YYYY-MM-DD.md
-                                          |- FP    -> raporlayan HER yolu allowlist'le
-                                          |           (.gitleaks.toml / nosemgrep /
-                                          |            .pip-audit-ignore + osv-scanner.toml + .trivyignore.yaml)
-                                          |           + her girdiye bir son kullanma tarihi
-                                          |- GERCEK -> fix VEYA takip-listesi entry
-                                          v
-                                         KANITLA: scan.sh allowlist  (suresi dolmus? yol bosluklari?)
-                                                  o boyutu temiz olana kadar yeniden kos
-                                         kosulmamis bir bastirma, kosulmamis bir fix gibi, bir hipotezdir
-```
 
 ## Kendi kurallarin — `semgrep-rules/` + bir `.gitleaks.toml` girdisi
 
@@ -821,7 +821,7 @@ secilen seti yazar. Ozellestirme icin proje-basina bir dosya:
    # : "${PY_VENV:=/opt/venvs/myapp}"      # py-deps: repo disindaki bir venv'i denetle (asagi bak)
    # : "${SEMGREP_CONFIGS:=--config p/python --config p/react ...}"  # set degil = stack-auto; override icin set et
    ```
-3. `scan.sh` bunu otomatik source eder.
+3. `scan.sh` bunu otomatik okur (veri olarak; asla calistirmaz).
 
 **`js-deps` dizinini sansa gore degil, lockfile'a gore secer.** Tracked her `package.json`
 degerlendirilir; vendor yollari (`JS_SKIP_RE`: `node_modules`, `vendor`, `static`, `assets`,
@@ -845,9 +845,11 @@ de okunabilir manifest varsa — ornegin yalin bir `pyproject.toml` — boyut **
 kodu 3) doner: bloklamaz, pass sayilmaz ve kosu bunu yuksek sesle soyler. `summary.json` bunu
 `"status": "indeterminate"` olarak kaydeder.
 
-**Config bir koddur.** `.security-audit.conf` bash tarafindan source edilir; yani her taramada ve
-her hook'ta senin yetkilerinle calisir. Bu dosyadaki bir degisikligi bir script degisikligi gibi
-incele. Kit onu her kosuda kontrol eder ve deger atamanin otesinde ne yaptigini soyler:
+**Config veridir, kod degil** (1.22'den beri). `.security-audit.conf` commit'lenir; yani checkout
+edilmis bir branch'te o branch'i yazanindir. Bu yuzden `scan.sh` onu satir satir ayristirir, asla
+source etmez: degerler literaldir (`$` genisletmesi, komut ikamesi yok), ortam degiskeni her zaman
+dosyayi ezer, `SKIP_SECURITY` yalnizca ortamdan okunur. Asagidakilerden biri olan satir
+**uygulanmaz** ve satir numarasiyla soylenir:
 - sozdizimi hatasi;
 - `scan.sh`'in okumadigi bir ayar (yazim hatasi aksi halde sessizce yok sayilirdi);
 - komut calistiran bir satir;
@@ -890,8 +892,11 @@ override etmen gerekir. Fork'u sen yonetiyorsan: `main`'in hangi CI kontrollerin
 repo admin'inin secimidir, `plugin` istege baglidir (RELEASING.md → *Branch protection*). Kit **ic kanit uretir, garanti yok**. Bir tag/SHA pinle, **skill'leri
 calistirmadan once incele**, update'te diff'i gozden gecir. Tam guven modeli, tedarik-zinciri
 rehberi ve zafiyet bildirimi: [SECURITY.md](SECURITY.md). Kitin kendisinin neyi okudugu, yazdigi ve calistirdigi, hangi
-yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kisaca:
-- `.security-audit.conf` bash'tir, her taramada source edilir ve her kosuda kontrol edilir.
+yetkilerle, [docs/threat-model.md](docs/threat-model.md) belgesinde. Kitin kendisi Kasim 2026'da hedef
+olarak incelendi; her bulgu yeniden uretildi ve 1.22'de bir regresyon testiyle duzeltildi:
+[docs/reviews/security-review-2026-11-20.md](docs/reviews/security-review-2026-11-20.md). Kisaca:
+- `.security-audit.conf` veridir: ayristirilir, asla source edilmez; duz ayar olmayan satir uygulanmaz ve adiyla soylenir.
+- Git hook'lari vendor edilmis agactan degil `.git/` icinden calisir ve kurulumdakinden farkli bir kiti calistirmaz.
 - Docker tarayicilari repoyu salt-okunur okur.
 - Skill'ler repodaki metni kanit sayar, asla talimat degil.
 - Kit taranan projeyi asla build etmez ya da calistirmaz (tek istisna, istege bagli rust call analysis).

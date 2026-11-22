@@ -17,17 +17,64 @@ Usage:  report_html.py --evidence <evidence.json> --out <report.html> [--repo <n
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime
+import hashlib
 import html
 import json
 import sys
 
-SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+SEVERITY_ORDER = ["critical", "high", "medium", "low", "unknown", "info"]
 SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITY_ORDER)}
 DECISION_LABEL = {
     "real": "REAL", "fp": "false positive", "uncertain": "uncertain",
     "suppressed": "suppressed", None: "not triaged",
 }
+# A person's decision (decisions.json, F19a), shown apart from the triage's: the filter values carry
+# a "p-" prefix so "rejected by a person" and "FP by the AI pass" never fold into one option.
+REVIEW_LABEL = {
+    "confirmed": "confirmed by a person", "rejected": "rejected by a person",
+    "accepted": "risk accepted by a person", "needs-validation": "needs validation (person)",
+}
+DEC_ORDER = ["p-confirmed", "p-accepted", "p-needs-validation", "p-rejected", "real", "uncertain", "fp", "suppressed", "none"]
+
+
+def dec_key(f: dict) -> str:
+    """The value the decision filter matches: a person's decision wins over the triage's."""
+    r = f.get("review") or {}
+    if r.get("decision") in REVIEW_LABEL:
+        return "p-" + r["decision"]
+    return f.get("decision") or "none"
+
+
+def dec_label(key: str) -> str:
+    if key.startswith("p-"):
+        return REVIEW_LABEL.get(key[2:], key[2:])
+    return DECISION_LABEL.get(None if key == "none" else key, key)
+
+
+def expired(review: dict, today) -> bool:
+    return bool(review.get("until") and today and str(review["until"]) < str(today))
+
+
+def review_cell(f: dict, today) -> str:
+    """A person's decision, then what the triage said. Expired and changed are said in words: a
+    decision past its date, or made about another version of the package, is not a current one."""
+    r = f.get("review") or {}
+    if r.get("decision") not in REVIEW_LABEL:
+        return ""
+    meta = [r.get("owner"), r.get("decided")]
+    if r.get("until"):
+        meta.append(f"until {r['until']}")
+    flags = []
+    if expired(r, today):
+        flags.append('<b class="stale">EXPIRED — review again</b>')
+    for c in r.get("changed") or []:
+        flags.append(f'<b class="stale">changed since: {esc(c)}</b>')
+    return (f'<b>{esc(REVIEW_LABEL[r["decision"]])}</b>'
+            f'<div class="ev">{esc(" · ".join(str(m) for m in meta if m))} · {esc(r.get("evidence_kind") or "unverified")}</div>'
+            f'<div class="ev why">{esc(r.get("reason"))}</div>'
+            + "".join(f'<div class="ev">{x}</div>' for x in flags))
 
 CSS = """
 :root{
@@ -77,12 +124,29 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .sev.critical{color:var(--critical)} .sev.high{color:var(--high)} .sev.medium{color:var(--medium)}
 .sev.low{color:var(--low)} .sev.info{color:var(--info)}
 .dec{font-size:.8rem;white-space:nowrap}
+.dec .why{white-space:normal;max-width:22ch}
+.stale{color:var(--bad)}
 .ev{color:var(--muted);font-size:.82rem;margin-top:.25rem}
 .scroll{overflow-x:auto}
 .empty{color:var(--muted);font-style:italic;padding:.6rem 0}
+.filters{display:flex;flex-wrap:wrap;gap:.6rem .9rem;align-items:end;margin:0 0 1rem}
+.filters label{display:flex;flex-direction:column;gap:.2rem;font-size:.76rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.06em}
+.filters input,.filters select,.filters button{font:inherit;font-size:.88rem;padding:.32rem .5rem;
+  border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.filters input{min-width:14rem}
+.filters button{cursor:pointer}
+.filters :focus-visible{outline:2px solid var(--low);outline-offset:1px}
+.fstate{flex-basis:100%;font-size:.82rem;color:var(--muted)}
+details.more{margin-top:.3rem;font-size:.82rem}
+details.more summary{cursor:pointer;color:var(--muted)}
+details.more dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .8rem;margin:.35rem 0 0}
+details.more dt{color:var(--muted)}
+details.more dd{margin:0;word-break:break-word}
 footer{margin-top:2.6rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.82rem}
 @media print{
   body{padding:0;background:#fff;color:#000;font-size:11pt}
+  .filters label,.filters button{display:none}
   .panel{border:1px solid #bbb;break-inside:avoid}
   tr,.bar{break-inside:avoid}
   h2{break-after:avoid}
@@ -113,7 +177,37 @@ def severity_bars(counts: dict, total: int) -> str:
     return f'<div class="bars">{"".join(rows)}</div>'
 
 
-def finding_rows(findings: list) -> str:
+# Fields some adapters add (F16b) and the evidence the skills record, shown on demand. Plain text:
+# a guideline URL is shown, not linked, so the file still loads nothing when clicked around in.
+MORE_FIELDS = (
+    ("package", lambda f: " ".join(str(x) for x in ((f.get("package") or {}).get(k) for k in ("ecosystem", "name", "version")) if x)),
+    ("affected", lambda f: f.get("affected")),
+    ("fixed in", lambda f: ", ".join(f.get("fixed_in") or [])),
+    ("aliases", lambda f: ", ".join(f.get("aliases") or [])),
+    ("direct", lambda f: {True: "yes", False: "no (transitive)"}.get(f.get("direct"))),
+    ("resource", lambda f: f.get("resource")),
+    ("detail", lambda f: f.get("detail")),
+    ("guideline", lambda f: f.get("guideline")),
+    ("sink", lambda f: (f.get("evidence") or {}).get("sink")),
+    ("id", lambda f: f.get("id")),
+    # What a decision keys on (F19a). The basis says how much a match means.
+    ("fingerprint", lambda f: f"{f['fingerprint']} ({f.get('fingerprint_basis') or '?'})" if f.get("fingerprint") else None),
+)
+
+NO_MATCH = ("No finding in this section matches the filters. That says nothing about the scan: it is "
+            "not a clean result. Reset the filters to see every row.")
+
+
+def more(f: dict) -> str:
+    items = [(k, get(f)) for k, get in MORE_FIELDS]
+    items = [(k, v) for k, v in items if v not in (None, "", [])]
+    if len(items) <= 1:            # the id alone (evidence written before fingerprints) is not worth a toggle
+        return ""
+    dl = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in items)
+    return f'<details class="more"><summary>details</summary><dl>{dl}</dl></details>'
+
+
+def finding_rows(findings: list, today=None) -> str:
     if not findings:
         return '<tr><td colspan="5" class="empty">Nothing in this section.</td></tr>'
     rows = []
@@ -129,32 +223,113 @@ def finding_rows(findings: list) -> str:
         cvss = f" · CVSS {f['cvss']:g}" if f.get("cvss") is not None else ""
         conf = f"{f['confidence']:g}" if f.get("confidence") is not None else "—"
         rows.append(
-            "<tr>"
+            f'<tr data-sev="{esc(f.get("severity"))}" data-tool="{esc(f.get("tool"))}" '
+            f'data-dec="{esc(dec_key(f))}">'
             f'<td class="sev {esc(f.get("severity"))}">{esc(f.get("severity"))}'
             f'<div class="ev">{esc(f.get("severity_source"))}{cvss}</div></td>'
             f'<td>{esc(f.get("tool"))}<div class="ev">{esc(f.get("rule_id"))}</div></td>'
             f'<td class="loc">{esc(location(f))}</td>'
-            f'<td>{esc(f.get("message"))}{detail_html}</td>'
-            f'<td class="dec">{esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))}'
-            f'<div class="ev num">conf {conf}</div></td>'
+            f'<td>{esc(f.get("message"))}{detail_html}{more(f)}</td>'
+            f'<td class="dec">{review_cell(f, today)}'
+            + (f'<div class="ev">triage: {esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))} · conf {conf}</div>'
+               if f.get("review") else
+               f'{esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))}<div class="ev num">conf {conf}</div>')
+            + '</td>'
             "</tr>"
         )
+    rows.append(f'<tr class="nomatch" hidden><td colspan="5" class="empty">{esc(NO_MATCH)}</td></tr>')
     return "".join(rows)
 
 
-def table(findings: list) -> str:
+def table(findings: list, section: str = "reported", today=None) -> str:
     return (
         '<div class="panel scroll"><table><thead><tr>'
         "<th>Severity</th><th>Tool / rule</th><th>Location</th><th>Finding</th><th>Decision</th>"
-        f"</tr></thead><tbody>{finding_rows(findings)}</tbody></table></div>"
+        f'</tr></thead><tbody data-section="{section}">{finding_rows(findings, today)}</tbody></table></div>'
     )
+
+
+# The filters are progressive enhancement: the form ships `hidden`, so a reader without JS sees the
+# full tables and no control that does nothing. The script is fixed text; the page allows exactly it
+# by its sha256 in the CSP, and reads the rows' data-* attributes, never an embedded data blob.
+FILTER_JS = """(function () {
+  var form = document.getElementById("filters");
+  if (!form) { return; }
+  form.hidden = false;
+  var q = form.elements.q, sev = form.elements.sev, tool = form.elements.tool, dec = form.elements.dec;
+  var state = document.getElementById("fstate");
+  function apply() {
+    var term = q.value.trim().toLowerCase(), active = [];
+    if (term) { active.push("text \u201c" + q.value.trim() + "\u201d"); }
+    [sev, tool, dec].forEach(function (s) { if (s.value) { active.push(s.name + " " + s.options[s.selectedIndex].text); } });
+    Array.prototype.forEach.call(document.querySelectorAll("tbody[data-section]"), function (tb) {
+      var rows = tb.querySelectorAll("tr[data-sev]"), shown = 0;
+      Array.prototype.forEach.call(rows, function (r) {
+        var ok = (!sev.value || r.getAttribute("data-sev") === sev.value) &&
+                 (!tool.value || r.getAttribute("data-tool") === tool.value) &&
+                 (!dec.value || r.getAttribute("data-dec") === dec.value) &&
+                 (!term || r.textContent.toLowerCase().indexOf(term) !== -1);
+        r.hidden = !ok;
+        if (ok) { shown += 1; }
+      });
+      var none = tb.querySelector("tr.nomatch");
+      if (none) { none.hidden = !(rows.length && shown === 0); }
+      var c = document.getElementById("count-" + tb.getAttribute("data-section"));
+      if (c) { c.textContent = shown === rows.length ? String(rows.length) : shown + " of " + rows.length + " shown"; }
+    });
+    state.textContent = active.length ? "Filtered by " + active.join(", ") + "." : "";
+  }
+  form.addEventListener("input", apply);
+  form.addEventListener("change", apply);
+  form.addEventListener("reset", function () { window.setTimeout(apply, 0); });
+  form.addEventListener("submit", function (e) { e.preventDefault(); });
+})();"""
+SCRIPT_HASH = "sha256-" + base64.b64encode(hashlib.sha256(FILTER_JS.encode("utf-8")).digest()).decode("ascii")
+CSP = f"default-src 'none'; style-src 'unsafe-inline'; script-src '{SCRIPT_HASH}'; img-src 'none'; form-action 'none'; base-uri 'none'"
+
+
+def filters(findings: list) -> str:
+    def opts(name, values, label=lambda v: v):
+        o = "".join(f'<option value="{esc(v)}">{esc(label(v))}</option>' for v in values)
+        return f'<label>{name}<select name="{name}"><option value="">all</option>{o}</select></label>'
+    sevs = [s for s in SEVERITY_ORDER if any(f.get("severity") == s for f in findings)]
+    tools = sorted({str(f.get("tool")) for f in findings if f.get("tool")})
+    decs = [d for d in DEC_ORDER if any(dec_key(f) == d for f in findings)]
+    return (
+        '<form id="filters" class="filters" role="search" aria-label="Filter the findings" hidden>'
+        '<label>search<input type="search" name="q" placeholder="file, rule, package, text" autocomplete="off"></label>'
+        + opts("sev", sevs) + opts("tool", tools)
+        + opts("dec", decs, dec_label)
+        + '<button type="reset">reset filters</button>'
+        '<output id="fstate" class="fstate" aria-live="polite"></output></form>'
+    )
+
+
+def review_chips(findings: list, today) -> str:
+    """How many findings a person decided about, and how many of those decisions are not current."""
+    reviewed = [f for f in findings if (f.get("review") or {}).get("decision") in REVIEW_LABEL]
+    if not reviewed:
+        return ('<p class="sub">No finding has a person\'s decision on record '
+                '(<code>scan.sh decide</code>, kept in <code>docs/security/decisions.json</code>).</p>')
+    stale = sum(1 for f in reviewed if expired(f["review"], today) or f["review"].get("changed"))
+    by = {}
+    for f in reviewed:
+        by[f["review"]["decision"]] = by.get(f["review"]["decision"], 0) + 1
+    chips = "".join(f'<span class="chip">{esc(REVIEW_LABEL[d])} {by[d]}</span>' for d in REVIEW_LABEL if d in by)
+    stale_chip = f'<span class="chip fail">expired or changed {stale}</span>' if stale else ""
+    return (f'<div class="chips">{chips}{stale_chip}</div>'
+            '<p class="sub">A person\'s decision is on record only: it does not change what blocks a push.</p>')
 
 
 # Statuses under which a dimension looked at nothing (summary.json schema 2).
 NOT_INSPECTED = ("skipped", "error", "indeterminate")
 
 
-def verdict(scan: dict, reported: int) -> tuple:
+# Dimensions recorded under another name in evidence.json (scan.sh runs the same tool over a scope).
+DIMENSION_ALIASES = {"staged": "secret", "changed": "sast", "sast-changed": "sast"}
+
+
+def verdict(scan: dict, reported: int, row_dims=None) -> tuple:
     """(css class, text) for the report header — F04. "clean" only when the gate passed, every
     dimension that applies inspected something, and nothing was reported. Everything short of that
     says what it is: unknown, blocked (and by what), incomplete, or passed with findings."""
@@ -177,6 +352,14 @@ def verdict(scan: dict, reported: int) -> tuple:
     if missing:
         named = ", ".join(f'{d.get("name")} ({d.get("status")})' for d in missing)
         return "incomplete", f"passed (exit 0) — NOT complete: {named} not inspected"
+    # A dimension can have findings and still write no per-finding rows (no adapter yet, F16): its
+    # findings are in the scan log, so the header must not count them as 0.
+    rows = set(row_dims or ())
+    unlisted = [d.get("name") for d in dims if d.get("status") == "findings"
+                and d.get("name") not in rows and DIMENSION_ALIASES.get(d.get("name")) not in rows]
+    if unlisted:
+        return "findings", (f"passed (exit 0) — findings in {', '.join(unlisted)}, not listed below (no per-finding "
+                            f"rows; see the scan log)" + (f"; {reported} more listed" if reported else "") + ", none blocking")
     if reported or any(d.get("status") == "findings" for d in dims):
         return "findings", f"passed (exit 0) — {reported} finding(s) present, none blocking"
     return "clean", "clean (exit 0) — every dimension that applies was inspected"
@@ -247,7 +430,7 @@ def main() -> int:
         for d in dimensions
     ) or '<span class="chip">no dimensions recorded</span>'
 
-    gate_cls, gate = verdict(scan, len(reported))
+    gate_cls, gate = verdict(scan, len(reported), {f.get("dimension") for f in findings})
     repo = args.repo or "this repository"
     generated = args.date or datetime.date.today().isoformat()
     summary = None
@@ -273,6 +456,7 @@ def main() -> int:
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="{CSP}">
 <title>Security scan report — {esc(repo)} — {esc(date)}</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <h1>Security scan report</h1>
@@ -298,13 +482,14 @@ def main() -> int:
   <span class="chip">false positive {by_dec.get("fp", 0)}</span>
   <span class="chip">suppressed {by_dec.get("suppressed", 0)}</span>
   <span class="chip">not triaged {by_dec.get("undecided", 0)}</span>
-</div></div>
+</div>{review_chips(findings, generated)}</div>
 
-<h2>Findings ({len(reported)})</h2>
-{table(reported)}
+<h2>Findings (<span id="count-reported" aria-live="polite">{len(reported)}</span>)</h2>
+{filters(findings) if findings else ""}
+{table(reported, "reported", generated)}
 
-<h2>Suppressed ({len(suppressed)}) — on record, not reported</h2>
-{table(suppressed)}
+<h2>Suppressed (<span id="count-suppressed" aria-live="polite">{len(suppressed)}</span>) — on record, not reported</h2>
+{table(suppressed, "suppressed", generated)}
 {warn_html}
 
 <footer>
@@ -312,9 +497,13 @@ Rendered from <code>evidence.json</code> ({esc(doc.get("schema"))}); schema and 
 mapping: <code>docs/schema/evidence.md</code>. Severity is normalized from each tool's own value,
 never invented; a CVSS is shown only where a tool supplied one. This is <b>internal evidence</b> —
 it does not replace an external ASV scan or a penetration test. Findings marked
-<i>not triaged</i> have not been judged yet; run <code>/sec-triage</code>.
+<i>not triaged</i> have not been judged yet; run <code>/sec-triage</code>. A person's decision comes
+from <code>docs/security/decisions.json</code> (<code>scan.sh decide</code>) and is shown as recorded;
+it never changes what blocks a push.
 </footer>
-</div></body></html>
+</div>
+<script>{FILTER_JS}</script>
+</body></html>
 """
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)

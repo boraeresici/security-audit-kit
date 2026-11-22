@@ -187,7 +187,7 @@ class TestTable:
         assert 'class="panel scroll"' in result
         assert "<table>" in result
         assert "<thead>" in result
-        assert "<tbody>" in result
+        assert "<tbody" in result
 
     def test_correct_headers(self):
         result = rh.table([])
@@ -420,3 +420,146 @@ class TestScanTimeIgnoresDurations:
         summary = {"dimensions": [{"name": "sast", "status": "pass", "seconds": 2.5}], "artifacts": [],
                    "provenance": {"commit": "c"}, "timestamp": "2026-11-02T10:00:00", "run_id": "r"}
         assert rh.scan_time(summary, scan) == ("2026-11-02T10:00:00", "r")
+
+
+class TestVerdictFindingsWithoutRows:
+    """F16: a dimension with findings but no per-finding rows must not be reported as 0 findings."""
+
+    def test_iac_findings_with_no_rows_are_named_not_counted_as_zero(self):
+        dims = [{"name": "sast", "status": "pass"}, {"name": "iac", "status": "findings"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 0, set())
+        assert cls == "findings" and "iac" in text and "0 finding" not in text
+
+    def test_rows_listed_alongside_an_unlisted_dimension(self):
+        dims = [{"name": "sast", "status": "findings"}, {"name": "py-deps", "status": "findings"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 3, {"sast"})
+        assert "py-deps" in text and "sast" not in text.split("findings in")[1].split(",")[0] and "3 more listed" in text
+
+    def test_alias_dimension_counts_as_listed(self):
+        dims = [{"name": "staged", "status": "findings"}]
+        cls, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 1, {"secret"})
+        assert text == "passed (exit 0) — 1 finding(s) present, none blocking"
+
+    def test_old_callers_without_row_dims_keep_their_header_when_rows_exist(self):
+        dims = [{"name": "sast", "status": "findings"}]
+        _, text = rh.verdict({"exit_code": 0, "dimensions": dims}, 2, {"sast"})
+        assert text == "passed (exit 0) — 2 finding(s) present, none blocking"
+
+
+
+# ---------------------------------------------------------------------------
+# F26 — filters, details, CSP
+# ---------------------------------------------------------------------------
+import base64 as _b64
+import hashlib as _hl
+import re as _re
+import subprocess as _sp
+
+
+def _render(tmp_path, findings, name="r.html"):
+    ev = {"schema": "security-audit-kit/evidence@1", "scan": {"exit_code": 0, "dimensions": []},
+          "counts": {"total": len(findings), "by_severity": {}, "by_decision": {}}, "findings": findings}
+    (tmp_path / "e.json").write_text(json.dumps(ev))
+    out = tmp_path / name
+    _sp.run([sys.executable, os.path.join(os.path.dirname(rh.__file__), "report_html.py"), "--evidence",
+             str(tmp_path / "e.json"), "--out", str(out), "--date", "2026-01-01"], check=True, capture_output=True)
+    return out.read_text()
+
+
+def _f(**kw):
+    f = {"id": "abc", "severity": "high", "tool": "semgrep", "rule_id": "R", "file": "a.py", "line": 3,
+         "message": "m", "decision": None, "confidence": None, "evidence": None}
+    f.update(kw)
+    return f
+
+
+class TestReportFilters:
+    def test_csp_pins_the_one_script_by_hash(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        scripts = _re.findall(r"<script>(.*?)</script>", page, _re.S)
+        assert len(scripts) == 1 and "<script src" not in page
+        digest = _b64.b64encode(_hl.sha256(scripts[0].encode()).digest()).decode()
+        csp = _re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', page).group(1)
+        assert f"script-src 'sha256-{digest}'" in csp and "default-src 'none'" in csp
+
+    def test_the_form_ships_hidden_so_no_js_shows_no_dead_control(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        assert _re.search(r'<form id="filters"[^>]*\bhidden\b', page)
+
+    def test_no_findings_no_form(self, tmp_path):
+        assert 'id="filters"' not in _render(tmp_path, [])
+
+    def test_options_are_only_the_values_present(self, tmp_path):
+        page = _render(tmp_path, [_f(tool="gitleaks", severity="critical"), _f(id="b", tool="semgrep", decision="fp")])
+        sel = lambda n: _re.findall(r'<option value="([^"]*)">', _re.search(f'<select name="{n}">(.*?)</select>', page, _re.S).group(1))
+        assert sel("sev") == ["", "critical", "high"] and sel("tool") == ["", "gitleaks", "semgrep"]
+        assert sel("dec") == ["", "fp", "none"]
+
+    def test_rows_carry_escaped_filter_attributes(self, tmp_path):
+        page = _render(tmp_path, [_f(tool='x"><script>alert(1)</script>', decision="real")])
+        assert 'data-tool="x&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in page and 'data-dec="real"' in page
+        assert page.count("<script>") == 1
+
+    def test_no_match_says_it_is_not_a_clean_result(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        assert '<tr class="nomatch" hidden>' in page and "not a clean result" in page
+
+    def test_details_show_adapter_fields_escaped(self, tmp_path):
+        page = _render(tmp_path, [_f(package={"ecosystem": "npm", "name": "<b>x</b>", "version": None},
+                                     fixed_in=["1.2.8"], aliases=["CVE-1"], direct=True)])
+        assert "<details class=\"more\">" in page and "&lt;b&gt;x&lt;/b&gt;" in page and "1.2.8" in page
+        assert "<dt>direct</dt><dd>yes</dd>" in page
+
+    def test_a_row_with_only_an_id_gets_no_toggle(self, tmp_path):
+        assert "<details" not in _render(tmp_path, [_f()])
+
+    def test_counts_are_addressable_for_the_script(self, tmp_path):
+        page = _render(tmp_path, [_f(), _f(id="s", decision="suppressed")])
+        assert '<span id="count-reported" aria-live="polite">1</span>' in page
+        assert '<span id="count-suppressed" aria-live="polite">1</span>' in page
+
+    def test_rendering_is_deterministic(self, tmp_path):
+        fs = [_f(), _f(id="b", tool="trivy", package={"ecosystem": "pypi", "name": "x"})]
+        assert _render(tmp_path, fs, "a.html") == _render(tmp_path, fs, "b.html")
+
+
+# ---------------------------------------------------------------------------
+# F19a S4 — a person's decision next to the finding
+# ---------------------------------------------------------------------------
+def _rev(**kw):
+    r = {"decision": "rejected", "evidence_kind": "observed", "reason": "only test code calls it", "owner": "Ada",
+         "decided": "2025-12-01", "until": None, "verify": None, "changed": []}
+    r.update(kw)
+    return r
+
+
+class TestReportReviews:
+    def test_a_person_decision_is_shown_with_who_when_why_and_the_triage_beside_it(self, tmp_path):
+        page = _render(tmp_path, [_f(decision="real", confidence=0.9, review=_rev())])
+        assert "rejected by a person" in page and "Ada · 2025-12-01 · observed" in page
+        assert "only test code calls it" in page and "triage: REAL · conf 0.9" in page
+        assert 'data-dec="p-rejected"' in page
+        assert "does not change what blocks a push" in page
+
+    def test_the_filter_keeps_person_and_ai_decisions_apart(self, tmp_path):
+        page = _render(tmp_path, [_f(id="1", review=_rev()), _f(id="2", decision="fp"), _f(id="3")])
+        opts = _re.findall(r'<select name="dec">(.*?)</select>', page, _re.S)[0]
+        assert _re.findall(r'value="([^"]*)"', opts) == ["", "p-rejected", "fp", "none"]
+        assert "rejected by a person" in opts and "false positive" in opts
+
+    def test_expired_and_changed_decisions_say_so(self, tmp_path):
+        page = _render(tmp_path, [_f(id="1", review=_rev(decision="accepted", until="2025-12-31")),
+                                  _f(id="2", review=_rev(changed=["package version 1.26.4 -> 1.26.5"]))])
+        assert page.count("EXPIRED — review again") == 1                 # report date 2026-01-01
+        assert "changed since: package version 1.26.4 -&gt; 1.26.5" in page
+        assert "expired or changed 2" in page
+        still = _render(tmp_path, [_f(review=_rev(decision="accepted", until="2026-06-01"))], "s.html")
+        assert "EXPIRED" not in still and "until 2026-06-01" in still
+
+    def test_review_text_is_escaped(self, tmp_path):
+        page = _render(tmp_path, [_f(review=_rev(reason="<img src=x onerror=alert(1)>", owner="<b>x</b>"))])
+        assert "<img src=x" not in page and "&lt;img src=x" in page and "&lt;b&gt;x&lt;/b&gt;" in page
+
+    def test_no_review_keeps_the_old_cell_and_says_how_to_add_one(self, tmp_path):
+        page = _render(tmp_path, [_f()])
+        assert "not triaged" in page and "triage:" not in page and "scan.sh decide" in page

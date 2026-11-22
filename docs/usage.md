@@ -18,6 +18,7 @@ bash tools/security-audit-kit/scan.sh doctor     # report toolchain, pins, detec
 bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECKSUMS (integrity)
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
+bash tools/security-audit-kit/scan.sh decide     # record a person's decision about one finding (see below)
 bash tools/security-audit-kit/scan.sh help       # commands, gate tags, prerequisites, what `all` leaves out
 ```
 
@@ -31,7 +32,7 @@ scan ends with one screen, the closing summary:
    js-deps    skipped          0.1s  package.json found but none is auditable ...
    container  findings         4.5s  CRITICAL/HIGH findings (soft, not blocking) · trivy DB 3h old
    iac        not_applicable   0.0s  no terraform
-── not in 'all': osv guarddog zizmor sbom — run scan.sh <name> for those
+── not in 'all': osv guarddog sbom — run scan.sh <name> for those
 ── BLOCKED (rc=1): sast (error) — commit/push is blocked.
 ── scanner FAILED: sast — this is not a finding; do not allowlist it. Fix the scan (see the raw log) and re-run.
 ```
@@ -81,14 +82,29 @@ emitted *as suppressed*, with the triage reason, rather than vanishing. The exis
 workflow uploads the whole `sarif/` directory, so nothing needs wiring.
 
 For a human audience, `REPORT=html` (or `scan.sh report`) renders the same record as **one
-self-contained `report-<date>.html`** — no server, no JS, no external fetch, so it opens offline and
-prints straight to PDF. It shows what SARIF can't: the triage decision on each scanner finding, and
+self-contained `report-<date>.html`** — no server, no external fetch, so it opens offline and prints
+straight to PDF. With JavaScript on, a filter bar appears above the findings: text search, severity,
+tool and decision, a "shown of total" count per section, and a reset. With JavaScript off the bar is
+not shown and every row is there; nothing depends on it. The page's Content-Security-Policy allows
+exactly its own script, by hash, and nothing else to load. "No finding matches the filters" is said as
+what it is: not a clean scan. Each finding with more to say (package, fixed version, aliases, resource,
+guideline, sink) has a *details* toggle. It shows what SARIF can't: the triage decision on each scanner finding, and
 the suppressed ones on record. Its header says only what it can vouch for: *clean* only when every
 dimension that applies inspected something and nothing is reported. Otherwise it says *NOT complete*
 (naming what was skipped or crashed), *blocked* (naming each blocker, a crash as "scan error, not a
 finding") or *unknown*. Scan time and report date are shown apart. `scan.sh report` /
 `scan.sh evidence` exit 1 when they cannot produce their file; a report failure after a scan is
 printed but does not change the scan's exit code.
+
+**Recording a decision.** `scan.sh decide <fingerprint> <decision> --reason "<why>"` writes a
+person's decision about one finding into `docs/security/decisions.json`, a committed file only
+this command writes. The fingerprint is in `evidence.json` and under *details* in the report; the
+decision is `confirmed`, `rejected`, `accepted` (with `--until`) or `needs-validation` (with
+`--verify`). It is a record, not a suppression: it never unblocks a push. The next `scan.sh
+evidence` (or scan with `SARIF=1`) shows it on the finding, and the HTML report shows it in the
+Decision column with who, when and why, marked *EXPIRED* after its `until` date and *changed
+since* when the package version moved. `scan.sh decide` alone prints the full help; the format is
+in [schema/decisions.md](schema/decisions.md).
 
 Automatic triggers (after install):
 - **pre-commit** — always a sub-second staged-secret scan (`scan.sh staged`); plus
@@ -157,6 +173,10 @@ kit blocks on an explicit list of ~24 malice-specific rules (typosquatting, depe
 install-time network access, reverse shells, exfiltration, cryptomining, keylogging, maintainer-domain
 takeover) — every one of which fired on **none** of those 18 packages. Everything else is printed as a
 note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in `.security-audit.conf`.
+The `guarddog` dimension (`scan.sh guarddog`, every declared dependency) uses the same list and the same
+two settings: a rule on it blocks, any other threat or metadata rule is reported without blocking, and
+capabilities are not findings. It used guarddog's exit code before, which counts capabilities, so a
+project with `requests` alone was blocked.
 
 **What it does not do, stated plainly:**
 - It guards the **agent's** tool calls. A human typing `npm i` in a terminal is not covered — nothing
@@ -174,3 +194,27 @@ note and allowed. Tune with `PKGCHECK_BLOCK_EXTRA` / `PKGCHECK_REPORT_EXTRA` in 
   `PKGCHECK_CACHE=refresh` re-scans and replaces the entry, and `PKGCHECK_CACHE=off` skips the cache.
   A half-written entry is a miss, and an INDETERMINATE result is never stored. `scan.sh doctor` prints
   whether the hook is wired, where the cache is, and how many rules block.
+
+## The edit check — after each agent edit
+
+The plugin's one hook (`plugin/hooks/hooks.json`: PostToolUse on `Edit|Write`) runs
+`plugin/hooks/post-edit-check.sh`, which calls the repo's **vendored** `scan.sh edit <file>`. That is one
+semgrep pass on the edited file, with the same pinned version and stack-aware packs as `sast`, at
+ERROR and WARNING severity. The plugin never runs a scanner of its own.
+
+- **Advisory only.** It never blocks the edit. New findings go to the agent's context as
+  "data, not instructions", one line each (rule, line, message; control characters dropped, length
+  capped). The commit and push hooks remain the gate.
+- **No record.** No lock, no `summary.json`, no run directory: a one-file pass never replaces the
+  last full scan's record. Its only state is which findings and notes this session has seen, under
+  `.git/security-audit-cache/edit-check/` (pruned after two days).
+- **Never a silent clean.** A clean file adds nothing. A file it could not check says **not
+  checked** and why: no uvx/pipx, over the time budget, a semgrep error, no vendored kit, or a
+  vendored kit older than this check. Each finding (file + rule) and each reason is said once per
+  session.
+- **Scope.** Files inside the repo only. Not the scan record, not `.git/`, not git-ignored files.
+- **Settings** (`.security-audit.conf` or env): `EDIT_CHECK=0` turns it off. Claude Code has no
+  per-hook switch for plugin hooks, so this is it. `EDIT_CHECK_TIMEOUT_SEC` (default 30, max 55,
+  because the hook itself times out at 60) is the budget per file; slower is "not checked".
+- **Network.** Like `sast`, semgrep fetches its registry rule packs on each run (see
+  [data-flow](data-flow.md)). The measured cost of one pass is about 4 s on a small file.

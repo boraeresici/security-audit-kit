@@ -60,6 +60,27 @@ calls for** — `sec-sast-deep` if there are authz surfaces, `sec-ai-review` if 
 LLM, `sec-threat-model` for a new subsystem (or all on `deep`). It announces *which* deep pass
 it runs and *why* before spending the tokens, and writes one consolidated `findings-<DATE>.md`.
 
+## Asking versus auditing
+
+Each skill has two modes. A question (about a finding, a scanner rule, the method or a security
+idea) is answered in the conversation, against the same evidence bar as an audit: the answer names
+the source, the sink and the path it rests on. It starts no scan, writes no findings file,
+allowlist entry, exclusion, follow-up or patch, and says that nothing was recorded. The full flow
+runs when you ask for a scan, a triage, an audit or a review of the repo, or for the record. If a
+request can mean either, the skill asks once.
+
+This matters with the plugin: the host loads a skill from its description, so a skill can load
+for a question that was never a request to audit.
+
+## Severity of a judgment finding
+
+`sec-sast-deep`, `sec-ai-review` and the whole-repo mode of `sec-audit` rate a finding by the impact
+its evidence chain shows, on one shared scale (critical to info), never by what the recon step
+claimed. A path that shows a smaller flaw than recon claimed is still REAL, at the smaller severity:
+a user-supplied regex is a denial of service, not code execution. Someone acting on their own
+resources has not gained privilege. A scanner finding keeps its tool's severity. The scale was
+measured in the deep-review eval before it shipped (`tests/eval/README.md`).
+
 ## When to run which skill (cadence)
 
 | Skill | Cadence | Trigger |

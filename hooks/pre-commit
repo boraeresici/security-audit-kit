@@ -4,6 +4,10 @@
 #   - WHEN a dependency manifest is staged: also a fast CVE audit (scan.sh deps).
 # Bypass (emergency): SKIP_SECURITY=1 git commit ...
 set -euo pipefail
+# Paths as git stores them: by default (core.quotepath) a non-ASCII name comes back quoted and
+# octal-escaped ("g\303\274venlik/..."), so a manifest in a Turkish-named folder matched no pattern
+# and its dimension was skipped as "not applicable" (F18).
+git(){ command git -c core.quotepath=off "$@"; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { echo "[pre-commit] SKIP_SECURITY=1"; exit 0; }
 
 ROOT="$(git rev-parse --show-toplevel)"
