@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-11-22
+
 ### Upgrade notes
 - **The plugin moved into `plugin/` (R17).** Plugin users need to do nothing: the marketplace now
   points at that folder, and `/plugin update` moves an existing install over (checked from 1.21.0 in a
