@@ -26,7 +26,7 @@ as clean. Claude Code skills then sort real findings from noise, at an evidence 
 From your repo's root (read the script before you run it):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh -o bootstrap.sh && less bootstrap.sh
-bash bootstrap.sh v1.22.0 --scan      # vendor the pinned kit, wire the hooks, run a first scan
+bash bootstrap.sh v1.22.1 --scan      # vendor the pinned kit, wire the hooks, run a first scan
 ```
 Then, in Claude Code: `/sec-triage`. Needs git and bash; Docker and `uv` each enable more
 dimensions, and a missing one is skipped out loud ([Requirements](docs/install.md#requirements-a-missing-one-only-skips-that-dimension)).
@@ -123,17 +123,17 @@ diagram and as text: **[docs/lifecycle.md](docs/lifecycle.md)**.
 curl -fsSL https://raw.githubusercontent.com/boraeresici/security-audit-kit/main/bootstrap.sh \
   -o bootstrap.sh && less bootstrap.sh
 # 2) Run it pinned to a tag:
-bash bootstrap.sh v1.22.0
-bash bootstrap.sh v1.22.0 --scan          # also run a full scan after install
-bash bootstrap.sh v1.22.0 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
+bash bootstrap.sh v1.22.1
+bash bootstrap.sh v1.22.1 --scan          # also run a full scan after install
+bash bootstrap.sh v1.22.1 --expect=<sha>  # enforce the pin: refuse if the tag resolved elsewhere
 # <sha> is the COMMIT the tag points at. Release tags are annotated, so `git rev-parse <tag>` gives
 # you the tag OBJECT and --expect will refuse it. Ask for the commit explicitly:
-#   git rev-parse v1.22.0^{commit}          # in a clone of this repo
-#   gh api repos/<owner>/<repo>/git/refs/tags/v1.22.0 --jq .object.sha   # then resolve if type=tag
+#   git rev-parse v1.22.1^{commit}          # in a clone of this repo
+#   gh api repos/<owner>/<repo>/git/refs/tags/v1.22.1 --jq .object.sha   # then resolve if type=tag
 ```
 
 > `bootstrap.sh` defaults `KIT_REPO` to this repo. To vendor from a fork, override it:
-> `KIT_REPO=https://… bash bootstrap.sh v1.22.0`.
+> `KIT_REPO=https://… bash bootstrap.sh v1.22.1`.
 
 `install.sh` (which bootstrap calls): reports prerequisites -> points `core.hooksPath`
 at wrappers in `.git/security-audit-hooks/` (integrity first, then the kit's hook) -> copies the `sec-*` skills into `.claude/skills/`. Idempotent, safe to
@@ -189,7 +189,7 @@ A session loads plugins when it starts. After installing from a terminal, open a
 conversation. In the VS Code extension, run **Developer: Reload Window** from the Command Palette
 (`Cmd/Ctrl+Shift+P`) first, then type `/security-audit-kit:` to see the five skills.
 
-- **Pin a release:** `/plugin marketplace add boraeresici/security-audit-kit#v1.22.0`. The
+- **Pin a release:** `/plugin marketplace add boraeresici/security-audit-kit#v1.22.1`. The
   plugin's `version` follows the kit's releases. Updates are manual (`/plugin` → Installed → Update)
   unless you turn on auto-update for this marketplace.
 - **Vendor the scanner without a second copy of the skills:** `bash bootstrap.sh <tag> --no-skills`
