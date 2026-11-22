@@ -374,6 +374,26 @@ PY
   # Deterministic: same input, byte-identical output (the file is diffable by design).
   cp "$EVD" "$EVD.first"; $SCAN evidence >/dev/null 2>&1
   cmp -s "$EVD" "$EVD.first" && ok "evidence: rebuild is byte-identical" || no "evidence: output not deterministic"
+  # F19a: a line inserted above a finding changes its `id` and keeps its `fingerprint`, which is what
+  # a decision keys on. The same SARIF, one line further down, over a file moved the same way.
+  F19L="$TARGET/requirements.txt"; F19K=0; [ -f "$F19L" ] && { cp "$F19L" "$F19L.e2e"; F19K=1; }
+  cp "$ESAR/osv.sarif" "$ESAR/osv.sarif.e2e"
+  printf 'a==1\nb==2\nc==3\n' > "$F19L"; $SCAN evidence >/dev/null 2>&1; cp "$EVD" "$EVD.fp1"
+  printf '# a new first line\na==1\nb==2\nc==3\n' > "$F19L"
+  sed -e 's/"startLine":3/"startLine":4/' -e 's/"startLine":2/"startLine":3/' "$ESAR/osv.sarif.e2e" > "$ESAR/osv.sarif"
+  $SCAN evidence >/dev/null 2>&1
+  python3 - "$EVD.fp1" "$EVD" <<'PY' && ok "F19a: a line shift changes the id and keeps the fingerprint (basis: line-content)" || no "F19a: fingerprint did not survive a line shift"
+import json, sys
+a, b = ({x["rule_id"]: x for x in json.load(open(p))["findings"]} for p in sys.argv[1:3])
+assert set(a) == set(b) == {"CVE-1", "CVE-2"}
+for r in a:
+    assert a[r]["fingerprint_basis"] == b[r]["fingerprint_basis"] == "line-content", (a[r], b[r])
+    assert a[r]["fingerprint"] == b[r]["fingerprint"] and a[r]["id"] != b[r]["id"] and b[r]["line"] == a[r]["line"] + 1
+assert a["CVE-1"]["fingerprint"] != a["CVE-2"]["fingerprint"]
+PY
+  mv -f "$ESAR/osv.sarif.e2e" "$ESAR/osv.sarif"; rm -f "$EVD.fp1"
+  if [ "$F19K" = 1 ]; then mv -f "$F19L.e2e" "$F19L"; else rm -f "$F19L"; fi
+  $SCAN evidence >/dev/null 2>&1
   # Scope: a dimension that did NOT run must not contribute leftover SARIF findings.
   printf '{"command":"secret","exit_code":0,"raw_log":"r.log","dimensions":[{"name":"secret","exit_code":0,"status":"pass"}]}\n' \
     > "$TARGET/docs/security/scan-findings/summary.json"

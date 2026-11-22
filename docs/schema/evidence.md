@@ -76,7 +76,9 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | string | Stable 12-hex identity: `sha1(dimension\|rule_id\|file\|line)`. Survives re-scans, so a decision can be attached to it. |
+| `id` | string | 12-hex `sha1(dimension\|rule_id\|file\|line)`. Survives a re-scan of unchanged code, but not a line shift: use `fingerprint` to follow a finding over time. Kept for this version beside it. |
+| `fingerprint` | string | 20-hex identity that survives what does not change the finding (F19a). What a decision record keys on. See [Fingerprint](#fingerprint). |
+| `fingerprint_basis` | enum | `line-content` · `package` · `location`: what the fingerprint was computed from, so a reader knows how much a match means. |
 | `dimension` | string | `secret` · `sast` · `container` · `osv` · `zizmor` — the `scan.sh` dimension that produced it. |
 | `tool` | string | `gitleaks` · `semgrep` · `trivy` · `osv-scanner` · `zizmor`. |
 | `rule_id` | string | The tool's rule / check id, verbatim. |
@@ -92,6 +94,36 @@ bad, and what did we decide about them?"* — per finding, in one shape, across 
 
 The scan fills everything down to `cvss`; `decision` / `confidence` / `evidence` stay `null` until a
 judgment pass (`/sec-triage`) fills them. A renderer must treat `null` as *undecided*, never as *FP*.
+
+## Fingerprint
+
+`id` contains the line number, so one line inserted above a finding makes it a new finding and a
+decision about it is lost. `fingerprint` is the identity that follows the finding instead
+(`lib/fingerprint.py`). Which of three bases applies is recorded in `fingerprint_basis`:
+
+| Basis | For | Computed from | Survives | Does not survive |
+|---|---|---|---|---|
+| `line-content` | a finding with a file and a line the kit can read | dimension, rule, file, the reported line with whitespace collapsed, and which occurrence of that text this is among the rule's findings in the file | lines moving, re-indentation | an edit to the line, a file rename |
+| `package` | a row with `package` (pip-audit, npm audit, guarddog) | advisory, ecosystem, package name, manifest | a version bump, a move within the lock file | another package, another manifest |
+| `location` | everything else | dimension, rule, file, line (the inputs of `id`) | a re-scan of unchanged code | a line shift |
+
+- **The version is not part of a package fingerprint.** A bump that does not fix the advisory is the
+  same finding; one that fixes it makes the row go away. Two packages with one advisory in one
+  manifest are two findings. PyPI names are compared as PEP 503 normalises them; other ecosystems
+  as written. pip-audit audits an environment, not a manifest, so its rows use the fixed manifest
+  `python-env`: a venv's path differs per machine and would make the identity local.
+- **The same line twice.** Two identical lines flagged by one rule in one file are two findings,
+  numbered in line order (GitHub code scanning's method for `primaryLocationLineHash`). Removing
+  the first one makes the second take its fingerprint; that ambiguity is inherent to the method.
+- **Secret findings always use `location`.** The reported line is the secret, and a hash of it in
+  a report that is mailed around could confirm a guess of a weak one offline.
+- **The line is read from the working tree**, only for a repo-relative path with no `..` that
+  resolves inside the repo to a regular file of at most 5 MiB. Anything else (a link out of the
+  repo, a file that is gone, a line past the end, a blank line) falls back to `location`.
+- **Not yet (later F19a slices):** dependency rows that come from SARIF (trivy, osv-scanner) carry no
+  `package`, so they use `line-content` over the manifest line, which contains the version; and the
+  same advisory under two names (`PYSEC-…`, `CVE-…`, `GHSA-…`) is still two fingerprints. No
+  decision is keyed on the fingerprint yet.
 
 ## Severity normalization
 

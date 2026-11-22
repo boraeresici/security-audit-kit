@@ -72,6 +72,15 @@ All notable changes to this project are documented here. The format is based on
   - `policy_changes` counts suppression markers whatever their case (`NOSEMGREP`).
 
 ### Added
+- **`evidence.json` findings carry a `fingerprint` (F19a, first slice).** `id` contains the line
+  number, so a line inserted above a finding made it a new finding. `fingerprint` follows it: code
+  findings by the text of the reported line and its occurrence among the rule's findings in the file
+  (lines can move; an edit or a rename is a new finding), dependency rows by advisory, ecosystem,
+  package and manifest (a version bump is the same finding; two packages with one advisory are
+  two). `fingerprint_basis` says which applied (`line-content`, `package`, `location`). Secret
+  findings never hash the line. `id` stays beside it for this version, and nothing keys on the
+  fingerprint yet: the decision record is the next slice. The HTML report shows it under *details*.
+  Spec: `docs/schema/evidence.md`.
 - The HTML report can be filtered (F26): text search, severity, tool and decision, a "shown of
   total" count per section, reset, and a note that an empty filter result is not a clean scan. A
   *details* toggle shows the fields the adapters add (package, fixed version, aliases, resource,
