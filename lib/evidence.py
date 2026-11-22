@@ -17,6 +17,7 @@ import os
 import sys
 import unicodedata
 
+import fingerprint
 import native
 
 SCHEMA = "security-audit-kit/evidence@1"
@@ -571,6 +572,7 @@ def main() -> int:
     ap.add_argument("--summary", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--findings", help="findings-<date>.md written by the judgment skills (optional)")
+    ap.add_argument("--root", default=".", help="the scanned repo: reported lines are read from it for the fingerprint")
     args = ap.parse_args()
 
     warnings: list = []
@@ -605,6 +607,9 @@ def main() -> int:
     if duplicates:
         warnings.append(f"dropped {duplicates} duplicate result(s) reported by a tool for the same rule+location")
     findings = list(unique.values())
+
+    # The identity a decision keys on (F19a): survives a line shift, where `id` does not.
+    fingerprint.assign(findings, args.root)
 
     findings.sort(key=lambda f: (f["dimension"], f["file"] or "", f["line"] or 0, f["rule_id"], f["id"]))
 

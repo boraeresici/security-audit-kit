@@ -143,6 +143,8 @@ MORE_FIELDS = (
     ("guideline", lambda f: f.get("guideline")),
     ("sink", lambda f: (f.get("evidence") or {}).get("sink")),
     ("id", lambda f: f.get("id")),
+    # What a decision keys on (F19a). The basis says how much a match means.
+    ("fingerprint", lambda f: f"{f['fingerprint']} ({f.get('fingerprint_basis') or '?'})" if f.get("fingerprint") else None),
 )
 
 NO_MATCH = ("No finding in this section matches the filters. That says nothing about the scan: it is "
@@ -152,7 +154,7 @@ NO_MATCH = ("No finding in this section matches the filters. That says nothing a
 def more(f: dict) -> str:
     items = [(k, get(f)) for k, get in MORE_FIELDS]
     items = [(k, v) for k, v in items if v not in (None, "", [])]
-    if len(items) <= 1:            # the id alone is not worth a toggle
+    if len(items) <= 1:            # the id alone (evidence written before fingerprints) is not worth a toggle
         return ""
     dl = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in items)
     return f'<details class="more"><summary>details</summary><dl>{dl}</dl></details>'

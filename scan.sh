@@ -1638,7 +1638,7 @@ scan_evidence(){
   [ -f "$FINDINGS_MD" ] && fargs=(--findings "$FINDINGS_MD")
   # Write-then-rename, like summary.json: a builder that dies (or is cancelled) mid-write must
   # leave the previous file whole, never half of a new one.
-  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --out "$EVIDENCE.$$.tmp" ${fargs[@]+"${fargs[@]}"} | py_say \
+  python3 "$KIT_DIR/lib/evidence.py" --sarif-dir "$SARIF_DIR" --summary "$SUMMARY" --root "$ROOT" --out "$EVIDENCE.$$.tmp" ${fargs[@]+"${fargs[@]}"} | py_say \
     && mv -f "$EVIDENCE.$$.tmp" "$EVIDENCE" \
     || { rm -f "$EVIDENCE.$$.tmp"; warn evidence "builder failed -> evidence.json NOT updated"; return 1; }
   # The skills' own findings have no other SARIF home -> put them on the same review surface.
