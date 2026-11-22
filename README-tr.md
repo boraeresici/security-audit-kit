@@ -50,7 +50,7 @@ eksik olan yuksek sesle atlanir ([Gereksinimler](#gereksinimler-hangisi-yoksa-o-
 ```mermaid
 flowchart LR
     BS["bootstrap.sh vX.Y.Z<br/>vendors the kit, pinned<br/>+ install.sh"]
-    PLG["plugin: Claude Code · Codex<br/>the five skills + an advisory edit hook"]
+    PLG["plugin: Claude Code · Codex<br/>the five skills"]
     subgraph REPO["your repo"]
       HK[".git/security-audit-hooks/<br/>pre-commit · pre-push<br/>check the kit first"]
       CONF[".security-audit.conf<br/>read as data"]
@@ -177,13 +177,15 @@ calistir, sonra bes skill'i gormek icin `/security-audit-kit:` yaz.
   notes'u yazar, `bootstrap.sh <tag>`'i onerir. Pin ekibin kararidir; hook'lari ve CI'lari ayni
   surumu calistirir.
 
-**Duzenleme kontrolu (plugin'in tek hook'u).** Ajan her Edit ya da Write yaptiginda plugin, repodaki
+**Duzenleme kontrolu (istege bagli, `install.sh --with-edit-hook`).** Ajan her Edit ya da Write yaptiginda, repodaki
 vendor edilmis tarayiciyi yalnizca o dosyada calistirir (`scan.sh edit`, semgrep) ve yeni bulgulari
 ajanin baglamina ekler. Asla engellemez, tarama kaydi yazmaz. Temiz bir dosya hicbir sey eklemez.
 Kontrol edemedigi bir dosya (uvx yok, sure butcesi asildi, tarayici hatasi, vendor edilmis kit yok)
 **kontrol edilmedi** diye soylenir, asla temiz denmez. Her bulgu ve her sebep oturumda bir kez
-soylenir. Plugin hook'u da git hook'lari gibi senin yetkilerinle calisir; okunabilir bir script'tir:
-[`plugin/hooks/post-edit-check.sh`](plugin/hooks/post-edit-check.sh). Kapatmak icin `.security-audit.conf`'a
+soylenir. Hook, git hook'lari gibi senin yetkilerinle calisir; okunabilir bir script'tir:
+[`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) ve projenin `.claude/settings.json`'ina baglanir
+(1.22.0'da plugin'in icindeydi; plugin dizini hook'u yalnizca Verified kuruluslardan kabul ettigi icin
+1.22.1'den beri plugin yalnizca skill'lerden olusur). Kapatmak icin `.security-audit.conf`'a
 `EDIT_CHECK=0`. Kitin git hook'lari yine `install.sh`'ten gelir; kurulum oncesi agent hook'u istege
 baglidir (`--with-agent-hook`). Plugin kanali yeni: bu
 surum itibariyla herkese acik listelenmeden once kendi projelerin icin.

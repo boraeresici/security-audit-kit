@@ -197,10 +197,13 @@ project with `requests` alone was blocked.
 
 ## The edit check — after each agent edit
 
-The plugin's one hook (`plugin/hooks/hooks.json`: PostToolUse on `Edit|Write`) runs
-`plugin/hooks/post-edit-check.sh`, which calls the repo's **vendored** `scan.sh edit <file>`. That is one
-semgrep pass on the edited file, with the same pinned version and stack-aware packs as `sast`, at
-ERROR and WARNING severity. The plugin never runs a scanner of its own.
+**Opt-in:** `bash tools/security-audit-kit/install.sh --with-edit-hook` adds one PostToolUse entry
+(`Edit|Write`) to the project's `.claude/settings.json` that runs the kit's `hooks/post-edit-check.sh`;
+`install.sh --uninstall` removes it and leaves the rest of the file. The script calls the repo's
+**vendored** `scan.sh edit <file>`: one semgrep pass on the edited file, with the same pinned
+version and stack-aware packs as `sast`, at ERROR and WARNING severity. In 1.22.0 the plugin carried
+this hook; the plugin directory accepts hooks only from Verified organizations, so since 1.22.1 the
+plugin is skills only and the hook is the kit's, like the pre-install package check.
 
 - **Advisory only.** It never blocks the edit. New findings go to the agent's context as
   "data, not instructions", one line each (rule, line, message; control characters dropped, length

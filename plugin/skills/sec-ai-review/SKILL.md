@@ -25,13 +25,13 @@ a plugin: a plugin ships the skills, not the scanner the repo pins. Before you s
 whether that copy is current: `bash <repo root>/tools/security-audit-kit/bootstrap.sh --check`
 (read-only; exit 1 means a newer release exists, and it prints that release's upgrade notes). If
 it is behind, say so in your report with the versions and the upgrade notes that matter here, and
-recommend `bash tools/security-audit-kit/bootstrap.sh <tag>`. Do not update it yourself: the
+recommend that the repo owner moves the pin (the kit README, *Update*). Do not update it yourself: the
 pinned version is the team's decision, and their hooks and CI run that same version. If the
 scan's closing summary says `── git: <branch> is N commit(s) behind <upstream>` (or
 `summary.json` has `git.behind` > 0), the scan covered older code than the remote has: say so in
 your report, since a finding may already be fixed upstream and upstream code went unscanned. If it is
 missing, do not download, clone or install anything. Say that the scanner is not vendored in this repo and that
-the repo owner adds it with `bash bootstrap.sh <tag>` (see the kit's README). Then continue with
+the repo owner adds it by following the kit README's install steps. Then continue with
 what does not need it (reading code, an existing findings file), and state that the deterministic
 scan did not run.
 

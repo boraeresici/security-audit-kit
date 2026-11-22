@@ -1706,20 +1706,22 @@ R02K="$(awk -v h="$R02S" '$0==h{p=1;next} p&&/^## /{exit} p' "$KIT_SRC/plugin/sk
 grep -q 'bootstrap.sh --check' <<<"$R02K" && grep -q 'Do not update it yourself' <<<"$R02K" \
   && ok "R02: the contract checks the vendored version (--check) and never updates it itself" || no "R02: version-skew rule missing from the contract"
 # R17: the plugin is its own folder, so the directory scans the plugin and not the kit. The folder
-# holds the manifests, the icon, the skills, the edit-check hook and a copy of the licence, and
-# nothing else; no links (the directory refuses them); the root keeps only the marketplace.
-R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json .codex-plugin/plugin.json LICENSE \
-  hooks/hooks.json hooks/post-edit-check.sh; for d in $R02D; do printf 'skills/%s/SKILL.md\n' "$d"; done)"
+# holds the manifests, the icon, the skills and a copy of the licence, and nothing else: no hook
+# and no script (the directory takes those only from Verified organizations; the edit check is the
+# kit's, wired by install.sh --with-edit-hook), no links (the directory refuses them); the root
+# keeps only the marketplace.
+R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json .codex-plugin/plugin.json LICENSE; \
+  for d in $R02D; do printf 'skills/%s/SKILL.md\n' "$d"; done)"
 R17G="$(cd "$KIT_SRC/plugin" && find . \( -type f -o -type l \) ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$R17G" = "$(LC_ALL=C sort <<<"$R17W")" ] && [ -z "$(find "$KIT_SRC/plugin" -type l)" ] \
-  && ok "R17: the plugin folder holds the manifests, icon, skills, edit-check hook and LICENSE — nothing else, no links" \
+  && ok "R17: the plugin folder holds the manifests, icon, skills and LICENSE — no hook, no script, no links" \
   || no "R17: plugin folder contents: $(tr '\n' ' ' <<<"$R17G")"
 cmp -s "$KIT_SRC/LICENSE" "$KIT_SRC/plugin/LICENSE" \
   && ok "R17: plugin/LICENSE is the kit's LICENSE" || no "R17: plugin/LICENSE differs from LICENSE"
 [ "$(find "$KIT_SRC/.claude-plugin" -mindepth 1 ! -name .DS_Store -exec basename {} \; | tr '\n' ' ')" = "marketplace.json " ] && [ ! -e "$KIT_SRC/skills" ] && [ ! -e "$KIT_SRC/.codex-plugin" ] \
   && ok "R17: the repo root keeps only the marketplace; no plugin manifest or skills outside plugin/" \
   || no "R17: plugin files left at the repo root"
-grep -rhiE '(curl|wget|git clone|bootstrap\.sh v)[^`]*\| *(ba)?sh' "$KIT_SRC"/plugin/skills/*/SKILL.md >/dev/null \
+grep -rhiE '(curl|wget|git clone|bootstrap\.sh v)[^`]*\| *(ba)?sh|bootstrap\.sh (<tag>|v[0-9])' "$KIT_SRC"/plugin/skills/*/SKILL.md >/dev/null \
   && no "R02: a skill pipes a download into a shell" || ok "R02: no skill pipes a download into a shell"
 if have claude; then
   R02O="$(claude plugin validate --strict "$KIT_SRC/plugin" 2>&1)" && ok "R02: claude plugin validate --strict (plugin)" || no "R02: validate plugin: $(tail -5 <<<"$R02O")"
@@ -2626,7 +2628,7 @@ f33res(){ printf '{"results":[{"check_id":"%s","path":"app.py","start":{"line":%
 # f33 <session> [VAR=val ...]: the hook, fed a PostToolUse payload for app.py; output in $F33O
 f33(){ local s="$1"; shift
   F33O="$(cd "$F33R" && printf '{"session_id":"%s","cwd":"%s","hook_event_name":"PostToolUse","tool_name":"Edit","tool_input":{"file_path":"%s/app.py"}}' "$s" "$F33R" "$F33R" \
-          | env PATH="$F33S:$F33SYS" CLAUDE_PROJECT_DIR="$F33R" "$@" "$BASH" "$KIT_SRC/plugin/hooks/post-edit-check.sh" 2>&1)"; F33RC=$?; }
+          | env PATH="$F33S:$F33SYS" CLAUDE_PROJECT_DIR="$F33R" "$@" "$BASH" "$KIT_SRC/hooks/post-edit-check.sh" 2>&1)"; F33RC=$?; }
 f33ctx(){ python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["hookSpecificOutput"]["additionalContext"])' <<<"$F33O" 2>/dev/null; }
 
 f33 s1 F33_OUT="$(f33res python.lang.security.audit.eval-detected 1 'eval of user input')"
@@ -2643,7 +2645,7 @@ f33 s3 F33_OUT='{"results":[],"errors":[]}'
 [ "$F33RC" -eq 0 ] && [ -z "$F33O" ] && ok "F33b: a clean file adds nothing to the context" || no "F33b: clean file said: $F33O"
 # no uvx/pipx: says it did not check; never a silent "clean"
 F33O="$(cd "$F33R" && printf '{"session_id":"s4","cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/app.py"}}' "$F33R" "$F33R" \
-        | env PATH="$F33SYS" CLAUDE_PROJECT_DIR="$F33R" "$BASH" "$KIT_SRC/plugin/hooks/post-edit-check.sh" 2>&1)"; F33RC=$?
+        | env PATH="$F33SYS" CLAUDE_PROJECT_DIR="$F33R" "$BASH" "$KIT_SRC/hooks/post-edit-check.sh" 2>&1)"; F33RC=$?
 F33C="$(f33ctx)"
 [ "$F33RC" -eq 0 ] && grep -qi 'not checked' <<<"$F33C" && grep -qi 'uvx' <<<"$F33C" \
   && ok "F33b: no uvx/pipx -> 'not checked', with the reason" || no "F33b: missing tool: rc=$F33RC $F33O"
@@ -2670,13 +2672,13 @@ f33 s9 F33_OUT="$(f33res x.rule 1 m)"
 rm -f "$F33R/.security-audit.conf"
 # only files in the repo: a path outside it, or into the scan record, is not scanned
 F33O="$(cd "$F33R" && printf '{"session_id":"s10","tool_name":"Write","tool_input":{"file_path":"/etc/hosts"}}' \
-        | env PATH="$F33S:$F33SYS" CLAUDE_PROJECT_DIR="$F33R" F33_OUT="$(f33res x.rule 1 m)" "$BASH" "$KIT_SRC/plugin/hooks/post-edit-check.sh" 2>&1)"
+        | env PATH="$F33S:$F33SYS" CLAUDE_PROJECT_DIR="$F33R" F33_OUT="$(f33res x.rule 1 m)" "$BASH" "$KIT_SRC/hooks/post-edit-check.sh" 2>&1)"
 [ -z "$F33O" ] && ok "F33b: a file outside the repo is not scanned" || no "F33b: outside file: $F33O"
-# the plugin uses the REPO's vendored scanner: none -> said once per session, nothing run
+# the hook uses the REPO's vendored scanner: none -> said once per session, nothing run
 rm "$F33R/tools/security-audit-kit"
 f33 s11 F33_OUT="$(f33res x.rule 1 m)"; F33C="$(f33ctx)"
-grep -qi 'not checked' <<<"$F33C" && grep -q 'bootstrap.sh' <<<"$F33C" && ! grep -q 'x.rule' <<<"$F33C" \
-  && ok "F33b: no vendored scanner -> says so (bootstrap.sh), runs nothing" || no "F33b: no vendored kit: $F33O"
+grep -qi 'not checked' <<<"$F33C" && grep -q 'kit README' <<<"$F33C" && ! grep -q 'x.rule' <<<"$F33C" \
+  && ok "F33b: no vendored scanner -> says so (points at the kit README), runs nothing" || no "F33b: no vendored kit: $F33O"
 f33 s11; [ -z "$F33O" ] && ok "F33b: ...and only once per session" || no "F33b: missing-kit note repeated"
 # a vendored kit older than the edit check: told to update, not run
 mkdir -p "$F33R/tools/security-audit-kit"; printf '#!/bin/sh\necho OLD-KIT-RAN\n' > "$F33R/tools/security-audit-kit/scan.sh"
@@ -2684,17 +2686,27 @@ f33 s12; F33C="$(f33ctx)"
 grep -qi 'not checked' <<<"$F33C" && grep -q 'bootstrap.sh --check' <<<"$F33C" && ! grep -q 'OLD-KIT-RAN' <<<"$F33C" && grep -q ' app.py was' <<<"$F33C" \
   && ok "F33b: a vendored kit without the edit check -> told to update, not run" || no "F33b: old vendored kit: $F33O"
 rm -rf "$F33"
-# the plugin wires it: plugin/hooks/hooks.json, PostToolUse on Edit|Write, the script under the plugin root
-python3 - "$KIT_SRC/plugin/hooks/hooks.json" <<'PY' 2>/dev/null && ok "F33b: plugin/hooks/hooks.json wires PostToolUse(Edit|Write) to the plugin's post-edit-check.sh" || no "F33b: plugin/hooks/hooks.json missing or wrong"
+# The kit wires it, not the plugin: `install.sh --with-edit-hook` adds one PostToolUse(Edit|Write)
+# entry to .claude/settings.json, keeps what was there, is idempotent, and --uninstall removes it.
+F33I="$(mktemp -d)"; git -C "$F33I" init -q; vendor_kit "$F33I/tools/security-audit-kit"
+printf '{"permissions": {"allow": ["Bash(ls)"]}}\n' > "$F33I/.claude-settings.seed"; mkdir -p "$F33I/.claude"
+cp "$F33I/.claude-settings.seed" "$F33I/.claude/settings.json"
+( cd "$F33I" && bash tools/security-audit-kit/install.sh --no-skills --with-edit-hook >/dev/null 2>&1 \
+  && bash tools/security-audit-kit/install.sh --no-skills --with-edit-hook >/dev/null 2>&1 )
+python3 - "$F33I/.claude/settings.json" <<'PY' && ok "F33b: install.sh --with-edit-hook wires PostToolUse(Edit|Write) once, keeping the rest of settings.json" || no "F33b: --with-edit-hook did not wire the edit check"
 import json, sys
-h = json.load(open(sys.argv[1]))["hooks"]
-assert set(h) == {"PostToolUse"}
-(g,) = h["PostToolUse"]
+d = json.load(open(sys.argv[1]))
+assert d["permissions"] == {"allow": ["Bash(ls)"]}
+(g,) = d["hooks"]["PostToolUse"]
 assert set(g["matcher"].split("|")) == {"Edit", "Write"}
 (c,) = g["hooks"]
-assert c["type"] == "command" and '"${CLAUDE_PLUGIN_ROOT}"/hooks/post-edit-check.sh' in c["command"]
+assert c["type"] == "command" and c["command"] == 'bash "$CLAUDE_PROJECT_DIR/tools/security-audit-kit/hooks/post-edit-check.sh"'
 assert 0 < c["timeout"] <= 120
 PY
+( cd "$F33I" && bash tools/security-audit-kit/install.sh --uninstall >/dev/null 2>&1 )
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert "hooks" not in d and d["permissions"]' "$F33I/.claude/settings.json" 2>/dev/null \
+  && ok "F33b: --uninstall removes the edit check and leaves the rest of settings.json" || no "F33b: --uninstall left the edit check or broke settings.json"
+rm -rf "$F33I"
 
 echo ""
 echo "== e2e: $PASS passed, $FAIL failed =="

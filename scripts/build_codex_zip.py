@@ -3,8 +3,8 @@
 
 The directory takes a ZIP, not a repository path. It is built from the plugin folder (plugin/, R17)
 and holds the Codex manifest, the listing icon, the five skills and the licence. Not the scanner, not the
-docs, not the test fixtures (some pin known-vulnerable packages on purpose), and not hooks/: the
-directory does not accept lifecycle hooks, and the edit check stays for manual installs.
+docs, not the test fixtures (some pin known-vulnerable packages on purpose). The plugin folder has
+no hooks (the directory does not accept lifecycle hooks); the edit check is the kit's.
 
 The rules checked here are the ones the OpenAI pages state (developers.openai.com/plugins/deploy/
 submission, /codex/plugins/build, read 2026-11-20). The build is reproducible: fixed order, fixed

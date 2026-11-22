@@ -106,10 +106,10 @@
 # PKGCHECK_CACHE=off        # or: refresh (re-scan now and replace the entry)
 # PKGCHECK_CACHE_TTL_MIN=1440
 
-# --- edit check: the plugin's PostToolUse hook (scan.sh edit) ---------------------------------
+# --- edit check: the kit's opt-in PostToolUse hook (install.sh --with-edit-hook) --------------
 # After each agent Edit/Write, one advisory semgrep pass on that file: never blocks, writes no record.
 # A clean file adds nothing to the agent's context; a file it could not check is said to be NOT
-# checked (once per session). The plugin has no per-hook switch, so this is it.
+# checked (once per session). This switch turns it off without editing .claude/settings.json.
 # EDIT_CHECK=0
 # Time budget per file in seconds (max 55: the hook itself times out at 60). Slower -> "not checked".
 # EDIT_CHECK_TIMEOUT_SEC=30

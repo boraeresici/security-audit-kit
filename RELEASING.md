@@ -267,7 +267,8 @@ additional Directory eligibility requirements". A plugin made only of skills can
 while that holds.
 
 Not in the ZIP, on purpose: the scanner (the skills drive the repo's own vendored copy), the docs,
-the test fixtures, and the plugin's `hooks/`: the directory refuses lifecycle hooks, so the edit check stays with
-the Claude Code plugin and manual Codex installs. Not stated by OpenAI, so not assumed here: fees,
+and the test fixtures. The plugin folder has no hooks since 1.22.1 (the Claude directory takes them
+only from Verified organizations, the OpenAI one not at all); the edit check is the kit's
+(`install.sh --with-edit-hook`). Not stated by OpenAI, so not assumed here: fees,
 verification documents, review times, a ZIP size limit.
 
