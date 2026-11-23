@@ -37,6 +37,10 @@ All notable changes to this project are documented here. The format is based on
   it shows.
 
 ### Fixed
+- **`tests/e2e.sh` no longer inherits release.sh's knobs.** `RELEASE_BRANCH= scripts/release.sh`
+  (cutting a release without moving `release`) failed its own e2e preflight: the F37 fixture,
+  which checks the release-branch step, ran with that step switched off. The suite now unsets
+  `RELEASE_BRANCH`, `RELEASE_REQUIRED_CHECKS` and `RELEASE_GH` first.
 - **`py-deps` without a project venv now writes per-finding rows.** That path reads the committed
   manifests with osv-scanner, and its findings stayed in the log: the record said "py-deps
   (findings)" over an empty table (seen in `scan.sh ui` on a repo with a vulnerable
