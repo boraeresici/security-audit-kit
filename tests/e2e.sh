@@ -14,6 +14,10 @@ set -uo pipefail
 # one adds an "ignored" warning, so the caller's shell would shape what the py-deps fixtures see.
 # Tests that need one set it themselves.
 unset VIRTUAL_ENV
+# release.sh's knobs, as a caller may have set them (release.sh runs this file in its preflight, and
+# `RELEASE_BRANCH= release.sh final` would otherwise switch off the release-branch step inside the
+# F37 fixture, which tests exactly that step).
+unset RELEASE_BRANCH RELEASE_REQUIRED_CHECKS RELEASE_GH
 
 KIT_SRC="$(cd "$(dirname "$0")/.." && pwd)"
 PASS=0; FAIL=0
