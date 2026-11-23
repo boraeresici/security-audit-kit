@@ -207,7 +207,16 @@ def more(f: dict) -> str:
     return f'<details class="more"><summary>details</summary><dl>{dl}</dl></details>'
 
 
-def finding_rows(findings: list, today=None) -> str:
+def loc_cell(f: dict, link: bool) -> str:
+    """The location, linked to the local UI's detail page when asked and the fingerprint is the
+    20-hex form (anything else in the file is shown, never put in a URL)."""
+    fp = f.get("fingerprint")
+    if link and isinstance(fp, str) and len(fp) == 20 and all(c in "0123456789abcdef" for c in fp):
+        return f'<a href="/finding/{fp}">{esc(location(f))}</a>'
+    return esc(location(f))
+
+
+def finding_rows(findings: list, today=None, link: bool = False) -> str:
     if not findings:
         return '<tr><td colspan="5" class="empty">Nothing in this section.</td></tr>'
     rows = []
@@ -228,7 +237,7 @@ def finding_rows(findings: list, today=None) -> str:
             f'<td class="sev {esc(f.get("severity"))}">{esc(f.get("severity"))}'
             f'<div class="ev">{esc(f.get("severity_source"))}{cvss}</div></td>'
             f'<td>{esc(f.get("tool"))}<div class="ev">{esc(f.get("rule_id"))}</div></td>'
-            f'<td class="loc">{esc(location(f))}</td>'
+            f'<td class="loc">{loc_cell(f, link)}</td>'
             f'<td>{esc(f.get("message"))}{detail_html}{more(f)}</td>'
             f'<td class="dec">{review_cell(f, today)}'
             + (f'<div class="ev">triage: {esc(DECISION_LABEL.get(f.get("decision"), f.get("decision")))} · conf {conf}</div>'
@@ -241,11 +250,11 @@ def finding_rows(findings: list, today=None) -> str:
     return "".join(rows)
 
 
-def table(findings: list, section: str = "reported", today=None) -> str:
+def table(findings: list, section: str = "reported", today=None, link: bool = False) -> str:
     return (
         '<div class="panel scroll"><table><thead><tr>'
         "<th>Severity</th><th>Tool / rule</th><th>Location</th><th>Finding</th><th>Decision</th>"
-        f'</tr></thead><tbody data-section="{section}">{finding_rows(findings, today)}</tbody></table></div>'
+        f'</tr></thead><tbody data-section="{section}">{finding_rows(findings, today, link)}</tbody></table></div>'
     )
 
 
@@ -385,30 +394,61 @@ def scan_time(summary, scan: dict):
     return summary.get("timestamp"), summary.get("run_id")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Render evidence.json as a single-file HTML report")
-    ap.add_argument("--evidence", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--repo", default="")
-    ap.add_argument("--date", default="", help="report generation date (default: today)")
-    ap.add_argument("--summary", default="", help="summary.json, for the scan time when it is the same run")
-    args = ap.parse_args()
+class BadRecord(ValueError):
+    """The record is not something this renderer can show. The message is safe to print."""
 
-    try:
-        with open(args.evidence, encoding="utf-8") as fh:
-            doc = json.load(fh)
-    except FileNotFoundError:
-        # Asked to render, nothing to render from: that is a failure the caller must be able to see.
-        print(f"[scan:report] no evidence.json at {args.evidence} -> no report written", file=sys.stderr)
-        return 1
-    except ValueError as exc:
-        print(f"[scan:report] evidence.json is not valid JSON ({exc})", file=sys.stderr)
-        return 1
 
+def _num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def clean_doc(doc) -> dict:
+    """evidence.json, shaped so the renderer cannot crash on it. The file is input the kit did not
+    necessarily write (a branch can commit one), so every field the renderer touches gets the type
+    it expects; anything else is dropped, never guessed. Raises BadRecord for a document that is not
+    evidence at all. A well-formed file comes out unchanged."""
+    if not isinstance(doc, dict):
+        raise BadRecord("evidence.json is not a JSON object")
     if not str(doc.get("schema", "")).startswith("security-audit-kit/evidence@1"):
-        print(f"[scan:report] unsupported evidence schema {doc.get('schema')!r}", file=sys.stderr)
-        return 1
+        raise BadRecord(f"unsupported evidence schema {str(doc.get('schema'))[:80]!r}")
+    out = dict(doc)
+    out["scan"] = doc.get("scan") if isinstance(doc.get("scan"), dict) else {}
+    dims = out["scan"].get("dimensions")
+    out["scan"] = dict(out["scan"], dimensions=[d for d in dims if isinstance(d, dict)] if isinstance(dims, list) else [])
+    counts = doc.get("counts") if isinstance(doc.get("counts"), dict) else {}
+    out["counts"] = {
+        "total": counts.get("total") if _num(counts.get("total")) is not None else 0,
+        "by_severity": counts.get("by_severity") if isinstance(counts.get("by_severity"), dict) else {},
+        "by_decision": counts.get("by_decision") if isinstance(counts.get("by_decision"), dict) else {},
+    }
+    findings = []
+    for f in doc.get("findings") if isinstance(doc.get("findings"), list) else []:
+        if not isinstance(f, dict):
+            continue
+        g = dict(f)
+        g["id"] = f.get("id") if isinstance(f.get("id"), str) else ""
+        g["line"] = f.get("line") if isinstance(f.get("line"), int) and not isinstance(f.get("line"), bool) else None
+        g["cvss"] = _num(f.get("cvss"))
+        g["confidence"] = _num(f.get("confidence"))
+        for k in ("file", "severity", "tool", "rule_id", "dimension", "decision", "fingerprint", "message"):
+            if g.get(k) is not None and not isinstance(g.get(k), str):
+                g[k] = str(g[k])
+        for k in ("evidence", "review", "package"):
+            if g.get(k) is not None and not isinstance(g.get(k), dict):
+                g[k] = None
+        findings.append(g)
+    out["findings"] = findings
+    out["warnings"] = [str(w) for w in doc.get("warnings")] if isinstance(doc.get("warnings"), list) else []
+    return out
 
+
+def render_report(doc: dict, summary=None, repo: str = "", generated: str = "", csp: str = CSP,
+                  origin: str = "", banner: str = "", nav: str = "", link_fingerprints: bool = False) -> str:
+    """The report page for a cleaned evidence document. Pure: reads and writes nothing. The static
+    report and the local UI (R13a) both render through it, so escaping and layout are one code path.
+    `origin` is the plain-text provenance line; `banner` and `nav` are trusted HTML from the caller."""
+    if '"' in csp or "<" in csp:
+        raise ValueError("csp must be a policy string, not markup")   # it goes into an attribute as is
     scan = doc.get("scan") or {}
     counts = doc.get("counts") or {}
     by_sev = counts.get("by_severity") or {}
@@ -417,7 +457,7 @@ def main() -> int:
 
     findings = list(doc.get("findings") or [])
     findings.sort(key=lambda f: (
-        SEVERITY_RANK.get(f.get("severity"), 99), f.get("file") or "", f.get("line") or 0, f["id"]
+        SEVERITY_RANK.get(f.get("severity"), 99), f.get("file") or "", f.get("line") or 0, f.get("id") or ""
     ))
     reported = [f for f in findings if f.get("decision") != "suppressed"]
     suppressed = [f for f in findings if f.get("decision") == "suppressed"]
@@ -431,15 +471,8 @@ def main() -> int:
     ) or '<span class="chip">no dimensions recorded</span>'
 
     gate_cls, gate = verdict(scan, len(reported), {f.get("dimension") for f in findings})
-    repo = args.repo or "this repository"
-    generated = args.date or datetime.date.today().isoformat()
-    summary = None
-    if args.summary:
-        try:
-            with open(args.summary, encoding="utf-8") as fh:
-                summary = json.load(fh)
-        except (OSError, ValueError):
-            summary = None
+    repo = repo or "this repository"
+    generated = generated or datetime.date.today().isoformat()
     when = scan_time(summary, scan)
     if when:
         scanned = f"Scanned {when[0]}" + (f" (run {when[1]})" if when[1] else "")
@@ -447,20 +480,26 @@ def main() -> int:
     else:
         scanned = "scan time unknown (no summary.json from the same run)"
         date = generated
+    # The static report's own line is a fixed text (its bytes are part of the deterministic output);
+    # a caller's line is escaped.
+    origin_html = esc(origin) if origin else (
+        f"report generated {esc(generated)} by security-audit-kit, locally: this file was rendered "
+        "offline and loads nothing. The scan's dependency lookups queried advisory services "
+        "(docs/data-flow.md).")
     warnings = doc.get("warnings") or []
     warn_html = ""
     if warnings:
         items = "".join(f"<li>{esc(w)}</li>" for w in warnings)
         warn_html = f'<h2>Notes from the builder</h2><div class="panel"><ul>{items}</ul></div>'
 
-    page = f"""<!doctype html>
+    return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="{CSP}">
+<meta http-equiv="Content-Security-Policy" content="{csp}">
 <title>Security scan report — {esc(repo)} — {esc(date)}</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <h1>Security scan report</h1>
-<p class="sub">{esc(repo)} · {esc(scanned)} · report generated {esc(generated)} by security-audit-kit, locally: this file was rendered offline and loads nothing. The scan's dependency lookups queried advisory services (docs/data-flow.md).</p>
+{nav}<p class="sub">{esc(repo)} · {esc(scanned)} · {origin_html}</p>{banner}
 
 <div class="panel">
   <div class="meta">
@@ -486,10 +525,10 @@ def main() -> int:
 
 <h2>Findings (<span id="count-reported" aria-live="polite">{len(reported)}</span>)</h2>
 {filters(findings) if findings else ""}
-{table(reported, "reported", generated)}
+{table(reported, "reported", generated, link_fingerprints)}
 
 <h2>Suppressed (<span id="count-suppressed" aria-live="polite">{len(suppressed)}</span>) — on record, not reported</h2>
-{table(suppressed, "suppressed", generated)}
+{table(suppressed, "suppressed", generated, link_fingerprints)}
 {warn_html}
 
 <footer>
@@ -505,9 +544,46 @@ it never changes what blocks a push.
 <script>{FILTER_JS}</script>
 </body></html>
 """
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Render evidence.json as a single-file HTML report")
+    ap.add_argument("--evidence", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--repo", default="")
+    ap.add_argument("--date", default="", help="report generation date (default: today)")
+    ap.add_argument("--summary", default="", help="summary.json, for the scan time when it is the same run")
+    args = ap.parse_args()
+
+    try:
+        with open(args.evidence, encoding="utf-8") as fh:
+            doc = clean_doc(json.load(fh))
+    except FileNotFoundError:
+        # Asked to render, nothing to render from: that is a failure the caller must be able to see.
+        print(f"[scan:report] no evidence.json at {args.evidence} -> no report written", file=sys.stderr)
+        return 1
+    except BadRecord as exc:
+        print(f"[scan:report] {exc}", file=sys.stderr)
+        return 1
+    except (ValueError, RecursionError) as exc:
+        print(f"[scan:report] evidence.json is not valid JSON ({exc.__class__.__name__})", file=sys.stderr)
+        return 1
+
+    summary = None
+    if args.summary:
+        try:
+            with open(args.summary, encoding="utf-8") as fh:
+                summary = json.load(fh)
+        except (OSError, ValueError, RecursionError):
+            summary = None
+    if not isinstance(summary, dict):
+        summary = None
+    page = render_report(doc, summary, args.repo, args.date or datetime.date.today().isoformat())
+    findings = doc["findings"]
+    reported = sum(1 for f in findings if f.get("decision") != "suppressed")
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(page)
-    print(f"[scan:report] wrote {args.out} ({len(reported)} reported, {len(suppressed)} suppressed)")
+    print(f"[scan:report] wrote {args.out} ({reported} reported, {len(findings) - reported} suppressed)")
     return 0
 
 

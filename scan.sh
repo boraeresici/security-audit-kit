@@ -28,6 +28,7 @@
 #   evidence  Rebuild evidence.json from the SARIF on disk    (normalized findings; no scan)
 #   report    Render evidence.json as one HTML file           (offline, print-to-PDF; no scan)
 #   decide    Record a person's decision about one finding    (docs/security/decisions.json; no scan)
+#   ui        Read-only local view of the record, 127.0.0.1   (prints a one-time link; no scan)
 #             scan.sh decide  -> how to use it
 #
 # Env override: SAST_PATHS, TF_DIR, SEMGREP_CONFIGS, SKIP_SECURITY=1 (skip all),
@@ -2141,6 +2142,12 @@ case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "rules-test" ] && { scan_rules_test; exit $?; }
 [ "${1:-}" = "allowlist" ] && { scan_allowlist; exit $?; }
 [ "${1:-}" = "decide" ]    && { shift; scan_decide "$@"; exit $?; }
+# ui (R13a): read-only, so it is dispatched here, before anything below creates LOG_DIR, writes its
+# .gitignore or takes the scan lock. The server reads the record; it never writes or scans.
+[ "${1:-}" = "ui" ] && { shift
+  have python3 || { warn ui "no python3 -> the local UI needs it (standard library only)"; exit 2; }
+  # -B: importing report_html must not leave a __pycache__ in the vendored kit (verify counts it).
+  exec python3 -I -B "$KIT_DIR/lib/ui_server.py" --root "$ROOT" "$@"; }
 # edit: the agent hook's advisory one-file pass; under SKIP_SECURITY it stays silent (no record either way)
 [ "${1:-}" = "edit" ] && { shift; [ "${SKIP_SECURITY:-0}" = "1" ] || scan_edit "$@"; exit 0; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
@@ -2187,7 +2194,7 @@ _dim(){ local name="$1"; shift; DIM_STATUS=""; DIM_REASON=""; DIM_WARN=""
 run_scans(){
   local rc=0 units u row rec entry
   if ! units="$(scan_command_field "${1:-all}" 2)"; then
-    echo "unknown command: $1 ($(scan_commands | paste -sd'|' -)|doctor|verify|checksums|rules-test|allowlist|evidence|report|decide|warm|help)"
+    echo "unknown command: $1 ($(scan_commands | paste -sd'|' -)|doctor|verify|checksums|rules-test|allowlist|evidence|report|decide|ui|warm|help)"
     return 2
   fi
   for u in $units; do

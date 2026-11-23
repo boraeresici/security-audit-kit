@@ -1642,6 +1642,34 @@ EMS="$(sed -n "/^DIM_UNITS='/,/^'/p" "$KIT_SRC/scan.sh" | awk -v ds=" $EMD2 " 'N
 [ "$EMY" = "$EMS" ] && ok "F16: the matrix's 'rows: yes' units are the ones evidence.py reads output for" \
   || no "F16: matrix rows ($EMY) != evidence.py sources ($EMS)"
 
+echo "-- R13a: scan.sh ui — read-only local view of the record (127.0.0.1, one-time link) --"
+if have python3 && have curl; then
+  UIR="$(mktemp -d)"; git -C "$UIR" init -q; vendor_kit "$UIR/tools/security-audit-kit"
+  mkdir -p "$UIR/docs/security/scan-findings"
+  printf '%s\n' '{"schema":"security-audit-kit/evidence@1","scan":{"command":"all","exit_code":0,"dimensions":[{"name":"secret","status":"pass"}]},"counts":{"total":0},"findings":[],"warnings":[]}' \
+    > "$UIR/docs/security/scan-findings/evidence.json"
+  touch "$UIR/.ui-mark"
+  ( cd "$UIR" && exec bash tools/security-audit-kit/scan.sh ui > "$UIR/.ui-out" 2>&1 ) & UIPID=$!
+  UIURL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+    UIURL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$UIR/.ui-out" 2>/dev/null | head -1)"; [ -n "$UIURL" ] && break; sleep 0.5; done
+  UIB="${UIURL%%/?t=*}"; UIHOST="${UIB#http://}"; UIPORT="${UIHOST#127.0.0.1:}"
+  [ -n "$UIURL" ] && ok "R13a: scan.sh ui prints a one-time 127.0.0.1 link" || no "R13a: no link printed: $(cat "$UIR/.ui-out" 2>/dev/null)"
+  UIA="$(curl -s -o /dev/null -w '%{http_code}' "$UIB/")"
+  UIL="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:$UIPORT" "$UIURL")"
+  UIX="$(curl -s -o /dev/null -w '%{http_code}' -c "$UIR/.jar" "$UIURL")"
+  UIY="$(curl -s -o /dev/null -w '%{http_code}' "$UIURL")"
+  UIZ="$(curl -s -o "$UIR/.page" -w '%{http_code}' -b "$UIR/.jar" "$UIB/")"
+  UIP="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -X POST "$UIB/")"
+  [ "$UIA $UIL $UIX $UIY $UIZ $UIP" = "403 403 303 403 200 405" ] && grep -q 'Security scan report' "$UIR/.page" \
+    && ok "R13a: no cookie 403 · localhost 403 · link 303 once, then 403 · with the cookie 200 · POST 405" \
+    || no "R13a: ui flow: $UIA $UIL $UIX $UIY $UIZ $UIP"
+  kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+  UIW="$(find "$UIR" -mindepth 1 -newer "$UIR/.ui-mark" -not -path '*/.git/*' ! -name '.ui-out' ! -name '.jar' ! -name '.page' | head -3)"
+  [ -z "$UIW" ] && [ ! -e "$UIR/docs/security/scan-findings/.gitignore" ] && [ ! -d "$UIR/docs/security/scan-findings/runs" ] \
+    && ok "R13a: the UI wrote nothing in the repo (no record dir, no .gitignore, no lock)" || no "R13a: the UI wrote: $UIW"
+  rm -rf "$UIR"
+else skip "R13a: scan.sh ui (needs python3 and curl)"; fi
+
 echo "-- R02: the kit is a Claude Code plugin + marketplace; manifest and disk agree --"
 # One source for the skills: plugin/skills/<name>/SKILL.md is what the plugin loads AND what install.sh
 # copies. No skill on disk that the plugin would not load, none the installer misses.

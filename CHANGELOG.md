@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`scan.sh ui`: a read-only local view of the scan record (R13a).** A standard-library server on
+  127.0.0.1 behind a one-time link (exchanged for a port-scoped, `HttpOnly; SameSite=Strict`
+  session cookie). It shows the report, a page per finding with its evidence and a person's
+  decision, and on every page whether the record is current. It warns when a record file is
+  tracked by git, a scan holds the lock, or evidence and summary are from different runs. Exact
+  `Host` check, GET/HEAD only, fixed routes, no file by path, no symlinks, size caps, no request
+  logging; it writes nothing. `docs/usage.md`, threat model and data flow updated; unit tests,
+  e2e and the headless-Chrome job cover it.
+
+### Changed
+- **`lib/report_html.py` is read / shape / render, apart.** `clean_doc` shapes an evidence document
+  so a malformed one cannot crash the renderer (a list at the top, a missing `id`, a string `cvss`,
+  deep nesting); `render_report` is pure, and the static report is byte-identical to before.
+- **The README demo** is regenerated from a real v1.22.1 run. **`plugin/README.md`** says what the
+  plugin is and why three skills name `eval`/`exec`/`pickle.loads`: detection patterns.
+
 ## [1.22.1] - 2026-11-22
 
 ### Upgrade notes

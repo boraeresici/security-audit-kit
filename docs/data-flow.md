@@ -28,7 +28,7 @@ Three different things, kept apart:
 | `py-deps` (pip-audit) | yes | — | **package names and versions** of the environment, to PyPI's advisory API |
 | `py-deps` without a venv (osv-scanner) | yes | image only | **package names and versions** from the committed manifests, to osv.dev |
 | `js-deps` (npm / pnpm / yarn audit) | yes | — | the **dependency tree** (names and versions from the lockfile) to the package registry's audit endpoint |
-| `edit` (the plugin's hook, after each agent edit; semgrep on one file) | yes | `p/...` rule packs from the semgrep registry, each run | the **names of the rule packs** requested, as for `sast`. Source code: no |
+| `edit` (the opt-in edit check, `install.sh --with-edit-hook`, after each agent edit; semgrep on one file) | yes | `p/...` rule packs from the semgrep registry, each run | the **names of the rule packs** requested, as for `sast`. Source code: no |
 | `iac` (checkov) | yes | — | nothing. The kit sets no platform API key, so nothing is uploaded |
 | `container` (trivy) | yes | the vulnerability DB (ghcr.io), when older than `TRIVY_DB_MAX_AGE_H`. `SCAN_OFFLINE=1`: never | nothing |
 | `sbom` (syft) | yes | image only | nothing |
@@ -39,6 +39,7 @@ Three different things, kept apart:
 | Skills CLI (`npx skills add`, a third-party install path, not the kit) | yes | the CLI from npm, then the skill files from GitHub | by default, **anonymous usage telemetry** to the CLI's maintainer, including the repo and skill names for a public GitHub source, plus security-audit requests. `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` turns both off |
 | `verify`, `doctor`, `allowlist`, `evidence`, `report`, `rules-test` | yes | — | nothing |
 | HTML report (`REPORT=html`, `scan.sh report`) | yes | — | nothing: one self-contained file, no scripts, no external fetch, opens offline |
+| `scan.sh ui` (local, read-only view) | yes, a server on 127.0.0.1 only | — | nothing: it reads the record and serves it to your browser on this machine; no external fetch |
 | AI layer (`/sec-triage`, `/sec-audit`, other skills) | **no** | — | **what the agent reads**: source files, findings, config, scan output. It goes to the model provider your coding agent uses, under that provider's terms. The kit does not control this, and it is the largest flow by far |
 
 **What `all` sends**, in short: rule-pack names (semgrep), your Python and JS dependency names and

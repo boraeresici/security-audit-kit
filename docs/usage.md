@@ -19,6 +19,7 @@ bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECK
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
 bash tools/security-audit-kit/scan.sh decide     # record a person's decision about one finding (see below)
+bash tools/security-audit-kit/scan.sh ui         # read-only local view of the record (see below)
 bash tools/security-audit-kit/scan.sh help       # commands, gate tags, prerequisites, what `all` leaves out
 ```
 
@@ -145,6 +146,28 @@ so without the lock they refuse (exit 1) instead of writing.
 > teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next
 > `bootstrap.sh`, and until then pre-push blocks for everyone. Found a real bug? Report it upstream
 > and bump the pin. The kit's own skills carry this as a hard rule.
+
+## The local view — `scan.sh ui`
+
+`scan.sh ui` serves the last recorded scan of this repository to your browser, read-only. It is the
+HTML report with two more things: a page per finding (its evidence, aliases, the triage verdict and
+a person's decision, from the location link), and what the static file cannot know, said on every
+page:
+
+- the record's commit against the checked-out `HEAD`;
+- a warning when a record file is **tracked by git** (the kit never commits it, so a tracked one
+  came with the branch and can say anything);
+- a banner while a scan holds the lock (the page still shows the last completed record);
+- a warning when `evidence.json` is not the current `summary.json`'s run.
+
+It prints one link, `http://127.0.0.1:<port>/?t=<token>`. The link works once: it sets a session
+cookie and the token is spent, so a new link means a new `scan.sh ui`. `--open` also opens the
+browser; it is off by default because the link would then sit in a process's arguments. The
+server binds 127.0.0.1 only, answers only to that exact host, accepts GET and HEAD, serves no file
+by path, reads `docs/security/scan-findings/summary.json` and `evidence.json` (no symlinks, size
+capped) and the scan lock's owner, and writes nothing. Reload after a scan to see it. Ctrl-C stops
+it; it also stops after two hours without a request. It needs only python3. Starting a scan and
+writing a decision from the page are later steps (R13b, R13c).
 
 ## The install-time window — `scan.sh pkgcheck` and the agent hook
 

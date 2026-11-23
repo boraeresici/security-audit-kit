@@ -60,5 +60,19 @@ case "$F" in
   *) no "report: a tampered script was not blocked ($F)" ;;
 esac
 
+# R13a: the local UI serves the same page with the CSP as a header too (plus frame-ancestors). The
+# browser opens the one-time link, gets the session cookie on the 303, and must run the filters.
+UIR="$W/uirepo"; mkdir -p "$UIR/docs/security/scan-findings"; git -C "$UIR" init -q
+cp "$W/evidence.json" "$UIR/docs/security/scan-findings/evidence.json"
+python3 -I -B "$KIT_SRC/lib/ui_server.py" --root "$UIR" > "$W/ui.out" 2>&1 & UIPID=$!
+URL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+  URL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$W/ui.out" | head -1)"; [ -n "$URL" ] && break; sleep 0.5; done
+F="$("$CHROME" "${FLAGS[@]}" --dump-dom "$URL" 2>/dev/null | grep -o '<form[^>]*id="filters"[^>]*>')"
+kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+case "$F" in
+  *hidden*|"") no "ui: the filter script did not run in the local UI ($F)" ;;
+  *) ok "ui: the local UI's page runs its filter script under the header CSP (link -> cookie -> page)" ;;
+esac
+
 echo "report-browser: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
