@@ -67,7 +67,7 @@ Codex reads the same plugin, so the skills install there with no separate packag
 terminal:
 
 ```bash
-codex plugin marketplace add boraeresici/security-audit-kit --ref v1.22.1
+codex plugin marketplace add boraeresici/security-audit-kit --ref v1.23.0
 codex plugin add security-audit-kit@security-audit-kit
 ```
 
@@ -100,10 +100,10 @@ for many agents at once, Claude Code and Codex among them. It is a third-party t
 the kit. Tried with `skills@1.7.4`:
 
 ```bash
-DISABLE_TELEMETRY=1 npx -y skills@1.7.4 add boraeresici/security-audit-kit#v1.22.1 -s '*' -a claude-code -a codex
+DISABLE_TELEMETRY=1 npx -y skills@1.7.4 add boraeresici/security-audit-kit#v1.23.0 -s '*' -a claude-code -a codex
 ```
 
-- **Pin both.** `#v1.22.1` pins the skills; `skills-lock.json` records that ref and a hash per
+- **Pin both.** `#v1.23.0` pins the skills; `skills-lock.json` records that ref and a hash per
   skill. `skills@1.7.4` pins the CLI: `npx skills` alone runs its newest release, which may be days
   old.
 - **Telemetry is on by default.** The CLI reports installs, with the repo and skill names for a
@@ -123,7 +123,7 @@ instead of using its git hooks:
 
 ```yaml
 - repo: https://github.com/boraeresici/security-audit-kit
-  rev: v1.22.1          # pin a tag
+  rev: v1.23.0          # pin a tag
   hooks:
     - id: sec-staged   # every commit: staged-secret scan
     - id: sec-deps     # on a dependency-manifest change: CVE audit
@@ -173,9 +173,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
    ```bash
    bash tools/security-audit-kit/bootstrap.sh --check
    # vendored version : v1.19.1
-   # latest tag       : v1.22.1
-   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.22.1
-   # upgrade notes v1.22.0 -> v1.22.1 (do these when you update):
+   # latest tag       : v1.23.0
+   # !! UPDATE AVAILABLE -> bash tools/security-audit-kit/bootstrap.sh v1.23.0
+   # upgrade notes v1.22.1 -> v1.23.0 (do these when you update):
    #   [1.20.0]
    #     Read the first three before updating: they change what scripts that read the kit's output see.
    #     - **`summary.json` schema 2 (breaking for parsers of `status`).** The value "fail" is gone: ...
@@ -191,9 +191,9 @@ repo — it won't tell you upstream changed. Two ways to find out:
 **Apply the update** (idempotent — overwrites the vendored copy, preserves your
 `.security-audit.conf`):
 ```bash
-bash tools/security-audit-kit/bootstrap.sh v1.22.1   # the new pinned tag
+bash tools/security-audit-kit/bootstrap.sh v1.23.0   # the new pinned tag
 git diff -- tools/security-audit-kit                 # review what changed
-git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.22.1"
+git add tools/security-audit-kit && git commit -m "chore(sec): bump security-audit-kit to v1.23.0"
 ```
 The committed `.kit-version` (ref + SHA + a content digest) is the team's shared record of which
 pinned version is in use, and what `--check` compares against next time. The third field binds the
