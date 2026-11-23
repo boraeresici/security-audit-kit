@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-23
+
+### Upgrade notes
+- None required. New: `scan.sh ui` (a local view of the scan record on 127.0.0.1, which can also
+  start and cancel `fast`/`all`); see docs/usage.md. `py-deps` without a project venv now writes
+  per-finding rows with `SARIF=1`.
+
 ### Added
 - **`scan.sh ui`: a read-only local view of the scan record (R13a).** A standard-library server on
   127.0.0.1 behind a one-time link (exchanged for a port-scoped, `HttpOnly; SameSite=Strict`
