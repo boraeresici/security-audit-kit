@@ -23,6 +23,9 @@ The kit keeps three layers apart, each with one writer (F19a):
 - It is **shown** next to its finding: `scan.sh evidence` (and every scan with `SARIF=1`) copies it
   onto the finding as `review` in `evidence.json`, and the HTML report shows it in the Decision
   column, above what the triage said. See [Shown on the finding](#shown-on-the-finding).
+- It can be written from **`scan.sh ui`** (R13c): a finding's page runs `scan.sh decide` with the
+  form's values, so the same rules apply. The page reads this file live, so a decision shows there
+  before the next scan rebuilds `evidence.json`.
 
 ## Command
 

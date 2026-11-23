@@ -127,7 +127,51 @@ def validate(doc) -> list:
             problems.append(f"{where}: an accepted risk needs an until date")
         if not isinstance(d.get("subject"), dict):
             problems.append(f"{where}: subject (the finding as decided) is required")
+        elif d["subject"].get("package") is not None and not isinstance(d["subject"]["package"], dict):
+            problems.append(f"{where}: subject.package must be an object")
     return problems
+
+
+# Builder warnings about the record. A view that lays the current record over an older
+# evidence.json (the local UI, R13c) drops these and says its own: they describe the record as
+# it was when the scan ran.
+WARN_NOT_USED = "decisions.json not used: "
+WARN_UNSEEN = " decision(s) in decisions.json are about findings this scan did not report"
+
+
+def apply_reviews(findings: list, record, warnings: list) -> dict:
+    """A person's decision shown on the finding it is about: sets `review` on each decided finding,
+    and returns the count per decision (plus "none"). Display only. `record` is a validated
+    decisions document, or None.
+
+    Whether a decision is past its `until` date is NOT decided here: that depends on today's date,
+    and evidence.json must diff to nothing over unchanged code. What is decided here, from content
+    alone: whether the finding changed since the decision (the package version it was decided at).
+    The record is branch-authored, so every field read is type-checked first."""
+    counts = {d: 0 for d in DECISIONS}
+    counts["none"] = 0
+    by_fp = {d["fingerprint"]: d for d in (record or {}).get("decisions") or [] if isinstance(d, dict)}
+    seen = set()
+    for f in findings:
+        d = by_fp.get(f.get("fingerprint"))
+        if not d or d.get("decision") not in DECISIONS:
+            counts["none"] += 1
+            continue
+        seen.add(d["fingerprint"])
+        changed = []
+        subject = d.get("subject") if isinstance(d.get("subject"), dict) else {}
+        then_pkg = subject.get("package") if isinstance(subject.get("package"), dict) else {}
+        now_pkg = f.get("package") if isinstance(f.get("package"), dict) else {}
+        then, now = then_pkg.get("version"), now_pkg.get("version")
+        if then and now and then != now:
+            changed.append(f"package version {then} -> {now}")
+        f["review"] = {k: d.get(k) for k in ("decision", "evidence_kind", "reason", "owner", "decided", "until", "verify")}
+        f["review"]["changed"] = changed
+        counts[d["decision"]] += 1
+    unseen = len(set(by_fp) - seen)
+    if unseen:
+        warnings.append(f"{unseen}{WARN_UNSEEN} (fixed, renamed, or a dimension that did not run) — scan.sh decide list")
+    return counts
 
 
 def save(path: str, doc: dict) -> None:

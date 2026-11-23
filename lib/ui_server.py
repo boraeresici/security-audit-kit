@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""`scan.sh ui` — a read-only local view of the scan record (R13a).
+"""`scan.sh ui` — a local view of the scan record (R13a), which can start a scan (R13b) and record
+a person's decision about a finding (R13c).
 
 A small HTTP server, standard library only, bound to 127.0.0.1 on an ephemeral port. It shows what
 `scan.sh` last recorded for ONE repository, fixed at start: the gate verdict, each dimension's
-status, the findings with their fingerprints, evidence and a person's decision. It writes nothing,
-starts nothing, and serves no file by path.
+status, the findings with their fingerprints, evidence and a person's decision (read live from
+docs/security/decisions.json). It writes nothing itself and serves no file by path: a start runs
+`scan.sh fast|all`, a decision runs `scan.sh decide`, each with a fixed argv and integrity-checked.
 
 Threat model (docs/threat-model.md has the row): any web page the user visits can send requests to
 127.0.0.1, and the record itself can be planted by whoever wrote the checked-out branch. So:
@@ -12,8 +14,9 @@ Threat model (docs/threat-model.md has the row): any web page the user visits ca
 - A one-time token printed in the terminal is exchanged for a session cookie whose name carries
   the port (localhost cookies are shared across ports). Both are compared in constant time, and
   request logging is off so the token never reaches a log.
-- GET and HEAD only. Fixed routes. Reads are of two fixed files under docs/security/scan-findings/
-  and the scan lock's owner file, each a regular file reached through no symlink, under a size cap.
+- GET and HEAD, plus POST to four fixed routes (form token, exact Origin). Reads are of two fixed
+  files under docs/security/scan-findings/, decisions.json and the scan lock's owner file, each a
+  regular file reached through no symlink, under a size cap.
 - The record is shaped before rendering (report_html.clean_doc); any exception is a fixed 500.
 - Every page says where the record came from: its commit against HEAD, a warning when a record
   file is tracked by git (a branch can commit a forged one), a banner while a scan holds the lock,
@@ -22,6 +25,7 @@ Threat model (docs/threat-model.md has the row): any web page the user visits ca
 from __future__ import annotations
 
 import argparse
+import datetime
 import hmac
 import http.server
 import json
@@ -41,6 +45,7 @@ import urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # run with python3 -I -B (no __pycache__ in the kit)
 sys.dont_write_bytecode = True
 
+import decisions as dec  # noqa: E402
 import report_html as rh  # noqa: E402
 
 RECORD = "docs/security/scan-findings"
@@ -53,6 +58,21 @@ GIT_TIMEOUT = 5
 RUNS = ("fast", "all")                     # R13b: the only commands the UI starts
 OUTPUT_CAP = 64 * 1024
 POST_CAP = 1024
+DECISIONS_REL = "docs/security/decisions.json"   # R13c: read to show, written only by scan.sh decide
+DECISIONS_CAP = 4 << 20
+DECIDE_CAP = 64 << 10                       # two 2000-character fields of non-ASCII text, percent-encoded
+DECIDE_TIMEOUT = 30
+DECIDE_FIELDS = {"ft", "fp", "decision", "evidence_kind", "reason", "until", "verify", "owner"}
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+FP_RE = re.compile(r"^[0-9a-f]{20}$")
+# route -> (fields allowed, fields that may be missing, body cap, max fields)
+POSTS = {
+    "/run": ({"ft", "cmd"}, set(), POST_CAP, 4),
+    "/run/cancel": ({"ft"}, set(), POST_CAP, 4),
+    "/decide": (DECIDE_FIELDS, {"decision"}, DECIDE_CAP, 8),     # an unchecked radio sends nothing
+    "/decide/remove": ({"ft", "fp"}, set(), POST_CAP, 4),
+}
+REVIEW_KEYS = ("decision", "evidence_kind", "reason", "owner", "decided", "until", "verify")
 CANCEL_TERM_SEC, CANCEL_KILL_SEC = 10, 20
 # The scan's environment is built, not inherited: these pass through; SKIP_SECURITY and every other
 # kit knob do not. GATE_STRICT passes, so a user who set it does not get a laxer UI run.
@@ -207,7 +227,22 @@ EXTRA_CSS = (".notice{border-left:4px solid var(--medium);margin:.6rem 0}"
              ".notice.bad{border-left-color:var(--bad);color:var(--bad)}"
              "dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem}"
              "a{color:var(--low);text-decoration:none}a:hover{text-decoration:underline}"
-             "dl.kv dt{color:var(--muted)}dl.kv dd{margin:0;overflow-wrap:anywhere}")
+             "dl.kv dt{color:var(--muted)}dl.kv dd{margin:0;overflow-wrap:anywhere}"
+             # the decision form (R13c)
+             ".decide{display:flex;flex-direction:column;gap:.7rem;border-left:4px solid var(--low);margin:.8rem 0}"
+             ".decide h2{margin:0;font-size:1rem}"
+             ".decide fieldset{border:1px solid var(--line);border-radius:6px;padding:.5rem .8rem;margin:0;"
+             "display:flex;flex-direction:column;gap:.3rem}"
+             ".decide legend,.decide label{font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}"
+             ".decide label{display:flex;flex-direction:column;gap:.2rem}"
+             ".decide label.opt{flex-direction:row;align-items:baseline;gap:.45rem;text-transform:none;letter-spacing:0;"
+             "font-size:.9rem;color:var(--ink)}.decide label.opt span{color:var(--muted);font-size:.84rem}"
+             ".decide .row{display:flex;flex-wrap:wrap;gap:.7rem}"
+             ".decide textarea,.decide input[type=text],.decide input[type=date],.decide select{font:inherit;font-size:.92rem;"
+             "padding:.42rem .6rem;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);"
+             "text-transform:none;letter-spacing:0}"
+             ".decide textarea{width:100%;box-sizing:border-box;resize:vertical}"
+             ".decide .btn{align-self:flex-start}.decide .hint{font-size:.82rem;color:var(--muted)}")
 HEADER_CSP = rh.CSP + "; frame-ancestors 'none'"
 FORM_CSP = rh.CSP.replace("form-action 'none'", "form-action 'self'")       # pages that carry a form
 FORM_HEADER_CSP = FORM_CSP + "; frame-ancestors 'none'"
@@ -226,12 +261,85 @@ def kv(rows) -> str:
         f"<dt>{rh.esc(k)}</dt><dd>{rh.esc(v)}</dd>" for k, v in rows if v not in (None, "", [], {})) + "</dl>"
 
 
+def live_decisions(root: str):
+    """(record or None, problem or None): docs/security/decisions.json as it is now, validated. A
+    missing file is an empty record. Read like the record files: no symlink on the way, capped."""
+    data = read_fixed(root, DECISIONS_REL, DECISIONS_CAP)
+    if data is None:
+        return None, None
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None, "not valid JSON"
+    problems = dec.validate(doc)
+    if problems:
+        return None, "; ".join(problems[:3]) + (f" (+{len(problems) - 3} more)" if len(problems) > 3 else "")
+    return doc, None
+
+
+def decisions_git_notes(root: str) -> list:
+    """The record is a committed file: say when what is on disk is not what is committed."""
+    if not os.path.lexists(os.path.join(root, *DECISIONS_REL.split("/"))):
+        return []
+    if git(root, "check-ignore", "--", DECISIONS_REL):
+        return [("warn", f"{DECISIONS_REL} is ignored by git: decisions written here will not reach the repository.")]
+    if git(root, "status", "--porcelain", "--", DECISIONS_REL):
+        return [("warn", f"{DECISIONS_REL} is modified, or new and not yet added: commit it with the change it explains.")]
+    return []
+
+
+def overlay(doc: dict, root: str) -> tuple:
+    """Lay the current decisions.json over the record's findings, in memory (R13c).
+
+    evidence.json's `review` is what the record said when the scan built it; a decision written
+    from this page would otherwise show only after the next scan. Every scan-time review is removed
+    first, so a removed decision disappears, then decisions.apply_reviews (the evidence builder's
+    own code) sets them again from the live file. Nothing is written.
+    -> (notes, record or None, problem or None); problem means the decision form must not be offered."""
+    notes = []
+    before = {f.get("fingerprint"): tuple((f.get("review") or {}).get(k) for k in REVIEW_KEYS)
+              for f in doc["findings"] if f.get("review")}
+    doc["warnings"] = [w for w in doc["warnings"]
+                       if not w.startswith(dec.WARN_NOT_USED) and dec.WARN_UNSEEN not in w]
+    for f in doc["findings"]:
+        f.pop("review", None)
+    try:
+        record, problem = live_decisions(root)
+    except Unreadable as exc:
+        record, problem = None, str(exc)
+    if problem:
+        notes.append(("bad", f"decisions.json not used: {problem}. No decision is shown, and none can be written "
+                      "here until the file is fixed or restored from git."))
+        return notes, None, problem
+    warnings = []
+    try:
+        dec.apply_reviews(doc["findings"], record, warnings)
+    except Exception as exc:              # noqa: BLE001 — a branch-authored file must not take the page down
+        for f in doc["findings"]:
+            f.pop("review", None)
+        problem = f"could not be applied ({exc.__class__.__name__})"
+        notes.append(("bad", f"decisions.json not used: {problem}."))
+        return notes, None, problem
+    for f in doc["findings"]:
+        r = f.get("review")
+        if r:
+            f["review"] = {k: (v if v is None or isinstance(v, (str, list)) else str(v)) for k, v in r.items()}
+    after = {f.get("fingerprint"): tuple(f["review"].get(k) for k in REVIEW_KEYS)
+             for f in doc["findings"] if f.get("review")}
+    if before != after:
+        notes.append(("warn", "Decisions are shown live from decisions.json; evidence.json is updated by the next scan."))
+    notes += [("warn", w) for w in warnings]
+    return notes, record, None
+
+
 class Record:
-    """One read of the record, shaped. Errors are kept as text, never raised to the handler."""
+    """One read of the record, shaped, with the live decisions laid over it. Errors are kept as
+    text, never raised to the handler."""
 
     def __init__(self, root: str):
         self.error = None
-        self.summary = self.doc = None
+        self.summary = self.doc = self.decisions = None
+        self.notes, self.decide_problem = [], None
         try:
             s = read_json(root, "summary.json")
             self.summary = s if isinstance(s, dict) else None
@@ -239,6 +347,9 @@ class Record:
             self.doc = rh.clean_doc(raw) if raw is not None else None
         except (Unreadable, rh.BadRecord) as exc:
             self.error = str(exc)
+        if self.doc is not None:
+            self.notes, self.decisions, self.decide_problem = overlay(self.doc, root)
+            self.notes += decisions_git_notes(root)
 
 
 def run_form(form_token: str) -> str:
@@ -264,11 +375,53 @@ def render_index(root: str, today: str, form_token: str = "") -> str:
                     f'<div class="panel notice bad">{rh.esc(why)}</div>', csp=FORM_CSP)
     origin, notes = provenance(root, rec.summary, rec.doc)
     return rh.render_report(rec.doc, rec.summary, os.path.basename(root), today, origin=origin,
-                            banner=banner_html(notes) + form, nav=NAV, link_fingerprints=True,
+                            banner=banner_html(notes + rec.notes) + form, nav=NAV, link_fingerprints=True,
                             csp=FORM_CSP if form else rh.CSP, extra_css=EXTRA_CSS)
 
 
-def render_finding(root: str, fp: str) -> tuple:
+def decision_form(fp: str, form_token: str, review: dict, values, owner_default: str, today: datetime.date) -> str:
+    """The R13c form. `values` (a refused submit) wins over the current decision, which wins over
+    the defaults. The HTML constraints are hints; decisions.py decides."""
+    cur = values if values is not None else {k: review.get(k) or "" for k in REVIEW_KEYS} if review else {}
+    owner = values.get("owner", "") if values is not None else owner_default    # who replaces it answers for it
+    kind = cur.get("evidence_kind") or "unverified"
+    ft = f'<input type="hidden" name="ft" value="{rh.esc(form_token)}"><input type="hidden" name="fp" value="{rh.esc(fp)}">'
+    radios = "".join(
+        f'<label class="opt"><input type="radio" name="decision" value="{rh.esc(d)}"'
+        f'{" checked" if cur.get("decision") == d else ""}> <b>{rh.esc(d)}</b> <span>{rh.esc(why)}</span></label>'
+        for d, why in dec.DECISIONS.items())
+    kinds = "".join(f'<option value="{k}"{" selected" if kind == k else ""}>{k}</option>' for k in dec.EVIDENCE_KINDS)
+    lo, hi = (today + datetime.timedelta(days=1)).isoformat(), (today + datetime.timedelta(days=dec.MAX_ACCEPT_DAYS)).isoformat()
+    replace = bool(review)
+    form = ('<form method="post" action="/decide" class="panel decide">'
+            f'<h2>{"Replace the decision" if replace else "Record a decision"}</h2>{ft}'
+            f'<fieldset><legend>decision</legend>{radios}</fieldset>'
+            f'<label>reason (required)<textarea name="reason" rows="3" maxlength="{dec.MAX_TEXT}" required>'
+            f'{rh.esc(cur.get("reason") or "")}</textarea></label>'
+            '<div class="row">'
+            f'<label>evidence kind<select name="evidence_kind">{kinds}</select></label>'
+            f'<label>until (required for accepted)<input type="date" name="until" min="{lo}" max="{hi}" '
+            f'value="{rh.esc(cur.get("until") or "")}"></label>'
+            f'<label>owner<input type="text" name="owner" maxlength="{dec.MAX_OWNER}" value="{rh.esc(owner or "")}"></label>'
+            '</div>'
+            f'<label>verify (required for needs-validation: what would settle it)<textarea name="verify" rows="2" '
+            f'maxlength="{dec.MAX_TEXT}">{rh.esc(cur.get("verify") or "")}</textarea></label>'
+            f'<button type="submit" class="btn">{"Replace decision" if replace else "Record decision"}</button>'
+            '<span class="hint">Runs scan.sh decide, which writes docs/security/decisions.json; commit it with the change '
+            'it explains. A decision is on record only: it never changes what blocks a push. To stop a finding from '
+            'blocking, use the scanner\'s allowlist (scan.sh allowlist audits them).</span></form>')
+    if replace:
+        form += ('<form method="post" action="/decide/remove" class="panel action">'
+                 f'{ft}<button type="submit" class="btn danger">Remove decision</button>'
+                 '<span class="hint">Deletes the entry from decisions.json. If it was never committed, git cannot '
+                 'bring it back; the notice after removing repeats it.</span></form>')
+    return form
+
+
+def render_finding(root: str, fp: str, form_token: str = "", owner_default: str = "", values=None,
+                   message=None) -> tuple:
+    """(status, page). With a form token (the kit is known) the page carries the decision form.
+    `message` is (css class, text) shown above it: a refusal, a result, a notice."""
     rec = Record(root)
     if rec.error or rec.doc is None:
         return 404, page("Not found", f"<h1>Finding</h1>{NAV}<div class='panel'>{rh.esc(rec.error or 'no record')}</div>")
@@ -276,7 +429,7 @@ def render_finding(root: str, fp: str) -> tuple:
     if not rows:
         return 404, page("Not found", f"<h1>Finding</h1>{NAV}<div class='panel'>No finding with this fingerprint in the current record.</div>")
     origin, notes = provenance(root, rec.summary, rec.doc)
-    parts = [f"<h1>Finding {rh.esc(fp[:12])}</h1>{NAV}<p class='sub'>{rh.esc(origin)}</p>{banner_html(notes)}"]
+    parts = [f"<h1>Finding {rh.esc(fp[:12])}</h1>{NAV}<p class='sub'>{rh.esc(origin)}</p>{banner_html(notes + rec.notes)}"]
     for f in rows:
         pkg = f.get("package") or {}
         ev = f.get("evidence") or {}
@@ -294,13 +447,24 @@ def render_finding(root: str, fp: str) -> tuple:
         ]) + "</div>")
     review = rows[0].get("review") or {}
     if review.get("decision"):
+        today = time.strftime("%Y-%m-%d")
+        flags = (["EXPIRED — review again"] if rh.expired(review, today) else []) + \
+                [f"changed since: {c}" for c in review.get("changed") or []]
         parts.append("<h2>A person's decision</h2><div class='panel'>" + kv([
             ("decision", rh.REVIEW_LABEL.get(review.get("decision"), review.get("decision"))),
             ("owner", review.get("owner")), ("decided", review.get("decided")), ("until", review.get("until")),
             ("evidence kind", review.get("evidence_kind")), ("reason", review.get("reason")),
-            ("verify", review.get("verify")), ("changed since", ", ".join(review.get("changed") or [])),
+            ("verify", review.get("verify")), ("flags", " · ".join(flags)),
         ]) + "<p class='sub'>On record only: a decision never changes what blocks a push.</p></div>")
-    return 200, page(f"Finding {fp[:12]}", "".join(parts))
+    if message:
+        parts.append(f'<div class="panel notice {message[0]}"><pre class="out">{rh.esc(message[1])}</pre></div>')
+    form = bool(form_token)
+    if form and rec.decide_problem:
+        parts.append(f"<div class='panel notice bad'>No decision can be written here: decisions.json {rh.esc(rec.decide_problem)}.</div>")
+        form = False
+    elif form:
+        parts.append(decision_form(fp, form_token, review, values, owner_default, datetime.date.today()))
+    return 200, page(f"Finding {fp[:12]}", "".join(parts), csp=FORM_CSP if form else rh.CSP)
 
 
 def integrity(root: str, kit: str) -> tuple:
@@ -492,6 +656,8 @@ class UI:
         self.session = None
         self.lock = threading.Lock()
         self.start_lock = threading.Lock()
+        self.decide_lock = threading.Lock()   # R13c: one write of decisions.json at a time
+        self.flash = None                     # (fingerprint, css class, text): shown once, on that finding's GET
         self.slots = threading.BoundedSemaphore(MAX_CONCURRENT)
         self.last = time.monotonic()
         self.idle_sec = idle_sec
@@ -531,6 +697,38 @@ class UI:
             self.job = Job(self.root, self.kit, cmd, self.bash)
             JOB_REF[0] = self.job
             return 303, ""
+
+    def decide_ready(self) -> tuple:
+        """(ok, why): the checks before scan.sh decide runs, made here and not only by the page
+        hiding its form. decisions.py follows symlinks, so its target is checked first."""
+        if not self.kit:
+            return False, "the kit's location is unknown, so nothing can be written (run it as scan.sh ui)"
+        try:
+            _, problem = live_decisions(self.root)
+        except Unreadable as exc:
+            return False, f"decisions.json: {exc}"
+        if problem:
+            return False, f"decisions.json is not valid ({problem}); fix it or restore it from git"
+        return integrity(self.root, self.kit)
+
+    def run_decide(self, args: list) -> tuple:
+        """(exit code or None on timeout, output). Its own process group, killed whole on timeout."""
+        env = dict(scan_env(), PYTHONUTF8="1")
+        proc = subprocess.Popen([self.bash, os.path.join(self.kit, "scan.sh"), "decide", *args], cwd=self.root,
+                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                start_new_session=True, close_fds=True)
+        try:
+            out, err = proc.communicate(timeout=DECIDE_TIMEOUT)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            out, err = proc.communicate()
+            rc = None
+        text = ANSI.sub(b"", out + (b"\n" if out and err else b"") + err).decode("utf-8", "replace").strip()
+        return rc, text[-4096:]
 
     def watch_idle(self):
         while True:
@@ -632,15 +830,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return ui.has_session(cookies.get(ui.cookie, ""))
 
     def post(self, ui):
-        """The only state-changing requests (R13b): start and cancel. Every R13a check, then the
-        cross-site ones: exact Origin (missing or null refused), Sec-Fetch-Site same-origin when
-        sent, a urlencoded body under 1 KiB with exactly the expected fields, and the session's
-        form token in constant time."""
+        """The only state-changing requests: start and cancel a scan (R13b), write and remove a
+        decision (R13c). Every R13a check, then the cross-site ones: exact Origin (missing or null
+        refused), Sec-Fetch-Site same-origin when sent, a urlencoded body under the route's cap with
+        exactly the expected fields, and the session's form token in constant time."""
         if self.headers.get("Host", "") != ui.host:
             return self.deny(403, f"This server answers only at {ui.host}.")
         path = urllib.parse.urlsplit(self.path).path
-        if path not in ("/run", "/run/cancel"):
+        if path not in POSTS:
             return self.send_error(405)
+        allowed, optional, cap, max_fields = POSTS[path]
         if not self.session_ok(ui):
             return self.deny(403, "No session. Open the link scan.sh ui printed in your terminal.")
         if self.headers.get("Origin", "") != f"http://{ui.host}":
@@ -650,30 +849,88 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self.headers.get("Content-Type", "").split(";")[0].strip() == "application/x-www-form-urlencoded":
             return self.deny(415, "Unsupported content type.")
         length = self.headers.get("Content-Length", "")
-        if not length.isdigit() or int(length) > POST_CAP:
-            return self.deny(413, "A form body under 1 KiB is required.")
-        raw = self.rfile.read(int(length)).decode("ascii", "replace")
+        if not length.isdigit() or int(length) > cap:
+            return self.deny(413, f"A form body under {cap // 1024} KiB is required.")
         try:
-            form = urllib.parse.parse_qs(raw, strict_parsing=True, max_num_fields=4)
-        except ValueError:
+            raw = self.rfile.read(int(length)).decode("ascii")
+            # keep_blank_values: a browser sends empty fields (until=&verify=), which are not missing
+            form = urllib.parse.parse_qs(raw, keep_blank_values=True, strict_parsing=bool(raw),
+                                         max_num_fields=max_fields, encoding="utf-8", errors="strict")
+        except ValueError:                # UnicodeDecodeError included
             return self.deny(400, "Malformed form.")
-        want = {"ft", "cmd"} if path == "/run" else {"ft"}
-        if set(form) != want or any(len(v) != 1 for v in form.values()):
+        if not set(form) <= allowed or not (allowed - optional) <= set(form) or any(len(v) != 1 for v in form.values()):
             return self.deny(400, "Unexpected form fields.")
         if not ui.form_token or not hmac.compare_digest(form["ft"][0].encode(), ui.form_token.encode()):
             return self.deny(403, "The form is stale or not from this page. Reload and try again.")
+        values = {k: v[0] for k, v in form.items()}
         if path == "/run/cancel":
             if ui.job is not None:
                 ui.job.cancel()
             return self.respond(303, "", {"Location": "/run"})
-        cmd = form["cmd"][0]
-        if cmd not in RUNS:
-            return self.deny(400, "Not a command this page starts.")
-        code, why = ui.start(cmd)
-        if code != 303:
-            return self.respond(code, page("Not started", f"<h1>Not started</h1>{NAV}<div class='panel notice bad'>"
-                                           f"<pre>{rh.esc(why)}</pre></div>"))
-        return self.respond(303, "", {"Location": "/run"})
+        if path == "/run":
+            cmd = values["cmd"]
+            if cmd not in RUNS:
+                return self.deny(400, "Not a command this page starts.")
+            code, why = ui.start(cmd)
+            if code != 303:
+                return self.respond(code, page("Not started", f"<h1>Not started</h1>{NAV}<div class='panel notice bad'>"
+                                               f"<pre>{rh.esc(why)}</pre></div>"))
+            return self.respond(303, "", {"Location": "/run"})
+        return self.decide(ui, path, values)
+
+    def decide(self, ui, path: str, values: dict):
+        """R13c: scan.sh decide with a fixed argv. Values travel as --opt=value, so one that starts
+        with "-" is never read as an option; the fingerprint and decision are checked before they
+        become positionals. Nothing is committed."""
+        fp = values["fp"]
+        if not FP_RE.match(fp):
+            return self.deny(400, "A fingerprint is 20 lowercase hex characters.")
+        if any("\x00" in v for v in values.values()):
+            return self.deny(400, "Malformed form.")
+        owner = git(ui.root, "config", "user.name")
+
+        def again(code, why, cls="bad", keep=True):
+            c, body = render_finding(ui.root, fp, ui.form_token, owner, values if keep else None, (cls, why))
+            return self.respond(code if c == 200 else c, body, form=True)
+
+        if path == "/decide":
+            if values.get("evidence_kind") not in dec.EVIDENCE_KINDS:
+                return self.deny(400, "Not an evidence kind.")
+            if values.get("decision") not in dec.DECISIONS:
+                return again(422, "Choose a decision.")
+            if values["until"] and not DATE_RE.match(values["until"]):
+                return again(422, "until: expected YYYY-MM-DD.")
+            rec = Record(ui.root)
+            if rec.doc is None or not any(f.get("fingerprint") == fp for f in rec.doc["findings"]):
+                return self.deny(409, "This finding is not in the current record, so no decision is written about it.")
+            args = [fp, values["decision"], f"--reason={values['reason']}", f"--evidence-kind={values['evidence_kind']}"]
+            args += [f"--{k}={values[k]}" for k in ("owner", "until", "verify") if values[k]]
+            removed = None
+        else:
+            try:
+                record, _ = live_decisions(ui.root)
+            except Unreadable:
+                record = None
+            removed = next((d for d in (record or {}).get("decisions") or [] if d.get("fingerprint") == fp), None)
+            if removed is None:
+                return self.deny(409, "There is no decision about this finding in decisions.json.")
+            args = ["remove", fp]
+        with ui.decide_lock:
+            ok, why = ui.decide_ready()
+            if not ok:
+                return again(409, "Nothing was written: " + why)
+            rc, text = ui.run_decide(args)
+        if rc == 0:
+            if removed is not None:
+                text += ("\nRemoved: " + " · ".join(str(removed.get(k)) for k in ("decision", "reason", "owner", "decided", "until")
+                                                   if removed.get(k)) + "\nIf it was never committed, this is the only copy.")
+            ui.flash = (fp, "", text)
+            return self.respond(303, "", {"Location": f"/finding/{fp}"})
+        if rc == 2:
+            return again(422, text or "scan.sh decide refused it.")
+        return again(500, ("scan.sh decide did not finish in time." if rc is None else f"scan.sh decide exited {rc}.")
+                     + " The decision may have been written; what this page shows is read live from decisions.json.\n"
+                     + text, keep=True)
 
     def route(self, ui: UI):
         if self.headers.get("Host", "") != ui.host:
@@ -697,8 +954,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fp = parsed.path[len("/finding/"):]
             if len(fp) != FP_CHARS or any(c not in "0123456789abcdef" for c in fp):
                 return self.send_error(404)
-            code, body = render_finding(ui.root, fp)
-            return self.respond(code, body)
+            message = None
+            flash = ui.flash
+            if flash and flash[0] == fp and self.command == "GET":
+                ui.flash, message = None, flash[1:]
+            ft = ui.form_token if ui.kit else ""
+            code, body = render_finding(ui.root, fp, ft, git(ui.root, "config", "user.name") if ft else "", None, message)
+            return self.respond(code, body, form=bool(ft))
         return self.send_error(404)
 
 

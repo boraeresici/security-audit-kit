@@ -4,6 +4,19 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-23 — v1.23.0 released (R13a, R13b); R13c implemented (`feat/r13c-decide`, unreleased)
+
+- **v1.23.0:** shipped `scan.sh ui` with R13a (read-only view) and R13b (start and cancel `fast`/`all`). It was released with `RELEASE_BRANCH=`, so the `release` branch stays at v1.22.1 while the Claude directory review is pending.
+- **R13c scope (user decision):** R13c writes decisions only, through `scan.sh decide`. The card's original "approve a time-bound allowlist entry" needs a CLI that writes scanner allowlists, which does not exist. It becomes **R13d**, conditional on a `scan.sh allow` design.
+- **R13c:** designed, reviewed independently (Fable), revised and built. The review found five problems:
+  - a removed decision stayed visible;
+  - a branch-authored record could crash the evidence build;
+  - `parse_qs` dropped the browser's blank fields;
+  - the finding page was not sent as a form page;
+  - `decisions.py` follows symlinks.
+
+  All are fixed and tested.
+
 ## 2026-11-23 — v1.22.0 and v1.22.1 released; directory submissions; R13a implemented (`feat/r13a-ui`, unreleased)
 
 - **v1.22.0 and v1.22.1:** v1.22.0 shipped F26, R17 and F19a. v1.22.1 followed the plugin directory's refusals: the plugin is skills only (the edit check moved to `install.sh --with-edit-hook`), the Codex listing manifest moved out of `plugin/` to `codex/plugin.json`, and skills name no download-and-run command.

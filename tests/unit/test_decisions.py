@@ -235,3 +235,28 @@ def test_attach_reviews_does_not_depend_on_the_date(tmp_path, monkeypatch):
     rows = [row(FP1)]
     evidence_mod.attach_reviews(rows, rec, [])
     assert rows[0]["review"]["until"] == "2020-01-01" and "expired" not in json.dumps(rows[0]["review"]).lower()
+
+
+def test_a_non_object_package_in_the_subject_is_refused_and_never_crashes(tmp_path):
+    # R13c review: validate() took any subject dict, and the old attach_reviews then called .get on a string
+    bad = _entry(FP1)
+    bad["subject"]["package"] = "x"
+    rec = str(tmp_path / "d.json")
+    _record(rec, bad)
+    warnings = []
+    counts = evidence_mod.attach_reviews([row(FP1)], rec, warnings)
+    assert counts["none"] == 1 and "subject.package must be an object" in warnings[0]
+    # apply_reviews itself, handed an unvalidated record, type-checks what it reads
+    rows = [row(FP1), row(FP2, package="y")]
+    decisions.apply_reviews(rows, {"decisions": [bad, "junk", _entry(FP2)]}, [])
+    assert rows[0]["review"]["changed"] == [] and rows[1]["review"]["decision"] == "rejected"
+
+
+def test_the_ui_and_the_builder_share_one_apply(tmp_path):
+    rec = str(tmp_path / "d.json")
+    _record(rec, _entry(FP1, version="1.26.3"), _entry("e" * 20))
+    a, wa = [row(FP1), row(FP3)], []
+    b, wb = [row(FP1), row(FP3)], []
+    evidence_mod.attach_reviews(a, rec, wa)
+    decisions.apply_reviews(b, decisions.load(rec), wb)
+    assert a == b and wa == wb and decisions.WARN_UNSEEN in wa[0]

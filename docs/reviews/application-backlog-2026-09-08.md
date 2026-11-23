@@ -91,7 +91,7 @@ This table does not repeat the F items above. “Conditional” items are not ta
 | R10 | T3.2 / B.1 skill extraction | Deferred | AI + maintenance | M | R04 or a measured maintenance problem |
 | R11 | Tool pin update automation | Conditional | Supply chain + maintenance | M | R06, F07; when 3+ tool versions go stale or a CVE is reported |
 | R12 | SkillSpector: skill security scanning dimension | P2 pilot candidate | Security + data | S pilot; M integration | F11/F13; integration F02/F03/F16; default order after F26 |
-| R13 | Local UI that starts scans on top of the CLI | Planned P2 (2026-11-03; was conditional): R13a read-only → R13b run → R13c allowlist approval | Backend + UX | M–L | F26, F19a; F01–F05, F11/F24 |
+| R13 | Local UI that starts scans on top of the CLI | Planned P2 (2026-11-03; was conditional): R13a read-only → R13b run → R13c decisions (all implemented; R13a/b in v1.23.0) → R13d allowlist approval (conditional, needs `scan.sh allow`) | Backend + UX | M–L | F26, F19a; F01–F05, F11/F24 |
 | R14 | Signal-selected expert review playbooks | Conditional P2 | Security + AI | S selection; M / domain | F12 eval coverage, F27; coverage gap at a real consumer |
 | R15 | New vulnerability tracking, event output and agent access | Note / conditional | Security + integration | a: S; b: S–M; c: M–L; d: M | a: none; b: F01; c: F03, F19; d: c, F11, F13; real consumer demand |
 | R16 | Optional external dynamic adapter (nuclei reference) | Conditional | Security + integration | M | F17 registry (done), F16b normalizer; real consumer request for a live-target check |
@@ -586,7 +586,202 @@ The security of skill packages loaded into the agent is a concrete candidate tha
 **Decision (user, 2026-11-17, on the research recommendations):** session by a one-time URL token exchanged for an `HttpOnly; SameSite=Strict` cookie (works without JS); loopback only, exact Host check, Origin and `Sec-Fetch-Site` on every POST, fixed command table, no file serving; exceptions through the CLI with a maximum lifetime (180 days proposed). F26's filter script is checked by hand in a browser until a headless check is justified.
 
 
-**R13b implemented — 2026-11-23 (`feat/r13b-run`, unreleased):** designed, reviewed independently by Fable before code, revised, and built as designed. The review found:
+**R13d — allowlist approval from the UI (conditional, 2026-11-23):** the original R13c. This card
+writes a time-bound entry into a scanner's own allowlist, the only thing that stops a finding from
+blocking. It first needs a CLI command (`scan.sh allow`) that writes each tool's format with a
+mandatory expiry, and covers every dependency path that reports the same advisory (see
+`scan.sh allowlist`). The UI would then run that command the way R13c runs `scan.sh decide`. It is
+not started until the CLI is designed and the user asks for it.
+
+**R13c implemented — 2026-11-23 (`feat/r13c-decide`, unreleased):** designed, reviewed independently
+by Fable before code, revised, and built as designed. The review found:
+- a removed decision stayed visible, because `evidence.json` still carried it;
+- a `subject.package` that is not an object passed validation and crashed the builder;
+- `parse_qs` drops blank fields, so a real browser submit would have been refused;
+- the finding page was not a form page (`Origin: null`);
+- `decisions.py` follows symlinks, so the handler checks the path itself;
+- a timeout must kill the process group;
+- 16 KiB was too small for non-ASCII text;
+- the notice could be consumed by the wrong request;
+- `scan_decide` split the owner into two arguments.
+
+Byte-identical `evidence.json` checked on a 705-finding record. Tests: unit (30 new in
+`test_ui_server.py`, 2 in `test_decisions.py`), e2e (decide, live view, remove, only
+`decisions.json` changed, gate unchanged, owner with a leading `-`), and the browser job (the
+browser's own submit of the decision form). The design as built:
+
+**Scope (user decision, 2026-11-23).** R13c writes decisions (`docs/security/decisions.json`) through
+`scan.sh decide`. It does not write scanner allowlists. A gate-opening, time-bound allowlist entry
+first needs its own CLI command (`scan.sh allow`), so it is a separate card, R13d.
+
+Builds on R13a and R13b (`lib/ui_server.py`). The UI stays a thin client:
+- the only writer is `scan.sh decide`, called with a fixed argv;
+- the UI never commits;
+- the gate never reads decisions, an invariant e2e already checks.
+
+**R13c — Form (`/finding/<fp>`):**
+- **Fields:**
+  - `decision` (radio, from `decisions.DECISIONS`);
+  - `reason` (textarea);
+  - `evidence_kind` (`observed`, `inferred` or `unverified`; default `unverified`);
+  - `until` (`<input type=date>`);
+  - `verify` (textarea);
+  - `owner`, prefilled from `git config user.name` when the page renders. If git has no name, the user types one.
+- **Prefill.** When a decision exists, the form is filled from it and the button reads "Replace
+  decision", because `cmd_set` replaces silently.
+- **HTML attributes are hints only.** The rules belong to `decisions.py`: a reason is required,
+  `until` must be in the future, and an accepted risk is at most 366 days.
+- **Remove.** A second form, "Remove decision", appears only when a decision exists. The success
+  notice repeats the removed entry: decision, reason, owner and until. An uncommitted decision
+  cannot be recovered from git.
+- **Next to the form, in words:** a decision is on record only and never changes what blocks a
+  push. Stopping a finding from blocking still needs a scanner allowlist, which
+  `scan.sh allowlist` audits.
+- **Form-page headers.** The finding page, its 422 re-render and the error panel are form pages:
+  `respond(..., form=True)` sends `Referrer-Policy: same-origin`, and `FORM_CSP` is used in both the
+  header and the meta tag. Otherwise the POST would carry `Origin: null`.
+
+**R13c — Write path:**
+1. **Routes and checks.** POST `/decide` and `/decide/remove` repeat every R13b check: exact Host,
+   session cookie, exact Origin (missing or `null` refused), `Sec-Fetch-Site: same-origin` when
+   sent, a urlencoded body, and the form token compared in constant time.
+   - **Body caps:** 64 KiB for `/decide`, since 2000 non-ASCII characters can reach about 24 KB once
+     percent-encoded; 1 KiB for `/decide/remove`. The 413 message names the cap of the route.
+   - **Parsing:** `parse_qs(keep_blank_values=True, strict_parsing=True, max_num_fields=8,
+     encoding="utf-8", errors="strict")`. Bad UTF-8 is a `ValueError`, so it gets a 400.
+   - **Field names:** `/decide` accepts exactly
+     `ft, fp, decision, evidence_kind, reason, until, verify, owner`, with `decision` allowed to be
+     missing (an unchecked radio). `/decide/remove` accepts exactly `ft, fp`. A repeated field or any
+     other name gets a 400.
+2. **Shape checks before anything runs:**
+   - `fp` is exactly 20 lowercase hex characters; a prefix is never accepted from the page;
+   - `evidence_kind` is in its table;
+   - text fields contain no NUL.
+
+   These checks re-render the form with a 422, so the typed reason is kept:
+   - `decision` missing or not in its table;
+   - `until` not empty and not `YYYY-MM-DD`.
+3. **Preconditions, checked in the handler, not only by a disabled form:**
+   - `fp` is in the current `Record(root)` (set) or in `decisions.json` (remove);
+   - `read_fixed(root, "docs/security/decisions.json")` succeeds or returns None (a missing file),
+     which refuses a symlinked `docs/`, `docs/security` or file;
+   - if the file exists, it passes `decisions.validate`.
+
+   If any check fails, nothing runs. This matters because `decisions.py` follows symlinks (`load`
+   uses `open`; `save` uses `makedirs` and `mkstemp` in the parent).
+4. **Integrity first.** The same `integrity(root, kit)` check as R13b.
+5. **Process.**
+   - **Set:** `[bash, "<kit>/scan.sh", "decide", fp, decision, "--reason=<r>", "--evidence-kind=<k>",
+     "--owner=<o>" (if non-empty), "--until=<u>" (if given), "--verify=<v>" (if given)]`.
+   - **Remove:** `[bash, "<kit>/scan.sh", "decide", "remove", fp]`.
+   - **Values use `--opt=value`.** A value that starts with `-` is not read as an option (checked).
+     `fp` and `decision` are validated before they are used as positionals. There is no shell, and
+     `--date` is never passed.
+   - **The process runs like `Job` runs:** `Popen` with `start_new_session=True`,
+     `stdin=DEVNULL` and `cwd=root`. stdout and stderr are captured. The env is `scan_env()` plus
+     `PYTHONUTF8=1`.
+   - **Timeout.** After 30 s the whole group gets `killpg`, then is reaped.
+6. **One write at a time.** A `decide_lock` serialises the UI's own writes. A write while a UI scan
+   runs is safe: `decide` takes neither the lock nor `LOG_DIR`, and `evidence.json` and
+   `decisions.json` are both published by rename. A write from a terminal at the same moment is
+   last-writer-wins, as it already is between two terminals.
+7. **Result.**
+   - **Exit 0:** a 303 to `/finding/<fp>`. A one-time notice with `decide`'s stdout (escaped) is
+     kept in the session, keyed by `fp`, and consumed only by a GET of that finding (not by HEAD or
+     another page).
+   - **Exit 2 (REFUSED):** a 422 with the finding page re-rendered, the form filled with the
+     submitted values, and `decide`'s stderr (escaped, at most 4 KiB) above it.
+   - **Timeout or any other exit:** the error panel says "the decision may have been written; the
+     state below is read live from decisions.json", then the live state.
+
+**R13c — Reading decisions live:**
+`evidence.json`'s `review` is fixed when the scan builds evidence. The UI therefore lays the
+current `decisions.json` over the record, in memory, on every request.
+- **Shared code.** `apply_reviews(findings, record, warnings)` moves to `decisions.py`. The UI then
+  does not import `fingerprint` or `native`. `evidence.attach_reviews` becomes `load` plus
+  `apply_reviews`, and its output stays byte-identical, which a fixture test checks.
+- **Type guards.** `apply_reviews` checks that `subject` and `subject.package` are dicts.
+  `validate` also checks `subject.package` (a dict or missing). A branch-authored record must not
+  crash the evidence build or the page.
+- **Overlay steps, in order:**
+  1. note whether the live decisions differ from the scan-time `review` values (for the banner);
+  2. remove `review` from every finding;
+  3. call `apply_reviews`.
+
+  Removing first is what makes a removed decision disappear.
+- **Builder warnings.** Two kinds of scan-time warning are dropped from the builder notes, matched
+  through shared prefix constants: "decision(s) … did not report" and "decisions.json not used".
+  The overlay shows its own warnings in the banner instead.
+- **Broken record.** An unreadable or invalid record, or any overlay error, gives a banner
+  ("decisions.json not used: …") and a disabled form, never a 500.
+- **Nothing is written.** When live and scan-time differ, the banner says "decisions: live from
+  decisions.json; evidence.json is updated by the next scan".
+
+**R13c — Banners:**
+- `git status --porcelain -- docs/security/decisions.json` shows a change → "decisions.json is
+  modified, or new and not yet added: commit it with the change it explains".
+- `git check-ignore` matches the file → "decisions.json is ignored by git: decisions will not
+  reach the repository".
+- The expired and changed-since flags are the ones `render_report` already shows.
+
+**R13c — Kit fix (from the review):**
+`scan_decide` injects git's name as `--owner="$who"`, one argv entry. With two entries, a name that
+starts with `-` breaks argparse. A later `--owner=` from the form still wins, because argparse
+keeps the last value; a unit test checks this.
+
+**R13c — Threat model additions:**
+- A decide from the UI writes no more than `scan.sh decide` typed in a terminal. It is
+  integrity-checked, and its target path is checked for symlinks first.
+- Residual (as in R13b): localhost cookies are not scoped to a port. A process holding the cookie
+  and the form token could write or remove a decision. The impact stays bounded: the file is
+  committed and reviewed in a diff, and it never changes the gate.
+- The owner is an attribution, not an identity, as with `--owner` in a terminal.
+- A stale form token gives a 403 and the typed text is lost. This is accepted and documented.
+- Stored text is shown escaped (`rh.esc` with `quote=True`). `decisions.clean` already strips
+  control, bidi and zero-width characters.
+
+**R13c — Tests:**
+- **Unit, with a fake `scan.sh` that records argv and env and exits 0, 2 or sleeps:**
+  - **Set:** returns 303 with the argv in `--opt=value` form; `PYTHONUTF8=1` is in the env.
+  - **Notice:** shown once, only on that finding's GET; a HEAD does not consume it.
+  - **Overlay:** shows a new decision; after a remove the finding shows no decision, even though
+    `evidence.json` still has the old `review`.
+  - **Field values:**
+    - a reason starting with `-` arrives as one argv entry;
+    - empty `until`, `verify` and `owner` from a browser-shaped body are accepted;
+    - a missing `decision` gives a 422 with the reason refilled.
+  - **Refusal:** a 422 with the form refilled and stderr shown.
+  - **Timeout:** the group is killed and the panel says "may have been written".
+  - **Request checks:**
+    - Origin wrong, missing or `null`; `Sec-Fetch-Site` cross-site;
+    - no session; wrong Host; stale form token;
+    - body over cap; repeated or unknown field; invalid UTF-8.
+  - **Fingerprint:** a prefix, uppercase, or 19 or 21 characters is refused; so is an `fp` not in
+    the record (set) or not in `decisions.json` (remove).
+  - **Preconditions:** an integrity failure, a symlinked `docs/security`, a symlinked file, and a
+    direct POST against an invalid record each refuse, with nothing run.
+  - **Broken record:** `"subject": {"package": "x"}` gives a banner, not a 500. Builder warnings
+    are dropped; the banners for modified, untracked and ignored files appear.
+- **Unit, `decisions.py`:** `apply_reviews` type guards; `validate` refuses a non-dict
+  `subject.package`; evidence output is byte-identical on a fixture.
+- **e2e, in a throwaway repo with the real kit, after a `fast` scan:**
+  - POST `/decide` with curl; `decisions.json` holds the entry with the reason and owner given;
+  - `/finding/<fp>` shows it before any new scan;
+  - `git status` shows only `?? docs/security/decisions.json`;
+  - POST `/decide/remove`, and the finding shows no decision;
+  - the gate result of a following `scan.sh fast` is unchanged;
+  - `scan.sh decide` with `user.name` starting with `-` still works.
+- **Headless Chrome:** the real form on `/finding/<fp>` submits with the Origin accepted, and the
+  next page shows the decision.
+
+**R13c — Not in R13c:**
+- writing scanner allowlists, or anything else that changes the gate (R13d, after `scan.sh allow`);
+- bulk decisions;
+- deciding about a fingerprint that is not in the current record;
+- committing;
+- editing `decisions.json` by hand from the page.
+
+**R13b implemented — 2026-11-23 (`feat/r13b-run`, released in v1.23.0):** designed, reviewed independently by Fable before code, revised, and built as designed. The review found:
 - the forms would send `Origin: null` under R13a's `no-referrer`; this was confirmed in headless Chrome and is now tested by a real form submit;
 - the run line comes last, so the run is identified by pid;
 - the UI's lock check stuck on a stale lock;
@@ -716,7 +911,7 @@ command, shows its output and lets the user cancel it. The gate, the record and 
 - `checksums`, `decide`, `pkgcheck`, `edit`, `warm`;
 - writing decisions or exceptions (R13c).
 
-**R13a implemented — 2026-11-23 (`feat/r13a-ui`, unreleased):** as designed below, approved by the user after the review. `lib/ui_server.py`; `scan.sh ui` dispatched before any write or lock; `report_html.py` split into `clean_doc` / `render_report` / `main` (the static report byte-identical, checked on a 705-finding record). One change from the design: `/` carries both the record and the findings table (the report page), so there is no separate `/findings`; the location links to `/finding/<fingerprint>`. Tests: `tests/unit/test_ui_server.py` (30), e2e (link, 403/303/200/405 flow, nothing written), and the headless-Chrome job opens the link and runs the filters under the header CSP. Not done: run history (no retention), R13b, R13c.
+**R13a implemented — 2026-11-23 (`feat/r13a-ui`, released in v1.23.0):** as designed below, approved by the user after the review. `lib/ui_server.py`; `scan.sh ui` dispatched before any write or lock; `report_html.py` split into `clean_doc` / `render_report` / `main` (the static report byte-identical, checked on a 705-finding record). One change from the design: `/` carries both the record and the findings table (the report page), so there is no separate `/findings`; the location links to `/finding/<fingerprint>`. Tests: `tests/unit/test_ui_server.py` (30), e2e (link, 403/303/200/405 flow, nothing written), and the headless-Chrome job opens the link and runs the filters under the header CSP. Not done: run history (no retention), R13b, R13c.
 
 **R13a design — 2026-11-23 (revised after an independent review by Fable; proposed, for the user's approval before code):**
 - **Command:** `scan.sh ui [--open]`, dispatched beside `verify`/`allowlist`, before `scan.sh` creates `LOG_DIR`, writes `.gitignore` or takes the scan lock, so the UI writes nothing. The repo root is printed at start and fixed for the server's life. `lib/ui_server.py`, standard library only, run with `python3 -I`.
@@ -762,7 +957,7 @@ command, shows its output and lets the user cancel it. The gate, the record and 
 - `scan.sh ui` starts a localhost server built only on the Python standard library. It adds no new dependency and no install step. This settles the framework question left open below.
 - **R13a — read-only:** run history, coverage (including skipped and indeterminate), and findings with their evidence and decisions, read from `summary.json`, `evidence.json` and the F19a decision record.
 - **R13b — run a dimension:** the first slice described below.
-- **R13c — approve a time-bound allowlist entry:** an expiry is mandatory. The UI does this through a CLI command, never by writing the file itself.
+- **R13c — approve a time-bound allowlist entry:** an expiry is mandatory. The UI does this through a CLI command, never by writing the file itself. *(2026-11-23, user decision: R13c became "record a decision through `scan.sh decide`"; the allowlist approval is R13d, which first needs a `scan.sh allow` CLI.)*
 - The UI is only a thin client over the CLI. Everything it writes shows up as a `git diff`, and it never commits. The gate decision always stays with the CLI and the hooks.
 - The static F26 report stays the zero-install fallback and shares its escaping and renderer with the UI.
 

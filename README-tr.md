@@ -95,9 +95,11 @@ flowchart LR
   `docs/security/decisions.json`'a yazar; parmak izi satir kaymasina ve advisory'nin baska adla
   raporlanmasina dayanir. Rapor karari bulgunun yaninda, filtrelenebilir ve suresi gecince
   isaretli gosterir. Bir push'un engelini asla kaldirmaz.
-- **Yerel, salt okunur gorunum.** `scan.sh ui`, kaydi tek kullanimlik bir linkle 127.0.0.1'de sunar:
-  rapor, her bulgu icin bir sayfa ve kaydin guncel mi, tarama suruyor mu, daldan mi geldigi. Hicbir
-  sey yazmaz; ayrinti: [docs/usage.md](docs/usage.md#the-local-view--scansh-ui) (Ingilizce).
+- **Yerel gorunum.** `scan.sh ui`, kaydi tek kullanimlik bir linkle 127.0.0.1'de sunar: rapor, her
+  bulgu icin bir sayfa ve kaydin guncel mi, tarama suruyor mu, daldan mi geldigi. Sayfadan
+  `fast`/`all` baslatilip iptal edilebilir ve bir bulgu hakkinda karar kaydedilebilir; ikisi de ayni
+  `scan.sh` komutuyla yapilir, hicbir sey commit edilmez. Ayrinti:
+  [docs/usage.md](docs/usage.md#the-local-view--scansh-ui) (Ingilizce).
 
 ## Yasam dongusu
 

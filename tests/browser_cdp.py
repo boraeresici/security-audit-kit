@@ -6,7 +6,10 @@ text. Used for R13b: the local UI's own form must reach the server with an Origi
 test sets headers by hand and cannot catch what a real browser sends (with `Referrer-Policy:
 no-referrer`, Chrome sends `Origin: null` on a form POST).
 
-Usage: browser_cdp.py <chrome> <profile-dir> <url> <form-action>
+Usage: browser_cdp.py <chrome> <profile-dir> <url> <form-action> [<path> [name=value ...]]
+  <path>        opened after <url> (the one-time link sets the cookie, then this page is loaded)
+  name=value    filled into the form before submitting: a radio with that value is checked, any
+                other field gets the value (R13c's decision form)
 Prints the resulting page's text; exits 2 if the browser cannot be driven.
 """
 import base64
@@ -91,6 +94,8 @@ class Page:
 
 def main():
     chrome, profile, url, action = sys.argv[1:5]
+    then = sys.argv[5] if len(sys.argv) > 5 else ""
+    fills = [a.split("=", 1) for a in sys.argv[6:]]
     flags = ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
              f"--user-data-dir={profile}", "--remote-debugging-port=0", "about:blank"]
     if sys.platform.startswith("linux"):
@@ -108,6 +113,14 @@ def main():
         page.call("Page.enable")
         page.call("Page.navigate", {"url": url})
         page.wait_load()
+        if then:
+            page.call("Page.navigate", {"url": url.split("/?", 1)[0] + then})
+            page.wait_load()
+        sel = f'document.querySelector(\'form[action="{action}"]\')'
+        for name, value in fills:
+            page.eval(f"(function(f){{var n={json.dumps(name)},v={json.dumps(value)};"
+                      "var r=f.querySelector('input[type=radio][name=\"'+n+'\"][value=\"'+v+'\"]');"
+                      "if(r){r.checked=true;}else{f.elements[n].value=v;}})(" + sel + ")")
         # DevTools evaluation is not the page's script: the CSP that blocks inline code does not
         # apply to it, and the submit it triggers is an ordinary form navigation.
         page.eval(f'document.querySelector(\'form[action="{action}"]\').submit()')

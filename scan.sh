@@ -2137,7 +2137,8 @@ scan_decide(){
   [ -n "$decision" ] || { printf 'decide: give a fingerprint AND a decision\n\n' >&2; decide_help >&2; return 2; }
   # --owner defaults to git's user.name; one given on the command line comes later and wins.
   local owner=() who; who="$(git -C "$ROOT" config user.name 2>/dev/null || true)"
-  [ -n "$who" ] && owner=(--owner "$who")
+  # One argv entry (--owner=<name>): a name that starts with "-" must not read as an option.
+  [ -n "$who" ] && owner=("--owner=$who")
   python3 "$KIT_DIR/lib/decisions.py" set "$DECISIONS_FILE" "$DECIDE_EVIDENCE" "$fp" "$decision" ${owner[@]+"${owner[@]}"} "$@"
 }
 

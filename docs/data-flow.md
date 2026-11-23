@@ -39,7 +39,7 @@ Three different things, kept apart:
 | Skills CLI (`npx skills add`, a third-party install path, not the kit) | yes | the CLI from npm, then the skill files from GitHub | by default, **anonymous usage telemetry** to the CLI's maintainer, including the repo and skill names for a public GitHub source, plus security-audit requests. `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` turns both off |
 | `verify`, `doctor`, `allowlist`, `evidence`, `report`, `rules-test` | yes | — | nothing |
 | HTML report (`REPORT=html`, `scan.sh report`) | yes | — | nothing: one self-contained file, no scripts, no external fetch, opens offline |
-| `scan.sh ui` (local, read-only view) | yes, a server on 127.0.0.1 only | — | nothing: it reads the record and serves it to your browser on this machine; no external fetch |
+| `scan.sh ui` (local view) | yes, a server on 127.0.0.1 only | — | nothing: it reads the record and `decisions.json` and serves them to your browser on this machine; starting a scan or writing a decision runs the local `scan.sh`; no external fetch |
 | AI layer (`/sec-triage`, `/sec-audit`, other skills) | **no** | — | **what the agent reads**: source files, findings, config, scan output. It goes to the model provider your coding agent uses, under that provider's terms. The kit does not control this, and it is the largest flow by far |
 
 **What `all` sends**, in short: rule-pack names (semgrep), your Python and JS dependency names and

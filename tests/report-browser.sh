@@ -32,10 +32,11 @@ f = lambda i, sev, tool, dec=None: {
     "id": f"{i:012x}", "dimension": "sast", "tool": tool, "rule_id": f"r{i}", "file": "app/x.py",
     "line": i, "message": "<script>alert(1)</script>", "severity": sev, "severity_source": "t",
     "cvss": None, "decision": dec, "confidence": None, "evidence": None}
+first = dict(f(1, "high", "semgrep"), fingerprint="0123456789abcdef0123", fingerprint_basis="line-content")
 json.dump({"schema": "security-audit-kit/evidence@1",
            "scan": {"command": "all", "exit_code": 1, "dimensions": []},
            "counts": {}, "warnings": [],
-           "findings": [f(1, "high", "semgrep"), f(2, "low", "gitleaks"), f(3, "medium", "semgrep", "suppressed")]},
+           "findings": [first, f(2, "low", "gitleaks"), f(3, "medium", "semgrep", "suppressed")]},
           open(sys.argv[1], "w"))
 EOPY
 python3 "$KIT_SRC/lib/report_html.py" --evidence "$W/evidence.json" --out "$W/report.html" \
@@ -87,6 +88,21 @@ kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
 case "$T" in
   *"no install record"*) ok "ui: the browser's own form POST passes the Origin check (R13b)" ;;
   *) no "ui: the browser's form POST was refused or failed: ${T:0:300}" ;;
+esac
+
+# R13c: the decision form on a finding's page, filled and submitted by the browser. As above, the
+# missing install record refuses the write after every request check; the page that comes back is
+# the finding again, with the typed reason still in the form.
+python3 -I -B "$KIT_SRC/lib/ui_server.py" --root "$UIR" --kit "$KIT_SRC" > "$W/ui3.out" 2>&1 & UIPID=$!
+URL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+  URL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$W/ui3.out" | head -1)"; [ -n "$URL" ] && break; sleep 0.5; done
+rm -rf "$W/cdp"; mkdir -p "$W/cdp"
+T="$(python3 -I "$KIT_SRC/tests/browser_cdp.py" "$CHROME" "$W/cdp" "$URL" /decide /finding/0123456789abcdef0123 \
+  decision=rejected "reason=typed in the browser" 2>&1 | tr '\n' ' ')"
+kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+case "$T" in
+  *"Nothing was written"*"no install record"*) ok "ui: the browser's own decision form POST passes the Origin check (R13c)" ;;
+  *) no "ui: the browser's decision form POST was refused or failed: ${T:0:300}" ;;
 esac
 
 echo "report-browser: $PASS passed, $FAIL failed"

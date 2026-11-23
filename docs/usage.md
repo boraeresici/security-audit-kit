@@ -19,7 +19,7 @@ bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECK
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
 bash tools/security-audit-kit/scan.sh decide     # record a person's decision about one finding (see below)
-bash tools/security-audit-kit/scan.sh ui         # read-only local view of the record (see below)
+bash tools/security-audit-kit/scan.sh ui         # local view of the record: start a scan, record a decision (see below)
 bash tools/security-audit-kit/scan.sh help       # commands, gate tags, prerequisites, what `all` leaves out
 ```
 
@@ -180,7 +180,27 @@ of output, refreshes itself while running, and has a *Cancel* button (SIGINT, th
 a cancelled scan publishes nothing). One scan at a time; if another terminal holds the scan lock,
 nothing is started (`SCAN_LOCK_BUSY=exit`). The end state comes from the exit code: passed,
 blocked, indeterminate, cancelled, killed, not started (lock held) or error; the page says whether
-the record is this run's. Writing a decision from the page is a later step (R13c).
+the record is this run's.
+
+**Recording a decision from the page (R13c).** Each finding's page has a *Record a decision*
+form: the decision (`confirmed`, `rejected`, `accepted`, `needs-validation`), the reason, the
+evidence kind, `until` (required for `accepted`), `verify` (required for `needs-validation`) and the
+owner, prefilled from `git config user.name`. The page runs `scan.sh decide` with these values; the
+rules are `decide`'s own (see [docs/schema/decisions.md](schema/decisions.md)), and a refused
+decision comes back with the reason you typed still in the form. When a decision exists, the form
+is filled from it (*Replace decision*) and a *Remove decision* button appears; the notice after a
+removal repeats what was removed, because an uncommitted decision cannot be restored from git.
+
+- The page shows decisions **live** from `docs/security/decisions.json`, laid over the record in
+  memory, so a decision appears without a new scan; `evidence.json` catches up on the next scan.
+  A `decisions.json` that does not validate is not used: the page says so and offers no form.
+- It **never commits**. The page says when `decisions.json` is modified, new and not yet added, or
+  ignored by git. Commit it with the change it explains.
+- A decision **never changes what blocks a push**, from the page or the terminal. To stop a finding
+  from blocking, use the scanner's allowlist (`scan.sh allowlist` audits them).
+- Every write is checked like a start: the kit against its install record, and
+  `docs/security/decisions.json` reached through no symlink. Values reach `decide` as
+  `--option=value` arguments, without a shell.
 
 ## The install-time window — `scan.sh pkgcheck` and the agent hook
 

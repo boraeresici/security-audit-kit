@@ -616,43 +616,19 @@ REVIEWS = tuple(decisions.DECISIONS)
 
 
 def attach_reviews(findings: list, path: str, warnings: list) -> dict:
-    """A person's decision (docs/security/decisions.json, F19a S3) shown on the finding it is about.
+    """A person's decision (docs/security/decisions.json, F19a S3) shown on the finding it is about
+    (decisions.apply_reviews, shared with the local UI).
 
     Display only: evidence.json is built after the gate, and nothing here can change it. A record
     that cannot be read is a warning and no reviews, never a failed build — it is a committed,
-    branch-authored file. Whether a decision is past its `until` date is NOT decided here: that
-    depends on today's date, and evidence.json must diff to nothing over unchanged code. The report
-    compares it with its own date. What is decided here, from content alone: whether the finding
-    changed since the decision (the package version it was decided at)."""
-    counts = {d: 0 for d in REVIEWS}
-    counts["none"] = 0
+    branch-authored file."""
     record = None
     if path and os.path.exists(path):
         try:
             record = decisions.load(path)
         except decisions.Refused as exc:
-            warnings.append(f"decisions.json not used: {exc}")
-    by_fp = {d["fingerprint"]: d for d in (record or {}).get("decisions") or []}
-    seen = set()
-    for f in findings:
-        d = by_fp.get(f.get("fingerprint"))
-        if not d:
-            counts["none"] += 1
-            continue
-        seen.add(d["fingerprint"])
-        changed = []
-        then = ((d.get("subject") or {}).get("package") or {}).get("version")
-        now = (f.get("package") or {}).get("version") if isinstance(f.get("package"), dict) else None
-        if then and now and then != now:
-            changed.append(f"package version {then} -> {now}")
-        f["review"] = {k: d.get(k) for k in ("decision", "evidence_kind", "reason", "owner", "decided", "until", "verify")}
-        f["review"]["changed"] = changed
-        counts[d["decision"]] += 1
-    unseen = len(set(by_fp) - seen)
-    if unseen:
-        warnings.append(f"{unseen} decision(s) in decisions.json are about findings this scan did not report "
-                        "(fixed, renamed, or a dimension that did not run) — scan.sh decide list")
-    return counts
+            warnings.append(f"{decisions.WARN_NOT_USED}{exc}")
+    return decisions.apply_reviews(findings, record, warnings)
 
 
 def main() -> int:

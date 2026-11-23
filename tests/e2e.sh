@@ -440,10 +440,14 @@ PY
   # writes the committed file; if anything else read it, a branch could unblock itself. Code files
   # only: the triage skill names the file in prose. report_html.py names it in the page's text and
   # opens only the paths it is given (evidence, summary, out), checked below.
-  F19R="$(cd "$KIT_SRC" && { grep -rlE --include='*.py' --include='*.sh' --include='pre-*' 'decisions(\.json|\.py)|DECISIONS_FILE|attach_reviews' lib hooks plugin install.sh bootstrap.sh 2>/dev/null | grep -vxE 'lib/(decisions|evidence|report_html)\.py'
+  # ui_server.py (R13c) reads it to show decisions live and writes it only by running scan.sh decide;
+  # it is started by `scan.sh ui` alone, never by a hook or a scan (checked below).
+  F19R="$(cd "$KIT_SRC" && { grep -rlE --include='*.py' --include='*.sh' --include='pre-*' 'decisions(\.json|\.py)|DECISIONS_FILE|attach_reviews|apply_reviews' lib hooks plugin install.sh bootstrap.sh 2>/dev/null | grep -vxE 'lib/(decisions|evidence|report_html|ui_server)\.py'
     awk '/^scan_(decide|evidence)\(\)\{/{d=1} d&&/^}/{d=0;next} !d' scan.sh | grep -nE 'decisions\.py|DECISIONS_FILE' | grep -v '^[0-9]*:DECISIONS_FILE='; } )"
   [ -z "$F19R" ] && ok "F19a: decisions.json is written by scan.sh decide and only read to show decisions — the gate does not read it" \
     || no "F19a: decisions.json is read outside decide/evidence: $F19R"
+  F19U="$(cd "$KIT_SRC" && grep -rlE 'ui_server' lib hooks plugin install.sh bootstrap.sh 2>/dev/null; grep -nE 'ui_server' scan.sh | grep -v 'lib/ui_server.py" --root')"
+  [ -z "$F19U" ] && ok "F19a: the UI that shows decisions is started only by scan.sh ui" || no "F19a: ui_server is referenced elsewhere: $F19U"
   grep -q 'the gate result is unchanged' "$KIT_SRC/scan.sh" && ! grep -qE 'review|decisions' <<<"$(sed -n '/^_dim()/,/^run_scans()/p' "$KIT_SRC/scan.sh")" \
     && ok "F19a: the gate (_dim / run_scans) does not look at reviews" || no "F19a: the gate code mentions reviews or decisions"
   [ "$(grep -oE 'open\(args\.[a-z_]+' "$KIT_SRC/lib/report_html.py" | sort -u | tr '\n' ' ')" = "open(args.evidence open(args.out open(args.summary " ] \
@@ -1699,6 +1703,48 @@ if have python3 && have curl; then
     && python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); assert s["command"]=="fast"' "$UIR/docs/security/scan-findings/summary.json" 2>/dev/null \
     && ok "R13b: a cross-site POST is refused; the page starts scan.sh fast, which publishes its record ($UIST)" \
     || no "R13b: start from the UI: cross=$UIX start=$UIS state=${UIST:-none}"
+  # R13c: record a decision from the finding's page, as a browser would; see it before any new scan;
+  # remove it; the gate does not move. The record gets one known finding to decide about.
+  UIRC0="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["exit_code"])' "$UIR/docs/security/scan-findings/summary.json" 2>/dev/null)"
+  UIFP=0123456789abcdef0123
+  printf '{"schema":"security-audit-kit/evidence@1","scan":{"command":"fast","exit_code":0,"dimensions":[]},"counts":{"total":1},"findings":[{"id":"x","dimension":"sast","tool":"semgrep","rule_id":"py.sql","file":"app.py","line":3,"message":"m","severity":"high","fingerprint":"%s","fingerprint_basis":"line-content"}],"warnings":[]}\n' "$UIFP" \
+    > "$UIR/docs/security/scan-findings/evidence.json"
+  ( cd "$UIR" && exec bash tools/security-audit-kit/scan.sh ui > "$UIR/.ui-out3" 2>&1 ) & UIPID=$!
+  UIURL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+    UIURL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$UIR/.ui-out3" 2>/dev/null | head -1)"; [ -n "$UIURL" ] && break; sleep 0.5; done
+  UIB="${UIURL%%/?t=*}"; rm -f "$UIR/.jar"
+  curl -s -o /dev/null -c "$UIR/.jar" "$UIURL"
+  UIFT="$(curl -s -b "$UIR/.jar" "$UIB/finding/$UIFP" | grep -o 'name="ft" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//')"
+  UIDX="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: null" \
+    --data "ft=$UIFT&fp=$UIFP&decision=rejected&evidence_kind=observed&reason=x&until=&verify=&owner=e2e" "$UIB/decide")"
+  UIDS="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: $UIB" \
+    --data "ft=$UIFT&fp=$UIFP&decision=rejected&evidence_kind=observed&until=&verify=&owner=e2e" \
+    --data-urlencode "reason=-only tests call it" "$UIB/decide")"
+  UIDP="$(curl -s -b "$UIR/.jar" "$UIB/finding/$UIFP")"
+  # the test's own files start with "."; the record dir was committed above with the kit (the test's doing)
+  UIGS="$(git -C "$UIR" status --porcelain --untracked-files=all | grep -v -e ' \.' -e 'scan-findings/' | tr '\n' ' ')"
+  UIDJ="$(python3 -c 'import json,sys; [d]=json.load(open(sys.argv[1]))["decisions"]; print(d["fingerprint"], d["decision"], d["owner"], d["reason"])' "$UIR/docs/security/decisions.json" 2>/dev/null)"
+  UIDR="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: $UIB" --data "ft=$UIFT&fp=$UIFP" "$UIB/decide/remove")"
+  UIDQ="$(curl -s -b "$UIR/.jar" "$UIB/finding/$UIFP")"
+  kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+  [ "$UIDX $UIDS $UIDR" = "403 303 303" ] && [ "$UIDJ" = "$UIFP rejected e2e -only tests call it" ] \
+    && grep -q -- '-only tests call it' <<<"$UIDP" && grep -q 'decide: recorded' <<<"$UIDP" \
+    && [ "$UIGS" = "?? docs/security/decisions.json " ] \
+    && python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["decisions"]==[]' "$UIR/docs/security/decisions.json" \
+    && grep -q 'Removed: rejected' <<<"$UIDQ" \
+    && ok "R13c: Origin null refused; the finding page records a decision through scan.sh decide, shows it live, removes it; only decisions.json changed" \
+    || no "R13c: decide from the UI: null=$UIDX set=$UIDS remove=$UIDR record='$UIDJ' git='$UIGS'"
+  ( cd "$UIR" && SARIF=1 bash tools/security-audit-kit/scan.sh fast >/dev/null 2>&1 ); UIRC1=$?
+  [ -n "$UIRC0" ] && [ "$UIRC1" = "$UIRC0" ] && ok "R13c: the gate result of scan.sh fast is the same after deciding from the UI ($UIRC1)" \
+    || no "R13c: gate moved: before=$UIRC0 after=$UIRC1"
+  # scan_decide passes git's user.name as one --owner=<name> argument: a name starting with "-" is a name
+  # (the fast scan above replaced the record: put the finding back first)
+  printf '{"schema":"security-audit-kit/evidence@1","findings":[{"fingerprint":"%s","rule_id":"r","tool":"t"}]}\n' "$UIFP" \
+    > "$UIR/docs/security/scan-findings/evidence.json"
+  ( cd "$UIR" && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=-dash \
+    bash tools/security-audit-kit/scan.sh decide "$UIFP" confirmed --reason "x" >/dev/null 2>&1 ) \
+    && python3 -c 'import json,sys; [d]=json.load(open(sys.argv[1]))["decisions"]; assert d["owner"]=="-dash"' "$UIR/docs/security/decisions.json" \
+    && ok "R13c: scan.sh decide takes a git user.name that starts with -" || no "R13c: owner with a leading - was not recorded"
   rm -rf "$UIR"
 else skip "R13a: scan.sh ui (needs python3 and curl)"; fi
 

@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **Record a decision from `scan.sh ui` (R13c).** Each finding's page has a form that runs
+  `scan.sh decide` (decision, reason, evidence kind, until, verify, owner prefilled from git), with
+  *Replace* and *Remove* when a decision exists. A refused decision comes back with the typed text
+  kept. Decisions are shown live from `docs/security/decisions.json`, laid over the record in
+  memory, so they appear before the next scan. The page never commits and says when the file is
+  modified, untracked or ignored. Same request checks as R13b; every write is integrity-checked
+  and refused when the file is reached through a symlink or does not validate. A decision still
+  never changes the gate. Unit tests, e2e and a real browser submit cover it.
+
+### Fixed
+- `scan.sh decide` passes git's `user.name` as one `--owner=<name>` argument, so a name that
+  starts with `-` no longer breaks it.
+- A `decisions.json` whose `subject.package` is not an object is refused by validation and can no
+  longer crash the evidence build.
+
 ## [1.23.0] - 2026-11-23
 
 ### Upgrade notes

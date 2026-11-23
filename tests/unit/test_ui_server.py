@@ -34,9 +34,23 @@ EVIDENCE = {
 }
 
 
-def write_record(root, evidence=EVIDENCE, summary=None):
+DECISION = {"fingerprint": FP, "decision": "rejected", "evidence_kind": "observed", "reason": "only tests call it",
+            "owner": "<b>Ada</b>", "decided": "2026-11-01", "until": None, "verify": None,
+            "subject": {"rule_id": "py.sql", "file": "app.py"}}
+
+
+def write_decisions(root, doc):
+    p = root / "docs" / "security" / "decisions.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(doc if isinstance(doc, str) else json.dumps(doc))
+    return p
+
+
+def write_record(root, evidence=EVIDENCE, summary=None, decisions=True):
     d = root / "docs" / "security" / "scan-findings"
     d.mkdir(parents=True, exist_ok=True)
+    if decisions and evidence is EVIDENCE:      # the live record agrees with the scan-time review
+        write_decisions(root, {"schema": "security-audit-kit/decisions@1", "decisions": [DECISION]})
     if evidence is not None:
         (d / "evidence.json").write_text(evidence if isinstance(evidence, str) else json.dumps(evidence))
     if summary is not None:
@@ -483,3 +497,237 @@ def test_a_stale_lock_is_not_a_running_scan(tmp_path):
     assert us.lock_owner(str(tmp_path))["cmd"] == "all"
     (lock / "owner").write_text("pid=1\nhost=another-machine\ncmd=all\ndate=x\n")
     assert us.lock_owner(str(tmp_path)) is not None
+
+
+# ---------------------------------------------------------------------------------------------
+# R13c: a person's decision written from the page, through scan.sh decide. The fake scan.sh does
+# what scan_decide does (decisions.py with the fixed paths) unless told to refuse, hang or fail.
+LIB = os.path.join(os.path.dirname(__file__), "..", "..", "lib")
+FAKE_DECIDE = r'''#!/usr/bin/env bash
+k="$(cd "$(dirname "$0")" && pwd)"
+printf '%s\n' "$@" > "$k/argv"; env > "$k/env"
+mode="$(cat "$k/mode")"
+[ "$1" = decide ] || exit 9
+shift
+case "$mode" in
+  refuse) echo "decide: REFUSED — --until 2020-01-01 is not in the future" >&2; exit 2 ;;
+  hang)   sleep 30; exit 0 ;;
+  odd)    echo "something else"; exit 5 ;;
+esac
+D="$PWD/docs/security/decisions.json"; E="$PWD/docs/security/scan-findings/evidence.json"
+[ "$1" = remove ] && exec python3 "__LIB__/decisions.py" remove "$D" "$2"
+fp="$1" d="$2"; shift 2
+exec python3 "__LIB__/decisions.py" set "$D" "$E" "$fp" "$d" "$@"
+'''
+NOREVIEW = json.loads(json.dumps(EVIDENCE))
+NOREVIEW["findings"][0].pop("review")
+
+
+@pytest.fixture
+def dui(tmp_path, tmp_path_factory, monkeypatch):
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    write_record(repo, evidence=NOREVIEW)
+    kit = tmp_path_factory.mktemp("kit")
+    (kit / "scan.sh").write_text(FAKE_DECIDE.replace("__LIB__", os.path.abspath(LIB)))
+    (kit / "mode").write_text("real")
+    monkeypatch.setattr(us, "integrity", lambda root, k: (True, ""))
+    monkeypatch.setattr(us, "DECIDE_TIMEOUT", 1)
+    u = us.UI(str(repo), kit=str(kit))
+    threading.Thread(target=u.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    u.kitdir, u.repo = kit, repo
+    yield u
+    u.server.shutdown()
+    u.server.server_close()
+
+
+def dform(u, **kw):
+    f = {"ft": u.form_token, "fp": FP, "decision": "rejected", "evidence_kind": "observed",
+         "reason": "only tests call it", "until": "", "verify": "", "owner": "Ada"}
+    f.update(kw)
+    return {k: v for k, v in f.items() if v is not None}
+
+
+def live(u):
+    p = u.repo / "docs" / "security" / "decisions.json"
+    return json.loads(p.read_text())["decisions"] if p.exists() else []
+
+
+def test_finding_page_carries_the_decision_form_as_a_form_page(dui):
+    cookie = login(dui)
+    status, h, body = req(dui, f"/finding/{FP}", cookie=cookie)
+    assert status == 200 and 'action="/decide"' in body and 'action="/decide/remove"' not in body
+    assert h["Referrer-Policy"] == "same-origin" and "form-action 'self'" in h["Content-Security-Policy"]
+    assert "form-action &#x27;self&#x27;" in body or "form-action 'self'" in body
+    assert "never changes what blocks a push" in body
+
+
+def test_set_runs_decide_with_opt_value_argv_and_shows_it_live(dui):
+    cookie = login(dui)
+    status, h, _ = post(dui, "/decide", dform(dui, reason="-x --owner=evil", until="", verify=""), cookie)
+    assert status == 303 and h["Location"] == f"/finding/{FP}"
+    argv = (dui.kitdir / "argv").read_text().splitlines()
+    assert argv == ["decide", FP, "rejected", "--reason=-x --owner=evil", "--evidence-kind=observed", "--owner=Ada"]
+    assert "PYTHONUTF8=1" in (dui.kitdir / "env").read_text()
+    [d] = live(dui)
+    assert d["reason"] == "-x --owner=evil" and d["owner"] == "Ada"
+    body = req(dui, f"/finding/{FP}", cookie=cookie)[2]
+    assert "recorded" in body and "-x --owner=evil" in body and "Replace decision" in body
+    assert "evidence.json is updated by the next scan" in body
+    # the notice is shown once
+    assert "decide: recorded" not in req(dui, f"/finding/{FP}", cookie=cookie)[2]
+    assert "rejected by a person" in req(dui, "/", cookie=cookie)[2]
+
+
+def test_the_notice_is_not_consumed_by_head_or_another_page(dui):
+    cookie = login(dui)
+    assert post(dui, "/decide", dform(dui), cookie)[0] == 303
+    req(dui, f"/finding/{FP}", method="HEAD", cookie=cookie)
+    req(dui, "/", cookie=cookie)
+    req(dui, "/finding/" + "cd" * 10, cookie=cookie)
+    assert "decide: recorded" in req(dui, f"/finding/{FP}", cookie=cookie)[2]
+
+
+def test_remove_takes_the_decision_away_even_though_evidence_has_it(dui):
+    cookie = login(dui)
+    assert post(dui, "/decide", dform(dui), cookie)[0] == 303
+    # evidence.json now carries the scan-time review too, as after a rescan
+    write_record(dui.repo, evidence=EVIDENCE, decisions=False)
+    status, h, _ = post(dui, "/decide/remove", {"ft": dui.form_token, "fp": FP}, cookie)
+    assert status == 303 and live(dui) == []
+    body = req(dui, f"/finding/{FP}", cookie=cookie)[2]
+    assert "Removed: rejected · only tests call it · Ada" in body and "only copy" in body
+    assert "A person&#x27;s decision" not in body and "A person's decision" not in body
+    assert "rejected by a person" not in req(dui, "/", cookie=cookie)[2]
+    assert post(dui, "/decide/remove", {"ft": dui.form_token, "fp": FP}, cookie)[0] == 409
+
+
+def test_browser_shaped_body_with_blank_fields_is_accepted(dui):
+    cookie = login(dui)
+    body = f"ft={dui.form_token}&fp={FP}&decision=confirmed&reason=real&evidence_kind=unverified&until=&owner=&verify="
+    status, _, page_ = post(dui, "/decide", None, cookie, body=body)
+    argv = (dui.kitdir / "argv").read_text().splitlines()
+    assert not any(a.startswith(("--owner", "--until", "--verify")) for a in argv)
+    # the fake does not add git's user.name as scan_decide does, so decisions.py asks for an owner
+    assert status == 422 and "--owner is required" in page_ and "real</textarea>" in page_
+    assert post(dui, "/decide", None, cookie, body=body.replace("owner=", "owner=Ada"))[0] == 303
+
+
+def test_missing_decision_and_refusal_keep_the_typed_text(dui):
+    cookie = login(dui)
+    status, h, body = post(dui, "/decide", dform(dui, decision=None, reason="my long reason"), cookie)
+    assert status == 422 and "Choose a decision" in body and "my long reason" in body
+    assert h["Referrer-Policy"] == "same-origin" and not (dui.kitdir / "argv").exists()
+    status, _, body = post(dui, "/decide", dform(dui, until="tomorrow", reason="kept"), cookie)
+    assert status == 422 and "YYYY-MM-DD" in body and "kept" in body
+    (dui.kitdir / "mode").write_text("refuse")
+    status, _, body = post(dui, "/decide", dform(dui, decision="accepted", until="2020-01-01", reason="kept <b>"), cookie)
+    assert status == 422 and "not in the future" in body and "kept &lt;b&gt;" in body and 'value="2020-01-01"' in body
+    assert live(dui) == []
+
+
+def test_timeout_kills_the_group_and_says_it_may_have_been_written(dui):
+    (dui.kitdir / "mode").write_text("hang")
+    cookie = login(dui)
+    t0 = _time.time()
+    status, _, body = post(dui, "/decide", dform(dui), cookie)
+    assert status == 500 and "may have been written" in body and _time.time() - t0 < 10
+    (dui.kitdir / "mode").write_text("odd")
+    status, _, body = post(dui, "/decide", dform(dui), cookie)
+    assert status == 500 and "exited 5" in body
+
+
+@pytest.mark.parametrize("fp", ["ababababab", "AB" * 10, "ab" * 9 + "a", "ab" * 10 + "a", "../" * 7, "cd" * 10])
+def test_fingerprint_shape_and_presence(dui, fp):
+    cookie = login(dui)
+    status = post(dui, "/decide", dform(dui, fp=fp), cookie)[0]
+    assert status in (400, 409) and not (dui.kitdir / "argv").exists()
+
+
+@pytest.mark.parametrize("body, code", [
+    ("ft={ft}&fp={fp}&decision=rejected&reason=x&evidence_kind=observed&until=&verify=&owner=&cmd=fast", 400),
+    ("ft={ft}&fp={fp}&decision=rejected&decision=confirmed&reason=x&evidence_kind=observed&until=&verify=&owner=", 400),
+    ("ft={ft}&fp={fp}&decision=rejected&reason=x&evidence_kind=observed", 400),           # fields missing
+    ("ft={ft}&fp={fp}&decision=rejected&reason=%ff&evidence_kind=observed&until=&verify=&owner=", 400),
+    ("ft={ft}&fp={fp}&decision=rejected&reason=a%00b&evidence_kind=observed&until=&verify=&owner=", 400),
+    ("ft={ft}&fp={fp}&decision=rejected&reason=x&evidence_kind=proven&until=&verify=&owner=", 400),
+    ("ft=wrong&fp={fp}&decision=rejected&reason=x&evidence_kind=observed&until=&verify=&owner=", 403),
+    ("ft={ft}&fp={fp}&reason=" + "x" * (64 << 10), 413),
+])
+def test_malformed_decide_posts_are_refused(dui, body, code):
+    cookie = login(dui)
+    assert post(dui, "/decide", None, cookie, body=body.format(ft=dui.form_token, fp=FP))[0] == code
+    assert not (dui.kitdir / "argv").exists()
+
+
+@pytest.mark.parametrize("kw", [{"origin": None}, {"origin": "null"}, {"origin": "http://127.0.0.1:1"}, {"sfs": "cross-site"}])
+def test_cross_site_decide_is_refused(dui, kw):
+    cookie = login(dui)
+    assert post(dui, "/decide", dform(dui), cookie, **kw)[0] == 403
+    assert post(dui, "/decide", dform(dui), f"sak_ui_{dui.port}=nope")[0] == 403
+    assert not (dui.kitdir / "argv").exists()
+
+
+def test_non_ascii_reason_fits_the_cap(dui):
+    cookie = login(dui)
+    reason = "ğüşiöç🔒" * 250                     # 2000 characters, multi-byte
+    assert post(dui, "/decide", dform(dui, reason=reason), cookie)[0] == 303
+    assert live(dui)[0]["reason"] == reason
+
+
+def test_preconditions_refuse_before_anything_runs(dui, monkeypatch, tmp_path):
+    cookie = login(dui)
+    monkeypatch.setattr(us, "integrity", lambda root, k: (False, "MODIFIED scan.sh"))
+    status, _, body = post(dui, "/decide", dform(dui, reason="keep me"), cookie)
+    assert status == 409 and "MODIFIED scan.sh" in body and "keep me" in body
+    monkeypatch.setattr(us, "integrity", lambda root, k: (True, ""))
+    # a branch-authored record that validates loosely but would crash the old code
+    write_decisions(dui.repo, {"schema": "security-audit-kit/decisions@1", "decisions": [dict(DECISION, subject={"package": "x"})]})
+    status, _, body = req(dui, f"/finding/{FP}", cookie=cookie)
+    assert status == 200 and "decisions.json not used" in body and 'action="/decide"' not in body
+    assert req(dui, "/", cookie=cookie)[0] == 200
+    assert post(dui, "/decide", dform(dui), cookie)[0] == 409
+    # a symlinked file, then a symlinked directory: decisions.py would follow either
+    p = dui.repo / "docs" / "security" / "decisions.json"
+    p.unlink()
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"schema": "security-audit-kit/decisions@1", "decisions": []}')
+    p.symlink_to(outside)
+    assert post(dui, "/decide", dform(dui), cookie)[0] == 409
+    p.unlink()
+    assert not (dui.kitdir / "argv").exists()
+
+
+def test_symlinked_docs_security_is_refused(tmp_path, tmp_path_factory, monkeypatch):
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    elsewhere = tmp_path / "elsewhere"
+    write_record(elsewhere, evidence=NOREVIEW)
+    (repo / "docs").mkdir()
+    (repo / "docs" / "security").symlink_to(elsewhere / "docs" / "security")
+    kit = tmp_path_factory.mktemp("kit")
+    (kit / "scan.sh").write_text(FAKE_DECIDE.replace("__LIB__", os.path.abspath(LIB)))
+    (kit / "mode").write_text("real")
+    monkeypatch.setattr(us, "integrity", lambda root, k: (True, ""))
+    u = us.UI(str(repo), kit=str(kit))
+    ok, why = u.decide_ready()
+    assert not ok and "symbolic link" in why
+    u.server.server_close()
+
+
+def test_git_banners_for_uncommitted_and_ignored(dui):
+    cookie = login(dui)
+    assert post(dui, "/decide", dform(dui), cookie)[0] == 303
+    assert "new and not yet added" in req(dui, f"/finding/{FP}", cookie=cookie)[2]
+    (dui.repo / ".gitignore").write_text("docs/security/decisions.json\n")
+    assert "ignored by git" in req(dui, f"/finding/{FP}", cookie=cookie)[2]
+
+
+def test_scan_time_warnings_about_decisions_are_replaced_by_live_ones(dui):
+    ev = json.loads(json.dumps(NOREVIEW))
+    ev["warnings"] = ["3 decision(s) in decisions.json are about findings this scan did not report (fixed) — x",
+                      "decisions.json not used: broken", "an unrelated builder note"]
+    write_record(dui.repo, evidence=ev)
+    cookie = login(dui)
+    body = req(dui, "/", cookie=cookie)[2]
+    assert "an unrelated builder note" in body and "3 decision(s)" not in body and "not used: broken" not in body
