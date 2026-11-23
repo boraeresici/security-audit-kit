@@ -31,6 +31,8 @@ SARIF_SOURCES = {
     "semgrep.sarif": ("semgrep", "sast"),
     "trivy.sarif": ("trivy", "container"),
     "osv.sarif": ("osv-scanner", "osv"),
+    # py-deps with no project venv: osv-scanner reads the committed manifests statically
+    "py-deps-osv.sarif": ("osv-scanner", "py-deps"),
     "zizmor.sarif": ("zizmor", "zizmor"),
 }
 
@@ -473,7 +475,9 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
     status = {}
     for d in dimensions:
         status[DIMENSION_ALIASES.get(d.get("name"), d.get("name"))] = d.get("status")
-    by_dim = {dim: (fname, tool) for fname, (tool, dim) in SOURCES.items()}
+    by_dim = {}
+    for fname, (tool, dim) in SOURCES.items():
+        by_dim.setdefault(dim, []).append(fname)      # py-deps: pip-audit (venv) or osv-scanner (none)
     on_disk = sorted(f for f in SOURCES if os.path.exists(os.path.join(sarif_dir, f)))
 
     artifacts = summary.get("artifacts")
@@ -516,8 +520,9 @@ def select_sources(summary: dict, sarif_dir: str, warnings: list) -> list:
             warnings.append(f"{fname}: not produced by this run (left over from an earlier one) -> ignored")
     if summary.get("sarif"):
         for dim, st in sorted(status.items()):
-            if st in INSPECTED and dim in by_dim and by_dim[dim][0] not in listed:
-                warnings.append(f"{dim}: inspected, but wrote no per-finding output in this run -> no per-finding rows")
+            # A dimension that passed has nothing to list; only findings without rows are a gap.
+            if st in ("findings", "fail") and dim in by_dim and not any(f in listed for f in by_dim[dim]):
+                warnings.append(f"{dim}: has findings, but wrote no per-finding output in this run -> no per-finding rows; see the scan log")
             elif st in ("findings", "fail") and dim not in by_dim:
                 # the JS audit, checkov, guarddog: no adapter yet (F16b)
                 warnings.append(f"{dim}: has findings, but the kit reads no per-finding output for it yet "

@@ -1115,6 +1115,12 @@ grep -q 'SEPARATE run directory' <<<"$LOCKOUT" \
   && ls docs/security/scan-findings/runs/*/raw.log >/dev/null 2>&1 \
   && ok "lock: a second run scans anyway, into its own log (shared log untouched)" \
   || no "lock: contention handling wrong (interleaved or scan skipped)"
+BUSY0="$(find docs/security/scan-findings/runs -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
+BUSYRC=0; BUSYOUT="$(SCAN_LOCK_BUSY=exit SCAN_LOCK_WAIT=1 $SCAN iac 2>&1)" || BUSYRC=$?
+BUSYRUNS=$(( $(find docs/security/scan-findings/runs -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ') - BUSY0 ))
+[ "$BUSYRC" = 1 ] && grep -q 'not run (SCAN_LOCK_BUSY=exit)' <<<"$BUSYOUT" && ! grep -q 'SEPARATE run directory' <<<"$BUSYOUT" \
+  && [ "$BUSYRUNS" = 0 ] \
+  && ok "lock: SCAN_LOCK_BUSY=exit (the UI's runs) exits 1 instead of running lock-less" || no "lock: SCAN_LOCK_BUSY=exit ran anyway (rc=$BUSYRC): $(tail -2 <<<"$BUSYOUT")"
 rm -rf "$LOCK" docs/security/scan-findings/runs
 
 # A lock directory outlives a killed scan; if that were permanent, every later run would be
@@ -1667,6 +1673,28 @@ if have python3 && have curl; then
   UIW="$(find "$UIR" -mindepth 1 -newer "$UIR/.ui-mark" -not -path '*/.git/*' ! -name '.ui-out' ! -name '.jar' ! -name '.page' | head -3)"
   [ -z "$UIW" ] && [ ! -e "$UIR/docs/security/scan-findings/.gitignore" ] && [ ! -d "$UIR/docs/security/scan-findings/runs" ] \
     && ok "R13a: the UI wrote nothing in the repo (no record dir, no .gitignore, no lock)" || no "R13a: the UI wrote: $UIW"
+  # R13b: start `fast` from the page, as a browser would (form token, exact Origin), and follow it.
+  # The kit must be installed: the UI checks it against the install record before every start.
+  ( cd "$UIR" && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1 \
+    && SKIP_SECURITY=1 git -c user.email=e2e@test -c user.name=e2e commit -qm kit >/dev/null 2>&1 \
+    && bash tools/security-audit-kit/install.sh --no-skills >/dev/null 2>&1 )
+  ( cd "$UIR" && exec bash tools/security-audit-kit/scan.sh ui > "$UIR/.ui-out2" 2>&1 ) & UIPID=$!
+  UIURL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+    UIURL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$UIR/.ui-out2" 2>/dev/null | head -1)"; [ -n "$UIURL" ] && break; sleep 0.5; done
+  UIB="${UIURL%%/?t=*}"; rm -f "$UIR/.jar"
+  curl -s -o /dev/null -c "$UIR/.jar" "$UIURL"
+  UIFT="$(curl -s -b "$UIR/.jar" "$UIB/" | grep -o 'name="ft" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//')"
+  UIX="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: http://evil.example" --data "ft=$UIFT&cmd=fast" "$UIB/run")"
+  UIS="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: $UIB" --data "ft=$UIFT&cmd=fast" "$UIB/run")"
+  UIST=""; for _ in $(seq 1 120); do
+    UIST="$(curl -s -b "$UIR/.jar" "$UIB/run" | grep -o '<dt>state</dt><dd>[a-z ]*</dd>' | sed 's/.*<dd>//;s/<.*//')"
+    [ -n "$UIST" ] && [ "$UIST" != running ] && break; sleep 0.5; done
+  UIRUN="$(curl -s -b "$UIR/.jar" "$UIB/run")"
+  kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+  [ "$UIX" = 403 ] && [ "$UIS" = 303 ] && [ -n "$UIST" ] && [ "$UIST" != running ] && grep -q "this run" <<<"$UIRUN" \
+    && python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); assert s["command"]=="fast"' "$UIR/docs/security/scan-findings/summary.json" 2>/dev/null \
+    && ok "R13b: a cross-site POST is refused; the page starts scan.sh fast, which publishes its record ($UIST)" \
+    || no "R13b: start from the UI: cross=$UIX start=$UIS state=${UIST:-none}"
   rm -rf "$UIR"
 else skip "R13a: scan.sh ui (needs python3 and curl)"; fi
 
@@ -2180,6 +2208,20 @@ if docker_ok; then
     || no "py-deps: a committed requirements.txt was still not inspected"
   grep -qE 'requests' <<<"$REQOUT" && ok "py-deps: the manifest's known-vulnerable pin is reported" \
     || no "py-deps: requests==2.19.0 (known vulnerable) was not reported"
+  # With SARIF=1 the same path writes rows: the record must not say "findings" over an empty table.
+  ( cd "$PYR" && SARIF=1 bash tools/security-audit-kit/scan.sh deps >/dev/null 2>&1 || true )
+  python3 - "$PYR/docs/security/scan-findings/evidence.json" <<'PY' 2>/dev/null \
+    && ok "py-deps (no venv): osv-scanner's findings are py-deps rows with their package (SARIF=1)" \
+    || no "py-deps (no venv): no per-finding rows in evidence.json"
+import json, sys
+d = json.load(open(sys.argv[1]))
+rows = [f for f in d["findings"] if f["dimension"] == "py-deps"]
+# osv-scanner also resolves what requests pulls in (urllib3 ...): every row names its package,
+# and the pinned one is among them.
+assert rows and all(f["tool"] == "osv-scanner" and f["package"]["name"] for f in rows), rows[:1]
+assert any(f["package"]["name"] == "requests" and f["package"]["version"] == "2.19.0" for f in rows)
+assert not any("no per-finding output" in w for w in d["warnings"]), d["warnings"]
+PY
 else
   skip "py-deps: manifest fallback (docker unavailable)"
 fi

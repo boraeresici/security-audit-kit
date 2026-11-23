@@ -74,5 +74,20 @@ case "$F" in
   *) ok "ui: the local UI's page runs its filter script under the header CSP (link -> cookie -> page)" ;;
 esac
 
+# R13b: a real form submit. The browser sets Origin itself (a unit test cannot: it writes the header
+# by hand), and with `Referrer-Policy: no-referrer` Chrome sends `Origin: null`, which the server
+# refuses. The repo here has no install record, so the start is refused AFTER the Origin check —
+# reaching "no install record" proves the browser's own POST got through.
+python3 -I -B "$KIT_SRC/lib/ui_server.py" --root "$UIR" --kit "$KIT_SRC" > "$W/ui2.out" 2>&1 & UIPID=$!
+URL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+  URL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$W/ui2.out" | head -1)"; [ -n "$URL" ] && break; sleep 0.5; done
+mkdir -p "$W/cdp"
+T="$(python3 -I "$KIT_SRC/tests/browser_cdp.py" "$CHROME" "$W/cdp" "$URL" /run 2>&1 | tr '\n' ' ')"
+kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+case "$T" in
+  *"no install record"*) ok "ui: the browser's own form POST passes the Origin check (R13b)" ;;
+  *) no "ui: the browser's form POST was refused or failed: ${T:0:300}" ;;
+esac
+
 echo "report-browser: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

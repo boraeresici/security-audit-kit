@@ -165,9 +165,22 @@ cookie and the token is spent, so a new link means a new `scan.sh ui`. `--open` 
 browser; it is off by default because the link would then sit in a process's arguments. The
 server binds 127.0.0.1 only, answers only to that exact host, accepts GET and HEAD, serves no file
 by path, reads `docs/security/scan-findings/summary.json` and `evidence.json` (no symlinks, size
-capped) and the scan lock's owner, and writes nothing. Reload after a scan to see it. Ctrl-C stops
-it; it also stops after two hours without a request. It needs only python3. Starting a scan and
-writing a decision from the page are later steps (R13b, R13c).
+capped) and the scan lock's owner. Reload after a scan to see it. Ctrl-C stops it; it also stops
+after two hours without a request. It needs only python3.
+
+**Starting a scan from the page (R13b).** The record page has a *Run a scan* form with two
+choices, `fast` and `all` (single dimensions are not offered: with `SARIF=1` a one-dimension run
+would replace the whole record). Before every start the kit is checked against the manifest
+recorded at install, exactly as the git hooks do, so a branch that changed `scan.sh` after the
+server started cannot run through it. The scan is the same command as in a terminal, with
+`SARIF=1 REPORT=html` so the record updates. Its environment is built, not inherited:
+`SKIP_SECURITY` and the kit's own knobs are not passed (`GATE_STRICT` is, and the repo's
+`.security-audit.conf` applies as usual). `/run` shows the state, the exit code and the last 64 KiB
+of output, refreshes itself while running, and has a *Cancel* button (SIGINT, then TERM, then KILL;
+a cancelled scan publishes nothing). One scan at a time; if another terminal holds the scan lock,
+nothing is started (`SCAN_LOCK_BUSY=exit`). The end state comes from the exit code: passed,
+blocked, indeterminate, cancelled, killed, not started (lock held) or error; the page says whether
+the record is this run's. Writing a decision from the page is a later step (R13c).
 
 ## The install-time window — `scan.sh pkgcheck` and the agent hook
 

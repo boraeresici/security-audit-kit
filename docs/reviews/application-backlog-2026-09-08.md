@@ -586,6 +586,136 @@ The security of skill packages loaded into the agent is a concrete candidate tha
 **Decision (user, 2026-11-17, on the research recommendations):** session by a one-time URL token exchanged for an `HttpOnly; SameSite=Strict` cookie (works without JS); loopback only, exact Host check, Origin and `Sec-Fetch-Site` on every POST, fixed command table, no file serving; exceptions through the CLI with a maximum lifetime (180 days proposed). F26's filter script is checked by hand in a browser until a headless check is justified.
 
 
+**R13b implemented — 2026-11-23 (`feat/r13b-run`, unreleased):** designed, reviewed independently by Fable before code, revised, and built as designed. The review found:
+- the forms would send `Origin: null` under R13a's `no-referrer`; this was confirmed in headless Chrome and is now tested by a real form submit;
+- the run line comes last, so the run is identified by pid;
+- the UI's lock check stuck on a stale lock;
+- a single-dimension `SARIF=1` run replaces the whole record, so the UI offers only `fast` and `all`;
+- a branch switch while the server runs, so the kit is checked against its install record before every start;
+- the built environment was too thin;
+- the end states need their own names.
+
+Tests: unit (26 new), e2e (`SCAN_LOCK_BUSY=exit`; a real `fast` started from the page with curl, followed to its end state, record published), and the browser job (the browser's own form POST). The design as built:
+
+Builds on R13a (`lib/ui_server.py`). The UI stays a thin client: it starts `scan.sh` with a fixed
+command, shows its output and lets the user cancel it. The gate, the record and the lock stay
+`scan.sh`'s. Nothing the user types reaches a command line.
+
+**R13b — Scope:**
+- On `/`, a form with exactly two choices: `fast` and `all`. Single dimensions are cut, because a
+  one-dimension run with `SARIF=1` replaces the full record (`scan.sh:2441-2446`).
+- `/run` shows the UI-started run:
+  - command, state, start time, elapsed and exit code;
+  - the last 64 KiB of output, ANSI stripped and escaped;
+  - while running, a self-refresh every 2 s (`<meta http-equiv="refresh">`, no JS) and a Cancel
+    button.
+- `/` gets a "UI run in progress" banner linking to `/run`. `/run` says whether the record on `/`
+  is this run's.
+
+**R13b — Start:**
+1. **Session and checks.** POST `/run`, with every R13a check repeated in the POST path: exact Host,
+   session cookie, concurrency slot.
+2. **Integrity first.** Before every start, the kit's `lib/integrity.sh` runs against the anchor
+   recorded in `.git`, exactly as the git hooks do. The server outlives a `git checkout`, so one
+   click must not run a `scan.sh` that a branch changed. On failure the UI refuses and names the
+   files.
+3. **One run at a time.** A second start while the UI's own job runs gets 409.
+4. **Process.**
+   - `subprocess.Popen([<bash resolved at start>, "<kit>/scan.sh", cmd], cwd=root, stdin=DEVNULL,
+     stdout=PIPE, stderr=STDOUT, start_new_session=True, env=<allowlist>)`, with no shell.
+   - The env allowlist: `PATH HOME USER LOGNAME LANG LC_* TMPDIR TERM=dumb`, plus `XDG_*`,
+     `DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG`, `HTTP_PROXY HTTPS_PROXY NO_PROXY` (either case),
+     `SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE`, and `GATE_STRICT` (a user who set it must not
+     get a laxer UI run).
+   - Then `SARIF=1 REPORT=html SCAN_LOCK_BUSY=exit` are added.
+   - `SKIP_SECURITY` and every other kit knob are never passed. The repo's `.security-audit.conf`
+     applies as it does in a terminal (read as data).
+5. **New `scan.sh` knob, `SCAN_LOCK_BUSY=exit`.** When the lock cannot be taken, the scan exits 1
+   with "lock held" instead of running lock-less, the way `evidence`/`report` already do
+   (`scan.sh:2269`). The UI shows "a scan is running in another terminal; nothing started". The
+   UI's own lock banner becomes liveness-aware: same host, and `kill -0` on the pid fails, means a
+   stale lock that `scan.sh` will reclaim. This fixes R13a's banner sticking after a crashed scan.
+6. **Reading output.** A reader thread drains the pipe with `os.read` in chunks into a ring buffer.
+   State comes from `Popen.wait()`, not pipe EOF.
+
+**R13b — Identity and end states:**
+- **Did this run publish?** `RUN_ID` ends in `-$$`, and `$$` is `Popen.pid` (`scan.sh:2215`). The
+  run published if `summary.json`'s `run_id` ends in `-<pid>` after it exits. Output is never parsed
+  for this: the run line comes last and tool output could spoof it.
+- **End state from the exit code:**
+  - 0 passed;
+  - 1 blocked, or "lock held, nothing started" (the run id does not match, and the output's
+    lock note confirms it);
+  - 3 indeterminate;
+  - 130/143 cancelled (nothing published);
+  - negative/-9 killed (the lock may be left; `scan.sh` reclaims it on the next run);
+  - anything else, error.
+- If Cancel was pressed but the exit code shows completion, the page says "cancel requested, but
+  the run had already finished and published". INT/TERM are ignored during publish
+  (`scan.sh:2437`).
+- **Coverage on the state line.** Skipped and indeterminate dimensions, and config warnings, come
+  from the new `summary.json` and appear on the state line, not only in the output tail.
+
+**R13b — Cancel:**
+- POST `/run/cancel` sends SIGINT to the process group. `scan.sh`'s trap then publishes nothing and
+  releases the lock.
+- SIGTERM follows after 10 s and SIGKILL after 20 s.
+- A container that ignores the signal can outlive a SIGKILL. The page then says so, and names
+  `docker ps`.
+
+**R13b — Server lifecycle:**
+- The idle stop waits while a job runs.
+- Ctrl-C, SIGTERM and SIGHUP on the server cancel a running job the same way, then exit. A killed
+  server must not leave an orphan in its own session.
+
+**R13b — Defences for the first state-changing requests:**
+- POST only for `/run` and `/run/cancel`.
+- A per-session form token (32 random bytes, made at the token exchange) in a hidden field,
+  compared in constant time.
+- `Origin` must be exactly `http://127.0.0.1:<port>`. A missing Origin or `null` is refused.
+  `Sec-Fetch-Site`, when present, must be `same-origin`.
+- **`Referrer-Policy: same-origin`** on form pages. With R13a's `no-referrer`, browsers send
+  `Origin: null` on the form's own POST, and every click would be refused.
+- `Content-Type: application/x-www-form-urlencoded`, `Content-Length` required and at most 1 KiB,
+  `parse_qs(strict_parsing=True, max_num_fields=4)`, unknown fields refused.
+- A 303 to `/run` after every POST.
+- `form-action 'self'` in the CSP of pages with a form, set through `render_report`'s `csp`
+  parameter.
+
+**R13b — Threat model additions:**
+- **Residual: localhost cookies are not port-scoped.** A server the user visits on another
+  127.0.0.1 port receives the session cookie. A non-browser client holding it could GET a page, read
+  the form token and start or cancel a run. The impact is bounded by the two-entry table. This
+  matters only for a process that is not already the user.
+- A UI start runs no more than `scan.sh all` typed in a terminal does, and it is integrity-checked
+  first.
+
+**R13b — Tests:**
+- **Unit**, with a fake `scan.sh` that records argv and env, prints, sleeps and exits with a chosen
+  code:
+  - start; 409 while running; the lock-held path (exit 1, nothing published);
+  - cancel → 130 → cancelled; SIGKILL → killed; cancel after completion;
+  - a command not in the table; extra or missing fields; missing or wrong form token;
+  - missing, `null` or wrong Origin; cross-site `Sec-Fetch-Site`; no or too large
+    `Content-Length`; POST without a session or with a wrong Host;
+  - the env (no `SKIP_SECURITY`, `GATE_STRICT` passed through, `SARIF=1`, `SCAN_LOCK_BUSY=exit`);
+  - stdin is `/dev/null`; output escaped and capped; a run identified by pid; a stale lock not
+    shown as running; the idle stop waits; an integrity failure refuses to start.
+- **e2e**:
+  - `scan.sh` with `SCAN_LOCK_BUSY=exit` exits without a lock-less run when the lock is held;
+  - from the real kit in a throwaway repo, start `fast` through the UI with curl (token, cookie,
+    form token, Origin), wait for the end state, and check that `summary.json`'s `run_id` ends in
+    the pid.
+- **Headless Chrome**: a real form submit (`/` → Run `fast` → `/run`), to prove the browser's own
+  Origin is accepted.
+
+**R13b — Not in R13b:**
+- single dimensions;
+- arguments or env from the page;
+- more than one run, queues, scheduling;
+- `checksums`, `decide`, `pkgcheck`, `edit`, `warm`;
+- writing decisions or exceptions (R13c).
+
 **R13a implemented — 2026-11-23 (`feat/r13a-ui`, unreleased):** as designed below, approved by the user after the review. `lib/ui_server.py`; `scan.sh ui` dispatched before any write or lock; `report_html.py` split into `clean_doc` / `render_report` / `main` (the static report byte-identical, checked on a 705-finding record). One change from the design: `/` carries both the record and the findings table (the report page), so there is no separate `/findings`; the location links to `/finding/<fingerprint>`. Tests: `tests/unit/test_ui_server.py` (30), e2e (link, 403/303/200/405 flow, nothing written), and the headless-Chrome job opens the link and runs the filters under the header CSP. Not done: run history (no retention), R13b, R13c.
 
 **R13a design — 2026-11-23 (revised after an independent review by Fable; proposed, for the user's approval before code):**

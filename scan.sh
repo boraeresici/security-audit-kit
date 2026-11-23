@@ -484,10 +484,17 @@ scan_py_deps_no_env(){
   local f osv_targets=()
   while IFS= read -r f; do [ -n "$f" ] && osv_targets+=(-L "/repo/$f"); done <<<"$man"
   say deps "no project venv -> osv-scanner reads the committed manifests (static; nothing is built or installed): $(printf '%s' "$man" | tr '\n' ',' | sed 's/,$//;s/,/, /g')"
+  # With SARIF=1 its findings become evidence rows (dimension py-deps), as pip-audit's do on the venv
+  # path; the log then gets a readable list instead of osv-scanner's own table.
+  local out=() OUTM=() nat="$SARIF_DIR/py-deps-osv.sarif"
+  if [ "$SARIF" = "1" ]; then rm -f "$nat"; out=(--format sarif --output /out/py-deps-osv.sarif); out_mount "$SARIF_DIR"; fi
   # shellcheck disable=SC2086
-  docker run --rm -v "$ROOT:/repo:ro" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
-    scan source "${osv_targets[@]}"
+  docker run --rm -v "$ROOT:/repo:ro" "${OUTM[@]+"${OUTM[@]}"}" -w /repo "$(img ghcr.io/google/osv-scanner "$OSV_VER" "$OSV_DIGEST")" \
+    scan source "${osv_targets[@]}" ${out[@]+"${out[@]}"}
   local rc=$?
+  if [ "$SARIF" = "1" ] && [ -f "$nat" ] && have python3; then
+    python3 "$KIT_DIR/lib/native.py" summary osv-sarif "$nat" | py_say
+  fi
   case "$rc" in
     0) return 0 ;;
     1) return 1 ;;
@@ -2147,7 +2154,7 @@ case "${1:-}" in help|-h|--help) scan_help; exit 0 ;; esac
 [ "${1:-}" = "ui" ] && { shift
   have python3 || { warn ui "no python3 -> the local UI needs it (standard library only)"; exit 2; }
   # -B: importing report_html must not leave a __pycache__ in the vendored kit (verify counts it).
-  exec python3 -I -B "$KIT_DIR/lib/ui_server.py" --root "$ROOT" "$@"; }
+  exec python3 -I -B "$KIT_DIR/lib/ui_server.py" --root "$ROOT" --kit "$KIT_DIR" "$@"; }
 # edit: the agent hook's advisory one-file pass; under SKIP_SECURITY it stays silent (no record either way)
 [ "${1:-}" = "edit" ] && { shift; [ "${SKIP_SECURITY:-0}" = "1" ] || scan_edit "$@"; exit 0; }
 [ "${SKIP_SECURITY:-0}" = "1" ] && { say skip "SKIP_SECURITY=1 -> all scans skipped"; exit 0; }
@@ -2271,6 +2278,12 @@ if ! scan_lock_acquire; then
     note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> '$CMD' not run (it rewrites the shared record); retry when the other scan is done"
     exit 1 ;;
   esac
+  # SCAN_LOCK_BUSY=exit (R13b, set by the local UI): a run that would only fill a separate run
+  # directory updates nothing the caller shows, so it is not started at all. Environment only.
+  if [ "${SCAN_LOCK_BUSY:-}" = "exit" ]; then
+    note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> not run (SCAN_LOCK_BUSY=exit); retry when the other scan is done"
+    exit 1
+  fi
   note lock "could not take the lock in ${SCAN_LOCK_WAIT}s -> running anyway, into a SEPARATE run directory"
   note lock "(the scan is never skipped for a lock; the shared record stays the other run's: ${RUN_DIR#"$ROOT"/})"
   LOG="$RUN_DIR/raw.log"

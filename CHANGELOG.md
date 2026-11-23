@@ -15,6 +15,30 @@ All notable changes to this project are documented here. The format is based on
   `Host` check, GET/HEAD only, fixed routes, no file by path, no symlinks, size caps, no request
   logging; it writes nothing. `docs/usage.md`, threat model and data flow updated; unit tests,
   e2e and the headless-Chrome job cover it.
+- **Start and cancel a scan from `scan.sh ui` (R13b).** A *Run a scan* form (`fast` or `all`) and a
+  `/run` page with the state, exit code and live output, and *Cancel*. Every start is checked
+  against the kit's install record first, like the git hooks. The scan runs in a built environment
+  (no `SKIP_SECURITY`), with `SARIF=1 REPORT=html`, one at a time. Its end state comes from the exit
+  code: passed, blocked, indeterminate, cancelled, killed, not started or error. The page says
+  whether the record is this run's, matched by the run id's pid. POSTs need the session's form
+  token, the exact `Origin` and `Sec-Fetch-Site: same-origin`; form pages use `Referrer-Policy:
+  same-origin`, because with `no-referrer` Chrome sends `Origin: null` (found in review, confirmed
+  in a real browser, tested by driving headless Chrome over the DevTools protocol with the standard
+  library, `tests/browser_cdp.py`).
+- **`SCAN_LOCK_BUSY=exit`** (environment only): a scan that cannot take the lock exits 1 instead of
+  running lock-less into a separate directory. The UI sets it; a lock-less run would update nothing
+  it shows.
+
+### Fixed
+- **`py-deps` without a project venv now writes per-finding rows.** That path reads the committed
+  manifests with osv-scanner, and its findings stayed in the log: the record said "py-deps
+  (findings)" over an empty table (seen in `scan.sh ui` on a repo with a vulnerable
+  `requirements.txt`). With `SARIF=1` it now keeps `py-deps-osv.sarif`, read as `py-deps` rows with
+  package and aliases, and the log gets one readable line per advisory.
+- **No "wrote no per-finding output" note for a dimension that passed.** There is nothing to list
+  then; the note now appears only when a dimension has findings and no rows.
+- **`scan.sh ui` no longer shows "a scan is running" for a lock left by a crashed scan.** A lock
+  whose owner process is gone on this host is stale; `scan.sh` reclaims it on its next run.
 
 ### Changed
 - **`lib/report_html.py` is read / shape / render, apart.** `clean_doc` shapes an evidence document

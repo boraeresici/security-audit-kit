@@ -1130,10 +1130,24 @@ class TestSelectSources:
         assert got == []
         assert any("missing" in x for x in w)
 
-    def test_inspecting_dimension_without_sarif_is_said(self, tmp_path):
+    def test_findings_without_rows_are_said_and_a_pass_without_output_is_not(self, tmp_path):
+        # A dimension with findings and no per-finding output is a gap in the record; one that passed
+        # has nothing to list, and saying "no output" there only adds noise to every report.
+        w = []
+        evidence.select_sources(self._summary([{"name": "secret", "status": "findings"}], []), str(tmp_path), w)
+        assert any("secret" in x and "no per-finding output" in x for x in w)
         w = []
         evidence.select_sources(self._summary([{"name": "secret", "status": "pass"}], []), str(tmp_path), w)
-        assert any("secret" in x and "no per-finding output" in x for x in w)
+        assert not any("no per-finding output" in x for x in w)
+
+    def test_py_deps_reads_either_source(self, tmp_path):
+        # pip-audit's JSON on the venv path, osv-scanner's SARIF on the manifest path: either one
+        # gives py-deps its rows, and only neither is a gap.
+        p = self._sarif(tmp_path, "py-deps-osv.sarif")
+        w = []
+        got = evidence.select_sources(self._summary([{"name": "py-deps", "status": "findings"}], [self._art(p)]),
+                                      str(tmp_path), w)
+        assert got == [(p, "osv-scanner", "py-deps")] and not any("no per-finding output" in x for x in w)
 
     def test_alias_dimension_uses_its_tools_file(self, tmp_path):
         p = self._sarif(tmp_path, "gitleaks.sarif")

@@ -443,7 +443,8 @@ def clean_doc(doc) -> dict:
 
 
 def render_report(doc: dict, summary=None, repo: str = "", generated: str = "", csp: str = CSP,
-                  origin: str = "", banner: str = "", nav: str = "", link_fingerprints: bool = False) -> str:
+                  origin: str = "", banner: str = "", nav: str = "", link_fingerprints: bool = False,
+                  extra_css: str = "") -> str:
     """The report page for a cleaned evidence document. Pure: reads and writes nothing. The static
     report and the local UI (R13a) both render through it, so escaping and layout are one code path.
     `origin` is the plain-text provenance line; `banner` and `nav` are trusted HTML from the caller."""
@@ -497,7 +498,7 @@ def render_report(doc: dict, summary=None, repo: str = "", generated: str = "", 
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="{csp}">
 <title>Security scan report — {esc(repo)} — {esc(date)}</title>
-<style>{CSS}</style></head><body><div class="wrap">
+<style>{CSS}{extra_css}</style></head><body><div class="wrap">
 <h1>Security scan report</h1>
 {nav}<p class="sub">{esc(repo)} · {esc(scanned)} · {origin_html}</p>{banner}
 

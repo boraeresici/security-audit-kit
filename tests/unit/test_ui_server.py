@@ -248,3 +248,238 @@ def test_idle_stop(repo):
     t.join(timeout=5)
     assert not t.is_alive()
     u.server.server_close()
+
+
+# ---------------------------------------------------------------------------------------------
+# R13b: start and cancel a scan. A fake scan.sh records its argv and env, prints, sleeps, publishes
+# a summary.json whose run_id ends in its own pid (as scan.sh's RUN_ID does) and exits as told.
+# ---------------------------------------------------------------------------------------------
+import signal as _signal  # noqa: E402
+import time as _time  # noqa: E402
+import urllib.parse as _up  # noqa: E402
+
+FAKE = r'''#!/usr/bin/env bash
+k="$(cd "$(dirname "$0")" && pwd)"
+printf '%s\n' "$@" > "$k/argv"; env > "$k/env"
+read -r sleep rc publish < "$k/behave"
+trap 'echo cancelled; exit 130' INT
+echo "── scanning $1"
+printf '\033[31mred\033[0m <b>bold</b>\n'
+[ "$rc" = lock ] && { echo "could not take the lock -> not run (SCAN_LOCK_BUSY=exit)"; exit 1; }
+i=0; while [ "$i" -lt "$sleep" ]; do sleep 0.1; i=$((i+1)); done
+[ "$publish" = 1 ] && printf '{"run_id": "20260101T000000-%s", "dimensions": [{"name": "container", "status": "skipped"}]}\n' "$$" > "$PWD/docs/security/scan-findings/summary.json"
+exit "$rc"
+'''
+
+
+@pytest.fixture
+def runui(repo, tmp_path_factory, monkeypatch):
+    kit = tmp_path_factory.mktemp("kit")
+    (kit / "scan.sh").write_text(FAKE)
+    (kit / "behave").write_text("0 0 1\n")
+    monkeypatch.setattr(us, "integrity", lambda root, k: (True, ""))
+    monkeypatch.setenv("SKIP_SECURITY", "1")
+    monkeypatch.setenv("GATE_STRICT", "1")
+    monkeypatch.setattr(us, "CANCEL_TERM_SEC", 1)
+    monkeypatch.setattr(us, "CANCEL_KILL_SEC", 2)
+    u = us.UI(str(repo), kit=str(kit))
+    t = threading.Thread(target=u.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    t.start()
+    u.kitdir = kit
+    yield u
+    if u.job is not None and u.job.state == "running":
+        u.job.cancel()
+        u.job.proc.wait(timeout=10)
+    u.server.shutdown()
+    u.server.server_close()
+
+
+def post(u, path, fields, cookie, origin="same", ctype="application/x-www-form-urlencoded", sfs=None, body=None):
+    data = body if body is not None else _up.urlencode(fields)
+    h = {"Content-Type": ctype}
+    if origin == "same":
+        h["Origin"] = f"http://{u.host}"
+    elif origin is not None:
+        h["Origin"] = origin
+    if sfs:
+        h["Sec-Fetch-Site"] = sfs
+    c = http.client.HTTPConnection("127.0.0.1", u.port, timeout=5)
+    c.request("POST", path, body=data, headers=dict(h, Host=u.host, Cookie=cookie))
+    r = c.getresponse()
+    out = (r.status, dict(r.getheaders()), r.read().decode("utf-8", "replace"))
+    c.close()
+    return out
+
+
+def wait_end(u, timeout=10):
+    end = _time.time() + timeout
+    while u.job.state == "running" and _time.time() < end:
+        _time.sleep(0.05)
+    return u.job.state
+
+
+def test_index_has_the_run_form_with_form_action_self(runui):
+    cookie = login(runui)
+    status, h, body = req(runui, "/", cookie=cookie)
+    assert 'action="/run"' in body and f'value="{runui.form_token}"' in body
+    assert "form-action 'self'" in h["Content-Security-Policy"] and h["Referrer-Policy"] == "same-origin"
+    assert '<option value="fast">' in body and '<option value="all">' in body and "zizmor" not in body
+
+
+def test_start_runs_the_fixed_command_with_the_built_env(runui):
+    cookie = login(runui)
+    status, h, _ = post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie)
+    assert status == 303 and h["Location"] == "/run"
+    assert wait_end(runui) == "passed"
+    assert (runui.kitdir / "argv").read_text().split() == ["fast"]
+    env = dict(line.split("=", 1) for line in (runui.kitdir / "env").read_text().splitlines() if "=" in line)
+    assert "SKIP_SECURITY" not in env and env["GATE_STRICT"] == "1"
+    assert env["SARIF"] == "1" and env["REPORT"] == "html" and env["SCAN_LOCK_BUSY"] == "exit"
+    assert runui.job.published()
+    _, _, page_ = req(runui, "/run", cookie=cookie)
+    assert "passed" in page_ and "this run" in page_ and "container (skipped)" in page_
+    assert "&lt;b&gt;bold&lt;/b&gt;" in page_ and "\x1b" not in page_ and "<b>bold</b>" not in page_
+
+
+def test_stdin_is_not_the_servers(runui):
+    cookie = login(runui)
+    post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie)
+    wait_end(runui)
+    assert runui.job.proc.stdin is None          # DEVNULL: Popen keeps no handle
+
+
+def test_one_run_at_a_time_and_cancel(runui):
+    (runui.kitdir / "behave").write_text("200 0 1\n")
+    cookie = login(runui)
+    assert post(runui, "/run", {"ft": runui.form_token, "cmd": "all"}, cookie)[0] == 303
+    _time.sleep(0.3)
+    assert post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie)[0] == 409
+    _, _, running = req(runui, "/run", cookie=cookie)
+    assert 'http-equiv="refresh"' in running and 'action="/run/cancel"' in running
+    _, _, index = req(runui, "/", cookie=cookie)
+    assert "A scan started here is running" in index
+    assert post(runui, "/run/cancel", {"ft": runui.form_token}, cookie)[0] == 303
+    assert wait_end(runui) == "cancelled" and runui.job.rc == 130 and not runui.job.published()
+    _, _, done = req(runui, "/run", cookie=cookie)
+    assert "nothing was published" in done and "not updated by this run" in done
+
+
+def test_a_scan_that_ignores_sigint_is_killed(runui):
+    (runui.kitdir / "scan.sh").write_text(FAKE.replace("trap 'echo cancelled; exit 130' INT", "trap '' INT TERM"))
+    (runui.kitdir / "behave").write_text("300 0 0\n")
+    cookie = login(runui)
+    post(runui, "/run", {"ft": runui.form_token, "cmd": "all"}, cookie)
+    _time.sleep(0.3)
+    post(runui, "/run/cancel", {"ft": runui.form_token}, cookie)
+    assert wait_end(runui, 15) == "killed"
+    assert "killed" in req(runui, "/run", cookie=cookie)[2]
+
+
+def test_lock_busy_is_not_started_and_blocked_is_blocked(runui):
+    (runui.kitdir / "behave").write_text("0 lock 0\n")
+    cookie = login(runui)
+    post(runui, "/run", {"ft": runui.form_token, "cmd": "all"}, cookie)
+    assert wait_end(runui) == "not started"
+    (runui.kitdir / "behave").write_text("0 1 1\n")
+    post(runui, "/run", {"ft": runui.form_token, "cmd": "all"}, cookie)
+    assert wait_end(runui) == "blocked" and runui.job.published()
+
+
+def test_cancel_after_the_run_published(runui):
+    cookie = login(runui)
+    post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie)
+    wait_end(runui)
+    runui.job.cancel_requested = True
+    assert "already finished and published" in req(runui, "/run", cookie=cookie)[2]
+
+
+@pytest.mark.parametrize("kw, code", [
+    ({"origin": None}, 403),
+    ({"origin": "null"}, 403),
+    ({"origin": "http://127.0.0.1:1"}, 403),
+    ({"origin": "http://localhost:{p}"}, 403),
+    ({"sfs": "same-site"}, 403),
+    ({"sfs": "cross-site"}, 403),
+    ({"ctype": "text/plain"}, 415),
+    ({"ctype": "multipart/form-data"}, 415),
+    ({"body": "ft=x&cmd=fast&cmd=all"}, 400),
+    ({"body": "ft=x&cmd=fast&extra=1"}, 400),
+    ({"body": "&&&"}, 400),
+    ({"body": "x" * 2000}, 413),
+])
+def test_cross_site_and_malformed_posts_are_refused(runui, kw, code):
+    cookie = login(runui)
+    if "origin" in kw and kw["origin"] and "{p}" in kw["origin"]:
+        kw["origin"] = kw["origin"].format(p=runui.port)
+    status, _, _ = post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie, **kw)
+    assert status == code and runui.job is None
+
+
+def test_form_token_session_and_command_table(runui):
+    cookie = login(runui)
+    assert post(runui, "/run", {"ft": "wrong", "cmd": "fast"}, cookie)[0] == 403
+    assert post(runui, "/run", {"cmd": "fast"}, cookie)[0] == 400
+    assert post(runui, "/run", {"ft": runui.form_token, "cmd": "zizmor"}, cookie)[0] == 400
+    assert post(runui, "/run", {"ft": runui.form_token, "cmd": "all; rm -rf /"}, cookie)[0] == 400
+    assert post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, f"sak_ui_{runui.port}=nope")[0] == 403
+    assert post(runui, "/", {"ft": runui.form_token, "cmd": "fast"}, cookie)[0] == 405
+    assert runui.job is None
+
+
+def test_post_needs_content_length(runui):
+    cookie = login(runui)
+    c = http.client.HTTPConnection("127.0.0.1", runui.port, timeout=5)
+    c.putrequest("POST", "/run", skip_host=True)
+    for k, v in {"Host": runui.host, "Cookie": cookie, "Origin": f"http://{runui.host}",
+                 "Content-Type": "application/x-www-form-urlencoded"}.items():
+        c.putheader(k, v)
+    c.endheaders()
+    assert c.getresponse().status == 413 and runui.job is None
+
+
+def test_integrity_failure_refuses_to_start(runui, monkeypatch):
+    monkeypatch.setattr(us, "integrity", lambda root, k: (False, "the vendored kit is not the one installed here: MODIFIED scan.sh"))
+    cookie = login(runui)
+    status, _, body = post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie)
+    assert status == 409 and "MODIFIED scan.sh" in body and runui.job is None
+
+
+def test_real_integrity_without_an_install_record(repo, tmp_path):
+    ok, why = us.integrity(str(repo), str(tmp_path))
+    assert not ok and "no install record" in why
+
+
+def test_no_kit_means_no_form(ui):
+    cookie = login(ui)
+    _, h, body = req(ui, "/", cookie=cookie)
+    assert 'action="/run"' not in body and "form-action 'none'" in h["Content-Security-Policy"]
+    assert post(ui, "/run", {"ft": ui.form_token, "cmd": "fast"}, cookie)[0] == 409
+
+
+def test_idle_stop_waits_for_a_running_scan(runui):
+    (runui.kitdir / "behave").write_text("30 0 0\n")
+    cookie = login(runui)
+    post(runui, "/run", {"ft": runui.form_token, "cmd": "fast"}, cookie)
+    runui.idle_sec = 1
+    runui.last -= 100
+    t = threading.Thread(target=runui.watch_idle, daemon=True)
+    t.start()
+    t.join(timeout=2)
+    assert t.is_alive()                  # still waiting: the scan runs
+    wait_end(runui)
+    t.join(timeout=5)
+    assert not t.is_alive()
+
+
+def test_a_stale_lock_is_not_a_running_scan(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    lock = tmp_path / ".git" / "security-audit-cache" / "scan.lock"
+    lock.mkdir(parents=True)
+    import socket as _socket
+    p = subprocess.Popen(["true"]); p.wait()
+    (lock / "owner").write_text(f"pid={p.pid}\nhost={_socket.gethostname()}\ncmd=all\ndate=x\n")
+    assert us.lock_owner(str(tmp_path)) is None
+    (lock / "owner").write_text(f"pid={os.getpid()}\nhost={_socket.gethostname()}\ncmd=all\ndate=x\n")
+    assert us.lock_owner(str(tmp_path))["cmd"] == "all"
+    (lock / "owner").write_text("pid=1\nhost=another-machine\ncmd=all\ndate=x\n")
+    assert us.lock_owner(str(tmp_path)) is not None
