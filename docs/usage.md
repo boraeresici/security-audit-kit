@@ -19,6 +19,7 @@ bash tools/security-audit-kit/scan.sh verify     # check kit files against CHECK
 bash tools/security-audit-kit/scan.sh evidence   # rebuild evidence.json from the SARIF on disk
 bash tools/security-audit-kit/scan.sh report     # render one self-contained HTML report
 bash tools/security-audit-kit/scan.sh decide     # record a person's decision about one finding (see below)
+bash tools/security-audit-kit/scan.sh ui         # read-only local view of the record (see below)
 bash tools/security-audit-kit/scan.sh help       # commands, gate tags, prerequisites, what `all` leaves out
 ```
 
@@ -145,6 +146,41 @@ so without the lock they refuse (exit 1) instead of writing.
 > teammate, not an AI assistant "fixing" the scanner mid-triage. The edit is lost on the next
 > `bootstrap.sh`, and until then pre-push blocks for everyone. Found a real bug? Report it upstream
 > and bump the pin. The kit's own skills carry this as a hard rule.
+
+## The local view — `scan.sh ui`
+
+`scan.sh ui` serves the last recorded scan of this repository to your browser, read-only. It is the
+HTML report with two more things: a page per finding (its evidence, aliases, the triage verdict and
+a person's decision, from the location link), and what the static file cannot know, said on every
+page:
+
+- the record's commit against the checked-out `HEAD`;
+- a warning when a record file is **tracked by git** (the kit never commits it, so a tracked one
+  came with the branch and can say anything);
+- a banner while a scan holds the lock (the page still shows the last completed record);
+- a warning when `evidence.json` is not the current `summary.json`'s run.
+
+It prints one link, `http://127.0.0.1:<port>/?t=<token>`. The link works once: it sets a session
+cookie and the token is spent, so a new link means a new `scan.sh ui`. `--open` also opens the
+browser; it is off by default because the link would then sit in a process's arguments. The
+server binds 127.0.0.1 only, answers only to that exact host, accepts GET and HEAD, serves no file
+by path, reads `docs/security/scan-findings/summary.json` and `evidence.json` (no symlinks, size
+capped) and the scan lock's owner. Reload after a scan to see it. Ctrl-C stops it; it also stops
+after two hours without a request. It needs only python3.
+
+**Starting a scan from the page (R13b).** The record page has a *Run a scan* form with two
+choices, `fast` and `all` (single dimensions are not offered: with `SARIF=1` a one-dimension run
+would replace the whole record). Before every start the kit is checked against the manifest
+recorded at install, exactly as the git hooks do, so a branch that changed `scan.sh` after the
+server started cannot run through it. The scan is the same command as in a terminal, with
+`SARIF=1 REPORT=html` so the record updates. Its environment is built, not inherited:
+`SKIP_SECURITY` and the kit's own knobs are not passed (`GATE_STRICT` is, and the repo's
+`.security-audit.conf` applies as usual). `/run` shows the state, the exit code and the last 64 KiB
+of output, refreshes itself while running, and has a *Cancel* button (SIGINT, then TERM, then KILL;
+a cancelled scan publishes nothing). One scan at a time; if another terminal holds the scan lock,
+nothing is started (`SCAN_LOCK_BUSY=exit`). The end state comes from the exit code: passed,
+blocked, indeterminate, cancelled, killed, not started (lock held) or error; the page says whether
+the record is this run's. Writing a decision from the page is a later step (R13c).
 
 ## The install-time window — `scan.sh pkgcheck` and the agent hook
 

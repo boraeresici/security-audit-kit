@@ -95,6 +95,9 @@ flowchart LR
   `docs/security/decisions.json`'a yazar; parmak izi satir kaymasina ve advisory'nin baska adla
   raporlanmasina dayanir. Rapor karari bulgunun yaninda, filtrelenebilir ve suresi gecince
   isaretli gosterir. Bir push'un engelini asla kaldirmaz.
+- **Yerel, salt okunur gorunum.** `scan.sh ui`, kaydi tek kullanimlik bir linkle 127.0.0.1'de sunar:
+  rapor, her bulgu icin bir sayfa ve kaydin guncel mi, tarama suruyor mu, daldan mi geldigi. Hicbir
+  sey yazmaz; ayrinti: [docs/usage.md](docs/usage.md#the-local-view--scansh-ui) (Ingilizce).
 
 ## Yasam dongusu
 
@@ -443,6 +446,7 @@ bash tools/security-audit-kit/scan.sh verify     # kit dosyalarini CHECKSUMS'a k
 bash tools/security-audit-kit/scan.sh evidence   # diskteki SARIF'ten evidence.json'i yeniden uret
 bash tools/security-audit-kit/scan.sh report     # tek dosyalik HTML raporu uret
 bash tools/security-audit-kit/scan.sh decide     # bir bulgu hakkinda kisinin kararini kaydet
+bash tools/security-audit-kit/scan.sh ui         # kaydin salt okunur yerel gorunumu (127.0.0.1, tek kullanimlik link)
 bash tools/security-audit-kit/scan.sh help       # komutlar, gate etiketleri, onkosullar, `all`'un disinda kalanlar
 ```
 

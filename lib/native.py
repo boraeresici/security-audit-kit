@@ -388,9 +388,38 @@ def summary(tool: str, path: str) -> int:
     return 0
 
 
+def summary_osv_sarif(path: str) -> int:
+    """Readable lines for the scan log from osv-scanner's SARIF (py-deps with no venv). Each result's
+    message already names the package, version, advisory and its other ids; one line per result."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError, RecursionError) as exc:
+        print(f"osv-scanner: SARIF unreadable ({exc.__class__.__name__})")
+        return 2
+    lines = []
+    for run in doc.get("runs") or [] if isinstance(doc, dict) else []:
+        for res in (run.get("results") or []) if isinstance(run, dict) else []:
+            msg = ((res.get("message") or {}).get("text") or "") if isinstance(res, dict) else ""
+            loc = ""
+            try:
+                loc = res["locations"][0]["physicalLocation"]["artifactLocation"]["uri"].replace("file:///repo/", "")
+            except (KeyError, IndexError, TypeError, AttributeError):
+                pass
+            line = " ".join(str(msg).split())[:300] + (f"  [{loc}]" if loc else "")
+            if line.strip() and line not in lines:
+                lines.append(line)
+    for line in lines:
+        print(f"  {line}")
+    print(f"osv-scanner: {len(lines)} known vulnerabilit{'y' if len(lines) == 1 else 'ies'} (manifest, static)")
+    return 0
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "summary" and sys.argv[2] == "pip-audit":
         sys.exit(summary(sys.argv[2], sys.argv[3]))
+    if len(sys.argv) == 4 and sys.argv[1] == "summary" and sys.argv[2] == "osv-sarif":
+        sys.exit(summary_osv_sarif(sys.argv[3]))
     if len(sys.argv) == 6 and sys.argv[1] == "guarddog-add" and sys.argv[2] in ("pypi", "npm"):
         sys.exit(guarddog_add(*sys.argv[2:6]))
     if len(sys.argv) == 5 and sys.argv[1] == "npm-add":

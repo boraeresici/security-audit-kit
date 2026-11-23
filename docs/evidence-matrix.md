@@ -18,7 +18,7 @@ listed below"), and `evidence.json` carries a warning for it. The findings thems
 | `sast` | semgrep, `--severity ERROR` | `semgrep.sarif` | **yes** | SARIF `level` | `# nosemgrep` | in the SARIF with `suppressions`; recorded as **suppressed** (measured, 1.166.0) |
 | `sast-changed` | semgrep on changed files | `semgrep.sarif` | **yes**, as `sast` | SARIF `level` | `# nosemgrep` | as `sast` |
 | `py-deps` (project venv) | pip-audit `--strict` | `pip-audit.native.json` (with `SARIF=1`) | **yes**, via `lib/native.py` | none from the tool: `unknown` | `.pip-audit-ignore` (`--ignore-vuln`) | not in the output |
-| `py-deps` (no venv) | osv-scanner `-L` on lockfiles | log only | no | — | `osv-scanner.toml` | not in the output |
+| `py-deps` (no venv) | osv-scanner `-L` on the committed manifests | `py-deps-osv.sarif` (with `SARIF=1`) | **yes**, as `py-deps` (package, aliases) | `security-severity` | `osv-scanner.toml` | not in the output |
 | `js-deps` | npm / pnpm / yarn `audit` | npm: `npm-audit.native.json` (with `SARIF=1`); pnpm, yarn: log only | npm: **yes**, via `lib/native.py`; pnpm, yarn: no | npm's own (`moderate` = medium), with the advisory's CVSS | none in the kit | — |
 | `iac` | checkov `--soft-fail` | `checkov.native.json` (with `SARIF=1`); the table stays in the log | **yes**, via `lib/native.py` | checkov's, if any; without a platform key `unknown` | `#checkov:skip=` | in the JSON with its reason; recorded as **suppressed** (measured, 3.3.1) |
 | `container` | trivy `fs` (vuln, secret, misconfig, license) | `trivy.sarif` | **yes** | `security-severity` (CVSS) | `.trivyignore.yaml`, trivy's own ids only | not in the output (measured, 0.58.0) |

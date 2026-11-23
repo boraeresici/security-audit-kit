@@ -1115,6 +1115,12 @@ grep -q 'SEPARATE run directory' <<<"$LOCKOUT" \
   && ls docs/security/scan-findings/runs/*/raw.log >/dev/null 2>&1 \
   && ok "lock: a second run scans anyway, into its own log (shared log untouched)" \
   || no "lock: contention handling wrong (interleaved or scan skipped)"
+BUSY0="$(find docs/security/scan-findings/runs -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')"
+BUSYRC=0; BUSYOUT="$(SCAN_LOCK_BUSY=exit SCAN_LOCK_WAIT=1 $SCAN iac 2>&1)" || BUSYRC=$?
+BUSYRUNS=$(( $(find docs/security/scan-findings/runs -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ') - BUSY0 ))
+[ "$BUSYRC" = 1 ] && grep -q 'not run (SCAN_LOCK_BUSY=exit)' <<<"$BUSYOUT" && ! grep -q 'SEPARATE run directory' <<<"$BUSYOUT" \
+  && [ "$BUSYRUNS" = 0 ] \
+  && ok "lock: SCAN_LOCK_BUSY=exit (the UI's runs) exits 1 instead of running lock-less" || no "lock: SCAN_LOCK_BUSY=exit ran anyway (rc=$BUSYRC): $(tail -2 <<<"$BUSYOUT")"
 rm -rf "$LOCK" docs/security/scan-findings/runs
 
 # A lock directory outlives a killed scan; if that were permanent, every later run would be
@@ -1642,6 +1648,56 @@ EMS="$(sed -n "/^DIM_UNITS='/,/^'/p" "$KIT_SRC/scan.sh" | awk -v ds=" $EMD2 " 'N
 [ "$EMY" = "$EMS" ] && ok "F16: the matrix's 'rows: yes' units are the ones evidence.py reads output for" \
   || no "F16: matrix rows ($EMY) != evidence.py sources ($EMS)"
 
+echo "-- R13a: scan.sh ui — read-only local view of the record (127.0.0.1, one-time link) --"
+if have python3 && have curl; then
+  UIR="$(mktemp -d)"; git -C "$UIR" init -q; vendor_kit "$UIR/tools/security-audit-kit"
+  mkdir -p "$UIR/docs/security/scan-findings"
+  printf '%s\n' '{"schema":"security-audit-kit/evidence@1","scan":{"command":"all","exit_code":0,"dimensions":[{"name":"secret","status":"pass"}]},"counts":{"total":0},"findings":[],"warnings":[]}' \
+    > "$UIR/docs/security/scan-findings/evidence.json"
+  touch "$UIR/.ui-mark"
+  ( cd "$UIR" && exec bash tools/security-audit-kit/scan.sh ui > "$UIR/.ui-out" 2>&1 ) & UIPID=$!
+  UIURL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+    UIURL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$UIR/.ui-out" 2>/dev/null | head -1)"; [ -n "$UIURL" ] && break; sleep 0.5; done
+  UIB="${UIURL%%/?t=*}"; UIHOST="${UIB#http://}"; UIPORT="${UIHOST#127.0.0.1:}"
+  [ -n "$UIURL" ] && ok "R13a: scan.sh ui prints a one-time 127.0.0.1 link" || no "R13a: no link printed: $(cat "$UIR/.ui-out" 2>/dev/null)"
+  UIA="$(curl -s -o /dev/null -w '%{http_code}' "$UIB/")"
+  UIL="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: localhost:$UIPORT" "$UIURL")"
+  UIX="$(curl -s -o /dev/null -w '%{http_code}' -c "$UIR/.jar" "$UIURL")"
+  UIY="$(curl -s -o /dev/null -w '%{http_code}' "$UIURL")"
+  UIZ="$(curl -s -o "$UIR/.page" -w '%{http_code}' -b "$UIR/.jar" "$UIB/")"
+  UIP="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -X POST "$UIB/")"
+  [ "$UIA $UIL $UIX $UIY $UIZ $UIP" = "403 403 303 403 200 405" ] && grep -q 'Security scan report' "$UIR/.page" \
+    && ok "R13a: no cookie 403 · localhost 403 · link 303 once, then 403 · with the cookie 200 · POST 405" \
+    || no "R13a: ui flow: $UIA $UIL $UIX $UIY $UIZ $UIP"
+  kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+  UIW="$(find "$UIR" -mindepth 1 -newer "$UIR/.ui-mark" -not -path '*/.git/*' ! -name '.ui-out' ! -name '.jar' ! -name '.page' | head -3)"
+  [ -z "$UIW" ] && [ ! -e "$UIR/docs/security/scan-findings/.gitignore" ] && [ ! -d "$UIR/docs/security/scan-findings/runs" ] \
+    && ok "R13a: the UI wrote nothing in the repo (no record dir, no .gitignore, no lock)" || no "R13a: the UI wrote: $UIW"
+  # R13b: start `fast` from the page, as a browser would (form token, exact Origin), and follow it.
+  # The kit must be installed: the UI checks it against the install record before every start.
+  ( cd "$UIR" && git -c user.email=e2e@test -c user.name=e2e add -A >/dev/null 2>&1 \
+    && SKIP_SECURITY=1 git -c user.email=e2e@test -c user.name=e2e commit -qm kit >/dev/null 2>&1 \
+    && bash tools/security-audit-kit/install.sh --no-skills >/dev/null 2>&1 )
+  ( cd "$UIR" && exec bash tools/security-audit-kit/scan.sh ui > "$UIR/.ui-out2" 2>&1 ) & UIPID=$!
+  UIURL=""; for _ in 1 2 3 4 5 6 7 8 9 10; do
+    UIURL="$(grep -o 'http://127\.0\.0\.1:[0-9]*/?t=[A-Za-z0-9_-]*' "$UIR/.ui-out2" 2>/dev/null | head -1)"; [ -n "$UIURL" ] && break; sleep 0.5; done
+  UIB="${UIURL%%/?t=*}"; rm -f "$UIR/.jar"
+  curl -s -o /dev/null -c "$UIR/.jar" "$UIURL"
+  UIFT="$(curl -s -b "$UIR/.jar" "$UIB/" | grep -o 'name="ft" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//')"
+  UIX="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: http://evil.example" --data "ft=$UIFT&cmd=fast" "$UIB/run")"
+  UIS="$(curl -s -o /dev/null -w '%{http_code}' -b "$UIR/.jar" -H "Origin: $UIB" --data "ft=$UIFT&cmd=fast" "$UIB/run")"
+  UIST=""; for _ in $(seq 1 120); do
+    UIST="$(curl -s -b "$UIR/.jar" "$UIB/run" | grep -o '<dt>state</dt><dd>[a-z ]*</dd>' | sed 's/.*<dd>//;s/<.*//')"
+    [ -n "$UIST" ] && [ "$UIST" != running ] && break; sleep 0.5; done
+  UIRUN="$(curl -s -b "$UIR/.jar" "$UIB/run")"
+  kill "$UIPID" 2>/dev/null; wait "$UIPID" 2>/dev/null
+  [ "$UIX" = 403 ] && [ "$UIS" = 303 ] && [ -n "$UIST" ] && [ "$UIST" != running ] && grep -q "this run" <<<"$UIRUN" \
+    && python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); assert s["command"]=="fast"' "$UIR/docs/security/scan-findings/summary.json" 2>/dev/null \
+    && ok "R13b: a cross-site POST is refused; the page starts scan.sh fast, which publishes its record ($UIST)" \
+    || no "R13b: start from the UI: cross=$UIX start=$UIS state=${UIST:-none}"
+  rm -rf "$UIR"
+else skip "R13a: scan.sh ui (needs python3 and curl)"; fi
+
 echo "-- R02: the kit is a Claude Code plugin + marketplace; manifest and disk agree --"
 # One source for the skills: plugin/skills/<name>/SKILL.md is what the plugin loads AND what install.sh
 # copies. No skill on disk that the plugin would not load, none the installer misses.
@@ -1712,11 +1768,11 @@ grep -q 'bootstrap.sh --check' <<<"$R02K" && grep -q 'Do not update it yourself'
 # and no script (the directory takes those only from Verified organizations; the edit check is the
 # kit's, wired by install.sh --with-edit-hook), no links (the directory refuses them); the root
 # keeps only the marketplace.
-R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json LICENSE; \
+R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json LICENSE README.md; \
   for d in $R02D; do printf 'skills/%s/SKILL.md\n' "$d"; done)"
 R17G="$(cd "$KIT_SRC/plugin" && find . \( -type f -o -type l \) ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$R17G" = "$(LC_ALL=C sort <<<"$R17W")" ] && [ -z "$(find "$KIT_SRC/plugin" -type l)" ] \
-  && ok "R17: the plugin folder holds the Claude manifest, icon, skills and LICENSE — no hook, no script, no links" \
+  && ok "R17: the plugin folder holds the Claude manifest, icon, skills, README and LICENSE — no hook, no script, no links" \
   || no "R17: plugin folder contents: $(tr '\n' ' ' <<<"$R17G")"
 cmp -s "$KIT_SRC/LICENSE" "$KIT_SRC/plugin/LICENSE" \
   && ok "R17: plugin/LICENSE is the kit's LICENSE" || no "R17: plugin/LICENSE differs from LICENSE"
@@ -2152,6 +2208,20 @@ if docker_ok; then
     || no "py-deps: a committed requirements.txt was still not inspected"
   grep -qE 'requests' <<<"$REQOUT" && ok "py-deps: the manifest's known-vulnerable pin is reported" \
     || no "py-deps: requests==2.19.0 (known vulnerable) was not reported"
+  # With SARIF=1 the same path writes rows: the record must not say "findings" over an empty table.
+  ( cd "$PYR" && SARIF=1 bash tools/security-audit-kit/scan.sh deps >/dev/null 2>&1 || true )
+  python3 - "$PYR/docs/security/scan-findings/evidence.json" <<'PY' 2>/dev/null \
+    && ok "py-deps (no venv): osv-scanner's findings are py-deps rows with their package (SARIF=1)" \
+    || no "py-deps (no venv): no per-finding rows in evidence.json"
+import json, sys
+d = json.load(open(sys.argv[1]))
+rows = [f for f in d["findings"] if f["dimension"] == "py-deps"]
+# osv-scanner also resolves what requests pulls in (urllib3 ...): every row names its package,
+# and the pinned one is among them.
+assert rows and all(f["tool"] == "osv-scanner" and f["package"]["name"] for f in rows), rows[:1]
+assert any(f["package"]["name"] == "requests" and f["package"]["version"] == "2.19.0" for f in rows)
+assert not any("no per-finding output" in w for w in d["warnings"]), d["warnings"]
+PY
 else
   skip "py-deps: manifest fallback (docker unavailable)"
 fi

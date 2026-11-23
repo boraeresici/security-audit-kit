@@ -104,6 +104,9 @@ flowchart LR
 - **A person's decision has its own record.** `scan.sh decide` writes `docs/security/decisions.json`,
   keyed on a finding's fingerprint, which survives a line shift and a renamed advisory. The report
   shows it next to the finding, filterable, marked when expired. It never unblocks a push.
+- **A local, read-only view.** `scan.sh ui` serves the record on 127.0.0.1 behind a one-time link:
+  the report, a page per finding, and whether the record is current, in progress or came with the
+  branch. Nothing is written; details in [docs/usage.md](docs/usage.md#the-local-view--scansh-ui).
 
 ## Lifecycle
 

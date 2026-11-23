@@ -4,6 +4,13 @@ Date: 2026-09-08 · Baseline: local `main / 48fad91`.
 
 The current implementation order and acceptance criteria are in the [unified work list](application-backlog-2026-09-08.md). This document explains why old roadmap items were closed, merged or deferred. Sources reviewed: `ROADMAP.local.md`, `IMPLEMENTATION-PLAN.local.md`, `AI-JUDGMENT-DESIGN.local.md`, `WIZARD-DESIGN.local.md`, CHANGELOG and the related application code. Historical statements in local sources were not counted as current product/provider measurements; external tool licenses and capabilities were not re-researched.
 
+## 2026-11-23 — v1.22.0 and v1.22.1 released; directory submissions; R13a implemented (`feat/r13a-ui`, unreleased)
+
+- **v1.22.0 and v1.22.1:** v1.22.0 shipped F26, R17 and F19a. v1.22.1 followed the plugin directory's refusals: the plugin is skills only (the edit check moved to `install.sh --with-edit-hook`), the Codex listing manifest moved out of `plugin/` to `codex/plugin.json`, and skills name no download-and-run command.
+- **Claude directory:** the new submission (path `plugin`, branch `release`) validated with no blocking finding. The remaining warning comes from attack patterns named in three skills, explained in `plugin/README.md`.
+- **OpenAI directory:** blocked by its "not accepting more skills-only submissions" policy, with no date given. The draft stays uploaded.
+- **R13a:** designed, reviewed independently (Fable), revised and built. It is a read-only local UI on 127.0.0.1 behind a one-time link, showing provenance on every page.
+
 ## 2026-11-22 — F19a slice 4: decisions shown on findings; F19a complete (`feat/f19a-decisions`, unreleased)
 
 Decisions appear on their findings in `evidence.json` (`review`) and in the report, kept apart from the AI pass's verdict, marked when expired or made at another package version. Dependency findings can now carry a decision (they have no file:line for a triage row to attach to). Expiry stays out of `evidence.json` to keep it byte-identical over unchanged code. `/sec-triage` rebuilds the report after writing its file. Next on the UI track: R13a (read-only local UI over `evidence.json` and `decisions.json`).
