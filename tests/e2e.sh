@@ -1712,11 +1712,11 @@ grep -q 'bootstrap.sh --check' <<<"$R02K" && grep -q 'Do not update it yourself'
 # and no script (the directory takes those only from Verified organizations; the edit check is the
 # kit's, wired by install.sh --with-edit-hook), no links (the directory refuses them); the root
 # keeps only the marketplace.
-R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json LICENSE; \
+R17W="$(printf '%s\n' .claude-plugin/icon.png .claude-plugin/plugin.json LICENSE README.md; \
   for d in $R02D; do printf 'skills/%s/SKILL.md\n' "$d"; done)"
 R17G="$(cd "$KIT_SRC/plugin" && find . \( -type f -o -type l \) ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$R17G" = "$(LC_ALL=C sort <<<"$R17W")" ] && [ -z "$(find "$KIT_SRC/plugin" -type l)" ] \
-  && ok "R17: the plugin folder holds the Claude manifest, icon, skills and LICENSE — no hook, no script, no links" \
+  && ok "R17: the plugin folder holds the Claude manifest, icon, skills, README and LICENSE — no hook, no script, no links" \
   || no "R17: plugin folder contents: $(tr '\n' ' ' <<<"$R17G")"
 cmp -s "$KIT_SRC/LICENSE" "$KIT_SRC/plugin/LICENSE" \
   && ok "R17: plugin/LICENSE is the kit's LICENSE" || no "R17: plugin/LICENSE differs from LICENSE"

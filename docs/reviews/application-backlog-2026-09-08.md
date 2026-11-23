@@ -586,6 +586,46 @@ The security of skill packages loaded into the agent is a concrete candidate tha
 **Decision (user, 2026-11-17, on the research recommendations):** session by a one-time URL token exchanged for an `HttpOnly; SameSite=Strict` cookie (works without JS); loopback only, exact Host check, Origin and `Sec-Fetch-Site` on every POST, fixed command table, no file serving; exceptions through the CLI with a maximum lifetime (180 days proposed). F26's filter script is checked by hand in a browser until a headless check is justified.
 
 
+**R13a design — 2026-11-23 (revised after an independent review by Fable; proposed, for the user's approval before code):**
+- **Command:** `scan.sh ui [--open]`, dispatched beside `verify`/`allowlist`, before `scan.sh` creates `LOG_DIR`, writes `.gitignore` or takes the scan lock, so the UI writes nothing. The repo root is printed at start and fixed for the server's life. `lib/ui_server.py`, standard library only, run with `python3 -I`.
+- **Network:** binds `127.0.0.1` on an ephemeral port (bound first, then the real port is printed and checked). `Host` must be exactly `127.0.0.1:<port>`; anything else, including a missing Host and `localhost`, is 403. That stops DNS rebinding and avoids `localhost` resolving to `::1`, where another process could listen.
+- **Session:** the terminal prints `http://127.0.0.1:<port>/?t=<token>`. The browser opens only with `--open`, because `webbrowser` puts the URL in a child's argv, visible in `ps`. The first GET with the token sets `sak_ui_<port>` (random, `HttpOnly; SameSite=Strict; Path=/`, in memory) and returns a 303 to `/`. The token is then spent. Both values are compared with `hmac.compare_digest`. Request logging is silenced so the token never reaches stderr. The cookie name carries the port because localhost cookies are shared across ports; this is enough for read-only R13a, and R13b adds a per-session form token and exact Origin/`Sec-Fetch-Site: same-origin`.
+- **Read-only:** GET and HEAD only (HEAD sends no body); anything else is 405.
+- **Routes:**
+  - `/`: the record. It shows scope, commit, each dimension's status (skipped and indeterminate included) and the gate verdict.
+  - `/findings`: the F26 table and filters.
+  - `/finding/<fingerprint>`: the fingerprint must match `^[0-9a-f]{20}$`. A finding without a fingerprint (older evidence) is listed with no detail link.
+  - There is no `/runs` page: the lock holder's run directory is deleted on exit (`scan.sh` `scan_exit_cleanup`), so there is no history to show. Keeping history is a retention decision for later.
+- **Reads:** only `docs/security/scan-findings/summary.json` and `evidence.json`, plus the lock owner file in `.git/security-audit-cache/scan.lock/` (read, never taken).
+  - Each path must be a regular file, with no symlink anywhere on the way, whose realpath is the expected path under the root.
+  - Size caps: summary 1 MiB, evidence 64 MiB.
+  - A person's decisions come from `evidence.json`'s `review`, never from `decisions.json` directly. The e2e invariant that only `decide` and the evidence builder read it stays true.
+- **Trust in the record:** every page carries a provenance line.
+  - The record's commit and dirty flag are compared with `HEAD`, read with `GIT_OPTIONAL_LOCKS=0` and a timeout so git does not refresh the index.
+  - A warning appears when a record file is tracked by git: a branch can commit a forged `summary.json` or `evidence.json`, and a tracked one is not the kit's own output.
+  - A "scan running" banner appears while the lock is held.
+  - A warning appears when `evidence.json` is not the current `summary.json`'s own run (the publish is file by file), reusing the report's same-run check.
+- **Robustness:** the record's shape is checked before rendering. Any exception, `RecursionError` included, gives a fixed 500 page with no traceback. On the server: a socket timeout, `daemon_threads`, a cap on concurrent requests, an overridden `send_error`, no `Server` version string.
+- **Rendering:** `report_html.py` is split into pure render functions (read, render, write apart), with the CSP as a parameter (R13b will need `form-action 'self'`). The UI and the static report use the same escaping, CSS and hash-pinned filter script. Headers on every response:
+  - the strict CSP plus `frame-ancestors 'none'`;
+  - `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`;
+  - COOP and CORP `same-origin`.
+- **Lifecycle:** files are read on each request and nothing is written. Ctrl-C stops the server. It also stops after 2 h with no request, with `shutdown()` called from a separate thread. When R13b runs scans, the idle stop must wait for them.
+- **Tests:** unit tests against an in-process server, covering:
+  - token exchange, reuse and a wrong token;
+  - `localhost` and a missing `Host`;
+  - a missing or another port's cookie;
+  - non-GET methods and HEAD;
+  - traversal attempts and a malformed fingerprint;
+  - headers, and no token in the logs;
+  - hostile finding text;
+  - a symlinked, oversized, malformed (list, missing `id`, string `cvss`, deep nesting) or tracked record;
+  - the lock held, and a mismatched pair.
+
+  Plus e2e (`scan.sh ui` prints a URL, the flow over curl, and the UI writes no file), and the existing headless-Chrome job extended to the UI page.
+- **Threat model:** a new row for the UI as a trust boundary.
+- **Not in R13a:** starting a scan (R13b), writing a decision or an exception (R13c), run history, more than one repo, any listener other than loopback.
+
 **Direction — 2026-11-03 (user decision):** No longer conditional. As the product grows, it needs control a static report cannot give: new vs resolved findings, approving a time-bound exception, seeing expiries and starting a scan. The UI track is **F26 → F19a → R13**. F19a comes first because, without a stable finding identity, a line shift shows the same finding as new and the UI would be wrong about the one thing it exists to show. Shape:
 - `scan.sh ui` starts a localhost server built only on the Python standard library. It adds no new dependency and no install step. This settles the framework question left open below.
 - **R13a — read-only:** run history, coverage (including skipped and indeterminate), and findings with their evidence and decisions, read from `summary.json`, `evidence.json` and the F19a decision record.
